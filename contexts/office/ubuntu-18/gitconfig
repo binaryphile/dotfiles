@@ -1,0 +1,30 @@
+[user]
+  email = ted.lilley@digi.com
+  name = Ted Lilley
+[core]
+  filemode = false
+  excludesfile = /home/ted/.gitignore_global
+  mergeoptions = --no-edit
+  pager = diff-so-fancy | less --tabs=4 -RFX
+[push]
+  default = tracking
+[github]
+  user = binaryphile
+[diff]
+  tool = vimdiff
+[merge]
+  tool = vimdiff
+[mergetool]
+  prompt = true
+[mergetool "vimdiff"]
+  cmd = nvim -d $BASE $LOCAL $REMOTE $MERGED -c '$wincmd -w' -c '$wincmd J'
+[fetch]
+  prune = true
+[alias]
+  lg = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(blue)<%an>%Creset' --abbrev-commit --date=relative
+[color]
+  branch = auto
+  diff = auto
+  status = auto
+[url "git@bitbucket.org:accelecon"]
+	insteadOf = https://bitbucket.org/accelecon

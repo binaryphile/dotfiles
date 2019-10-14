@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+! which rails >/dev/null || exit 0
+gem install rails -v 4.2.4

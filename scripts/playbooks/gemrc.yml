@@ -1,0 +1,16 @@
+---
+
+- name:         Ignore Rdoc
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+
+  tasks:
+  - stat:     path=$HOME/.gemrc
+    register: gemrc_file
+
+  - name: Default no-document
+    when: not gemrc_file.stat.exists
+    copy:
+      src:  gemrc
+      dest: $HOME/.gemrc

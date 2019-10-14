@@ -1,0 +1,13 @@
+---
+
+- name:         Ignore Rdoc
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+
+  tasks:
+  - name: Default no-document
+    file:
+      path:   $HOME/.gemrc
+      src:    $HOME/dotfiles/gemrc
+      state:  link

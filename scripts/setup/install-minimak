@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+pushd /usr/share/X11/xkb/rules >/dev/null
+git ls-files | grep -q '^evdev.lst$' && popd >/dev/null && exit
+git add --force evdev.lst evdev.xml
+cd ../symbols
+git add --force us
+git commit --message "keyboard"
+cd ..
+sudo patch -p5 <"${HOME}/dotfiles/patches/minimak.patch"
+git add --force rules/evdev.xml rules/evdel.lst symbols/us
+git commit --message "minimak"
+popd >/dev/null

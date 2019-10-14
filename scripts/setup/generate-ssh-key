@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+[[ -f "$HOME"/.ssh/id_rsa ]] && exit
+mkdir -pm 700 "$HOME"/.ssh
+pushd "$HOME"/.ssh >/dev/null
+ssh-keygen -f "$HOME"/.ssh/id_rsa
+cat id_rsa.pub >> authorized_keys
+cd "$HOME"/dotfiles/ssh
+git add authorized_keys
+git commit --message "authorized_keys"
+popd >/dev/null

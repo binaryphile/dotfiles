@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+dpkg --get-selections "$1" | grep -q "^$1\\(:amd64\\)\\?[[:space:]]\\+install$" && exit
+sudo apt-get install -y "$1"

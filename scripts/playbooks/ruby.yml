@@ -1,0 +1,42 @@
+---
+
+- name:         Install ruby
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+  vars:
+    ruby_version: 2.5.1
+    gem_version:  2.2.0
+
+  tasks:
+  - stat:     path=$HOME/.rubies/ruby-{{ ruby_version }}
+    register: ruby_path
+
+  - name:     Install ruby - takes some time
+    when:     not ruby_path.stat.exists
+    command:  ruby-install ruby {{ ruby_version }} -- --disable-install-rdoc
+
+  - name: Cleanup ruby Source
+    file:
+      path:   '{{ item }}'
+      state:  absent
+    with_items:
+      - $HOME/src/ruby-{{ ruby_version }}
+      - $HOME/src/ruby-{{ ruby_version }}.tar.bz2
+
+  - name: Update gems, bundler and rake
+    when: not ruby_path.stat.exists
+    shell: |
+      source /usr/local/share/chruby/chruby.sh
+      chruby ruby-{{ ruby_version }}
+      gem update --no-document --system
+      gem update --no-document bundler
+      gem update --no-document rake
+
+  - name: Fill in Expected Directories
+    file:
+      path:   '{{ item }}'
+      state:  directory
+    with_items:
+      - $HOME/.rubies/ruby-{{ ruby_version }}/lib/ruby/gems/{{ gem_version }}/bin
+      - $HOME/.gem/ruby/{{ ruby_version }}/bin

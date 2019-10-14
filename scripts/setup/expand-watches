@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+pushd /etc >/dev/null
+git ls-files | grep -q '^sysctl.conf$' && popd >/dev/null && exit
+git add --force sysctl.conf
+git commit --message "sysctl"
+echo "fs.inotify.max_user_watches=100000" | sudo tee -a sysctl.conf >/dev/null
+git add --force sysctl.conf
+git commit --message "expand watches"
+sudo sysctl -w fs.inotify.max_user_watches=100000

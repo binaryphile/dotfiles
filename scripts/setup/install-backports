@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+grep -q backports /etc/apt/sources.list && exit
+pushd /etc/apt >/dev/null
+echo "deb http://ubuntu.wikimedia.org/ubuntu trusty-backports main restricted universe multiverse" | sudo tee -a sources.list >/dev/null
+git add --force sources.list
+git commit --message "backports"
+sudo apt-get update -qq
+! [[ -f preferences ]] || git add --force preferences && git commit --message "add preferences"
+echo <<PREFS | sudo tee -a preferences >/dev/null
+Package: *
+Pin: release a=trusty-backports
+Pin-Priority: 100
+PREFS
+git add --force preferences
+git commit --message "pin to backports"
+popd >/dev/null

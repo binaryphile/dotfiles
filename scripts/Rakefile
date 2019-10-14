@@ -1,0 +1,496 @@
+desc "Setup ubuntu"
+task setup_ubuntu: %i[
+    switch_repos_to_wikimedia
+    add_hosts_to_git
+    configure_sshd
+    generate_ssh_key
+    install_desktop_apps
+    install_google_authenticator
+    install_minimak
+    install_server_apps
+    install_development_apps
+    install_personal_apps
+  ] do
+  puts <<-EOS.strip_heredoc
+
+
+    Configuration complete.  You may want to:
+    - Add your new ssh key to ~/dotfiles/ssh/authorized_keys, github, bitbucket and other sites (and possibly delete the old one)
+    - Remove any old key from ~/dotfiles/ssh/authorized_keys
+    - Pull updated dotfiles to any other servers
+    - Install CrashPlan (interactive install doesn't currently work in rake)
+      - Adopt the old computer if this is a reinstall
+      - Remove ~/mount from the backup
+    - Verify the changes to /etc/ssh/sshd_config and restart sshd
+    - Run google-authenticator and configure parameters
+      - Increase window: no
+      - Rate-limiting: yes
+      - Reuse: yes
+    - Run dropbox from the launcher and let it reload nautilus
+    - Set your wallpaper and icon theme with unity-tweak-tool
+    - Download and install the virtualbox extension pack from virtualbox.org (in virtualbox)
+    - Reboot
+
+  EOS
+end
+
+desc "Setup system76"
+task setup_system76: %i[
+    switch_repos_to_wikimedia
+    install_system76_driver
+    setup_ubuntu
+  ]
+
+desc "Setup crouton"
+task setup_crouton: %i[
+    switch_repos_to_wikimedia
+    install_backports
+    add_hosts_to_git
+    generate_ssh_key
+    set_lang_utf_8
+    install_server_apps
+    install_personal_apps
+  ] do
+  puts <<-EOS.strip_heredoc
+
+
+    Configuration complete.  You may want to:
+    - Add your new ssh key to ~/dotfiles/ssh/authorized_keys, github, bitbucket and other sites (and possibly delete the old one)
+    - Remove any old key from ~/dotfiles/ssh/authorized_keys
+    - Pull updated dotfiles to any other servers
+
+  EOS
+end
+
+desc "Setup vagrant rhel/centos"
+task setup_vagrant_rhel: %i[
+    clone_rhel_dotfiles
+    install_rhel_apps
+  ] do
+  puts <<-EOS.strip_heredoc
+
+    Configuration complete.
+  EOS
+end
+
+desc "Switch repositories to wikimedia"
+task switch_repos_to_wikimedia: %i[
+    init_slash_dot_git
+  ] do
+  sh "setup/switch-repos-to-wikimedia"
+end
+
+desc "Add hosts to git"
+task add_hosts_to_git: %i[
+    init_slash_dot_git
+  ] do
+  sh "setup/add-hosts-to-git"
+end
+
+desc "Generate ssh key"
+task generate_ssh_key: %i[
+    install_apt_openssh_client
+    clone_dotfiles
+  ] do
+  sh "setup/generate-ssh-key"
+end
+
+desc "Set LANG to UTF-8"
+task :set_lang_utf_8 do
+  sh "setup/set-lang-utf-8"
+end
+
+desc "Install server apps"
+task install_server_apps: %i[
+    install_basher
+    install_mnemonicode
+    install_nvim
+    install_speedtest_cli
+  ] do
+  install_apps(%W[
+    caca-utils
+    curl
+    git
+    highlight
+    htop
+    mtr
+    ncdu
+    pandoc
+    ranger
+    silversearcher-ag
+    stgit
+    tmux
+    unzip
+    wget
+  ])
+end
+
+desc "Install development apps"
+task install_development_apps: %i[
+    install_bower
+    install_fpm
+    install_nodejs
+    install_rails
+  ] do
+  install_apps(%W[
+    build-essential
+    direnv
+    entr
+    exuberant-ctags
+    httpie
+    libmysqlclient-dev
+    libsqlite3-dev
+    lnav
+    mysql-server
+    npm
+    phantomjs
+    shellcheck
+  ])
+end
+
+desc "Install google authenticator"
+task install_google_authenticator: %i[
+    init_slash_dot_git
+    configure_sshd
+    install_apt_libpam_google_authenticator
+  ] do
+  sh "setup/install-google-authenticator"
+end
+
+desc "Install minimak"
+task install_minimak: %i[
+    init_slash_dot_git
+  ] do
+  sh "setup/install-minimak"
+end
+
+desc "Install nix"
+task :install_nix do
+  sh "setup/install-nix"
+end
+
+desc "Install desktop apps"
+task install_desktop_apps: %i[
+    install_chrome
+    install_dropbox
+    install_hexchat
+    install_hipchat
+    install_numix
+    install_virtualbox
+  ] do
+  install_apps(%W[
+    diodon
+    font-manager
+    gimp
+    guake
+    inkscape
+    unity-tweak-tool
+  ])
+end
+
+desc "Install personal apps"
+task :install_personal_apps do
+  install_apps(%W[
+    encfs
+    keychain
+    ledger
+    mosh
+    sshfs
+  ])
+end
+
+desc "Initialize system configuration history repo"
+task init_slash_dot_git: %i[
+    install_apt_acl
+    clone_dotfiles
+  ] do
+  sh "setup/init-slash-dot-git"
+end
+
+rule(/^install_apt_/ => %W[update_apt]) do |t|
+  name = t.name.sub(/^install_apt_/, '').gsub('_', '-')
+  check_or_install(name)
+end
+
+rule(/^install_nix_/ => %W[update_nix]) do |t|
+  name = t.name.sub(/^install_nix_/, '').gsub('_', '-')
+  check_or_nix_install(name)
+end
+
+desc "Clone dotfiles"
+task clone_dotfiles: %i[
+    install_git
+  ] do
+  sh "setup/clone-dotfiles"
+end
+
+desc "Clone rhel dotfiles"
+task clone_rhel_dotfiles: %i[
+    install_rhel_git
+  ] do
+  sh "setup/clone-dotfiles"
+end
+
+desc "Install git"
+task install_git: %i[
+    install_apt_git
+  ] do
+  sh "setup/install-git"
+end
+
+desc "Install rhel git"
+task install_rhel_git: %i[
+    install_nix_git
+  ] do
+  sh "setup/install-git"
+end
+
+desc "Install neovim"
+task install_nvim: %i[
+    clone_dotfiles
+    install_apt_software_properties_common
+    install_apt_python3_dev
+    install_apt_python3_pip
+    install_apt_exuberant_ctags
+    install_ruby
+  ] do
+  sh "setup/install-nvim-python"
+  check_or_install("neovim", "ppa:neovim-ppa/unstable")
+  sh "setup/install-nvim"
+end
+
+desc "Install rhel apps"
+task install_rhel_apps: %i[
+    install_nix
+  ] do
+  install_nix_apps(%W[
+    ag
+    git
+    gitAndTools.diff-so-fancy
+    gitAndTools.stgit
+    htop
+    ncdu
+    neovim
+    pandoc
+    ranger
+  ])
+end
+
+desc "Install rails"
+task install_rails: %i[
+    install_ruby
+  ] do
+  sh "setup/install-rails"
+end
+
+desc "Install speedtest"
+task install_speedtest_cli: %i[
+    install_apt_python_pip
+  ] do
+  sh "setup/install-speedtest-cli"
+end
+
+desc "Install YouCompleteMe"
+task install_youcompleteme: %i[
+    install_nvim
+    install_apt_cmake
+    install_apt_python_dev
+  ] do
+  sh "setup/install-youcompleteme"
+end
+
+desc "Configure sshd"
+task configure_sshd: %i[
+    install_apt_openssh_server
+    clone_dotfiles
+    init_slash_dot_git
+  ] do
+  sh "setup/configure-sshd"
+end
+
+desc "Install basher"
+task install_basher: %i[
+    clone_dotfiles
+  ] do
+  sh "setup/install-basher"
+end
+
+desc "Install bower"
+task install_bower: %i[
+    install_nodejs
+    install_apt_npm
+  ] do
+  sh "setup/install-bower"
+end
+
+desc "Install fpm"
+task install_fpm: %i[
+    install_ruby
+  ] do
+  sh "setup/install-fpm"
+end
+
+desc "Install mnemonicode"
+task install_mnemonicode: %i[
+    clone_dotfiles
+    install_apt_build_essential
+    install_apt_openssl
+  ] do
+  sh "setup/install-mnemonicode"
+end
+
+desc "Install chrome"
+task install_chrome: %i[
+    install_apt_libappindicator1
+  ] do
+  sh "setup/install-chrome"
+end
+
+desc "Install Dropbox"
+task install_dropbox: %i[
+    expand_watches
+    install_apt_python_gpgme
+  ] do
+  sh "setup/install-dropbox"
+end
+
+desc "Install fish shell"
+task install_fish: %i[
+    clone_dotfiles
+    install_apt_software_properties_common
+  ] do
+  check_or_install("fish", "ppa:fish-shell/nightly-master")
+  sh "setup/install-fish"
+end
+
+desc "Install hexchat"
+task install_hexchat: %i[
+    install_apt_hexchat
+  ] do
+  sh "setup/install-hexchat"
+end
+
+desc "Install hipchat"
+task install_hipchat: %i[
+    install_apt_software_properties_common
+  ] do
+  sh "setup/install-hipchat"
+end
+
+desc "Install nodejs"
+task install_nodejs: %i[
+    install_apt_nodejs
+  ] do
+  sh "setup/install-nodejs"
+end
+
+desc "Install numix icons and theme"
+task install_numix: %i[
+    install_apt_software_properties_common
+  ] do
+  sh "setup/install-numix"
+end
+
+desc "Install VirtualBox"
+task install_virtualbox: %i[
+    install_apt_software_properties_common
+  ] do
+  sh "setup/install-virtualbox"
+end
+
+desc "Install Ruby"
+task install_ruby: %i[
+    install_apt_wget
+    install_apt_build_essential
+    install_ruby_nodoc
+  ] do
+  sh "setup/install-ruby"
+end
+
+desc "Install Ruby nodoc config"
+task install_ruby_nodoc: %i[
+    clone_dotfiles
+  ] do
+  sh "setup/install-ruby-nodoc"
+end
+
+desc "Install add-apt-repository"
+task install_software_properties: %i[
+    update_apt
+  ] do
+  check_or_install("add-apt-repository", is_command: true)
+end
+
+desc "Expand the number of allowed filesystem watches"
+task expand_watches: %i[
+    init_slash_dot_git
+  ] do
+  sh "setup/expand-watches"
+end
+
+desc "Update apt"
+task update_apt: %i[
+  ] do
+  sh "setup/update-apt"
+end
+
+desc "Update nix"
+task update_nix: %i[
+    install_nix
+  ] do
+  sh "setup/update-nix"
+end
+
+desc "Install system76 driver"
+task install_system76_driver: %i[
+    install_apt_software_properties_common
+  ] do
+  check_or_install("system76-driver", "ppa:system76-dev/stable")
+end
+
+desc "Install trusty backports"
+task install_backports: %i[
+    switch_repos_to_wikimedia
+  ] do
+  sh "setup/install-backports"
+end
+
+desc "Install crashplan"
+task install_crashplan: %i[
+    expand_watches
+  ] do
+  sh "setup/install-crashplan"
+end
+
+# From https://github.com/rails/rails/blob/master/activesupport/lib/active_support/core_ext/string/strip.rb
+class String
+  def strip_heredoc
+    gsub(/^#{scan(/^[ \t]*(?=\S)/).min}/, ''.freeze)
+  end
+end
+
+def install_apps(apps)
+  apps.each do |app|
+    Rake::Task["install_apt_#{app}".to_sym].invoke
+  end
+end
+
+def install_nix_apps(apps)
+  apps.each do |app|
+    Rake::Task["install_nix_#{app}".to_sym].invoke
+  end
+end
+
+def check_or_install(name, repository = nil, is_command: false)
+  if is_command
+    sh "setup/is-command #{name}", {verbose: false}
+  elsif repository
+    sh "setup/repository #{name} #{repository}", {verbose: false}
+  else
+    sh "setup/check-or-install #{name}", {verbose: false}
+  end
+end
+
+def check_or_nix_install(name)
+  sh "setup/check-or-nix-install #{name}", {verbose: false}
+end

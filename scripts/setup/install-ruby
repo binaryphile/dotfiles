@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# parent is the parent of this script's dir
+parent=$(dirname "$BASH_SOURCE")/..
+
+# legible is the vendored framework dir
+legible=$parent/vendor/legible
+
+
+# shell directives
+source "$legible"/sys.bash
+sys.wordSplitOnSpaceAndTab  off
+sys.globbing                off
+sys.aliases                 on
+
+# framework imports
+source $legible/os.bash
+
+main () {
+  [[ $(type -p ruby) == $HOME/.rubies/* ]] && sys.die "Ruby already installed."
+  ansible-playbook -K $playbooks/ruby-install.yml
+  ansible-playbook -K $playbooks/chruby.yml
+  ansible-playbook $playbooks/ruby.yml
+  ansible-playbook $playbooks/rubygems.yml
+  ! os.dir? $HOME/dotfiles
+  case $? in
+    0 )
+      ansible-playbook $playbooks/ruby-version.yml
+      ansible-playbook $playbooks/gemrc.yml
+      ;;
+    * )
+      ansible-playbook $playbooks/ted/ruby-version.yml
+      ansible-playbook $playbooks/ted/gemrc.yml
+      ;;
+  esac
+}
+
+# playbooks is the playbook dir
+playbooks=$parent/playbooks
+
+# __name__ != '__main__'
+sys.sourced? && return
+
+# halt on error
+sys.strict on
+
+# parse options
+while [[ ${1:-} == -?* ]]; do
+  case $1 in
+    # --help  ) sys.die "$Usage"  ;;
+    --trace ) sys.trace on      ;;
+    -- )
+      shift
+      break
+      ;;
+  esac
+  shift
+done
+
+main $*

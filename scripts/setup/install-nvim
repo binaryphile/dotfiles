@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+! [[ -d "$HOME"/.config/nvim ]] || exit 0
+mkdir -p "$HOME"/.config
+pushd "$HOME"/.config >/dev/null
+git clone git://github.com/binaryphile/dot_vim nvim
+cd nvim
+git remote set-url origin git@github.com:binaryphile/dot_vim
+ln -sfT "$HOME"/.config/nvim "$HOME"/.vim
+popd >/dev/null

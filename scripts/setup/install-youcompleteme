@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+pushd "$HOME"/.config/nvim/bundle/YouCompleteMe >/dev/null
+! [[ -f third_party/ycmd/ycm_client_support.so ]] || { popd >/dev/null; exit; }
+./install.sh
+popd >/dev/null

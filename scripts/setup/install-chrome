@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+! which google-chrome >/dev/null || exit 0
+mkdir -p "$HOME"/Downloads
+pushd "$HOME"/Downloads >/dev/null
+wget https://dl-ssl.google.com/linux/linux_signing_key.pub
+sudo apt-key add linux_signing_key.pub
+rm linux_signing_key.pub
+echo "deb	http://dl.google.com/linux/chrome/deb/	stable	main" | sudo tee /etc/apt/sources.list.d/google-chrome.list >/dev/null
+sudo apt-get update -qq
+sudo apt-get install -y google-chrome-stable
+popd >/dev/null

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+! [[ -f $HOME/.gemrc ]] || exit 0
+! [[ -f $HOME/dotfiles/gemrc ]] || {
+  ln -s "$HOME"/dotfiles/gemrc "$HOME"/.gemrc
+  return 0
+}
+cat <<NODOC >"$HOME"/.gemrc
+gem --no-document
+NODOC

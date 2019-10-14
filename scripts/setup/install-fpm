@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+! which fpm >/dev/null || exit 0
+gem install fpm

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+pushd /etc/ssh >/dev/null
+git ls-files | grep -q '^sshd_config$' && popd >/dev/null && exit
+git add --force sshd_config
+git commit --message "add sshd_config"
+# verify this works
+# shellcheck disable=SC2002
+cat "$HOME"/dotfiles/patches/sshd_config | sudo patch -p2
+cat <<SSHD | sudo tee -a /etc/ssh/sshd/sshd_config
+AllowUsers $USER
+Match User $USER
+  GatewayPorts yes
+SSHD
+git add --force sshd_config
+git commit --message "update sshd_config"
+popd >/dev/null

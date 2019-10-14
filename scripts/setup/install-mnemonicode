@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+which mnencode >/dev/null && exit
+pushd "$HOME"/tmp >/dev/null
+git clone git://github.com/singpolyma/mnemonicode
+cd mnemonicode
+make sample_programs
+sudo cp mnencode /usr/local/bin
+sudo cp mndecode /usr/local/bin
+cd ..
+rm -rf mnemonicode
+popd >/dev/null

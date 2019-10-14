@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+which fish >/dev/null && exit
+sudo chsh -s /usr/bin/fish "$USER"
+pushd "$HOME"/.config >/dev/null
+mkdir -p fish
+cd fish
+git clone git://github.com/0rax/fishline
+cd ..
+git clone git://github.com/binaryphile/oh-my-fish
+cd oh-my-fish
+git remote set-url origin git@github.com/binaryphile/oh-my-fish
+popd >/dev/null

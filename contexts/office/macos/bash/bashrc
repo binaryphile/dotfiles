@@ -1,0 +1,17 @@
+# Interactive shell only
+# ======================
+[[ $- == *i* ]] && {
+  alias forward='type forward; ssh -NfR 9888:localhost:8888'
+  alias mctl='mash ctl'
+  alias msup='mash sup'
+
+  sql () { (
+    source "$HOME"/.config/sqlcmd/credentials
+    mssql-cli -U "$user" -P "$password" -d develop
+  ) }
+
+  mssql () { (
+    source "$HOME"/.config/sqlcmd/credentials
+    sqlcmd -U "$user" -P "$password" -d develop ${1+-Q} $([[ -n $1 ]] && printf %q "$1") ${2+-o $2}
+  ) }
+};:

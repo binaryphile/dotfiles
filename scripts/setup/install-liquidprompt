@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+pushd "$HOME" >/dev/null
+mkdir -p .config
+cd .config
+ln -sf "$HOME"/dotfiles/liquidprompt/liquidpromptrc
+mkdir -p liquidprompt
+cd liquidprompt
+ln -sf "$HOME"/dotfiles/liquidprompt/liquidprompt
+cd "$HOME"
+mkdir -p .local/share/liquidprompt
+cd .local/share/liquidprompt
+ln -sf "$HOME"/dotfiles/liquidprompt/liquid.theme
+popd >/dev/null

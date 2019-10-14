@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+[[ -f /var/cache/apt/pkgcache.bin ]] || { sudo apt-get update -qq; exit ;}
+AptDate="$(stat -c %Y '/var/cache/apt/pkgcache.bin')"
+NowDate="$(date +'%s')"
+LastUpdate="$(( NowDate - AptDate ))"
+UpdateInterval="$(( 24 * 60 * 60 ))"
+(( LastUpdate < UpdateInterval )) || sudo apt-get update -qq

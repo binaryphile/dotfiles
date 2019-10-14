@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+nix_date=$(stat -c %Y '/nix/var/nix/db')
+now=$(date +'%s')
+last_update=$(( now - nix_date ))
+update_interval=$(( 24 * 60 * 60 ))
+(( last_update < update_interval )) || nix-channel --update

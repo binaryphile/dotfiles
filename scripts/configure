@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# From http://redsymbol.net/articles/unofficial-bash-strict-mode/
+set -o errexit
+set -o pipefail
+set -o nounset
+
+RubyInstallVersion=0.6.1
+RubyVersion=2.3.3
+GemVersion=2.2.0
+ChrubyVersion=0.3.9
+
+install_ruby () { (
+  mkdir -p "$HOME"/tmp
+  cd "$HOME"/tmp >/dev/null
+  wget -O chruby-"$ChrubyVersion".tar.gz https://github.com/postmodern/chruby/archive/v"$ChrubyVersion".tar.gz
+  tar -xzf chruby-"$ChrubyVersion".tar.gz
+  cd chruby-"$ChrubyVersion"
+  sudo make install
+  cd ..
+  rm -rf chruby-"$ChrubyVersion"*
+  wget -O ruby-install-"$RubyInstallVersion".tar.gz https://github.com/postmodern/ruby-install/archive/v"$RubyInstallVersion".tar.gz
+  tar -xzf ruby-install-"$RubyInstallVersion".tar.gz
+  cd ruby-install-"$RubyInstallVersion"
+  sudo make install
+  cd ..
+  rm -rf ruby-install-"$RubyInstallVersion"*
+  ruby-install ruby "$RubyVersion" -- --disable-install-rdoc
+  rm -rf "$HOME"/src
+) }
+
+return 2>/dev/null ||:
+
+type wget >/dev/null    || sudo apt-get install -y wget
+type make >/dev/null    || sudo apt-get install -y build-essential
+[[ -d $HOME/.rubies ]]  || install_ruby
+
+set +o nounset
+source /usr/local/share/chruby/chruby.sh
+chruby ruby
+set -o nounset
+
+gem update --system --no-document
+gem install --no-document -f bundler rake
+mkdir -p "$HOME"/.rubies/ruby-"$RubyVersion"/lib/ruby/gems/"$GemVersion"/bin
+mkdir -p "$HOME"/.gem/ruby/"$RubyVersion"/bin
+wget https://raw.githubusercontent.com/binaryphile/dotfiles/master/scripts/Rakefile
+read -rd '' message <<'EOS'
+You can use the following to set up the appropriate environment:
+
+  source /usr/local/share/chruby/chruby.sh
+  chruby ruby
+  rake setup_[environment]
+
+Done.
+EOS
+printf '\n%s\n' "$message"

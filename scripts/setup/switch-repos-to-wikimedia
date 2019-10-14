@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+! grep -q wikimedia /etc/apt/sources.list || exit 0
+pushd /etc/apt >/dev/null
+git add --force sources.list
+git commit --message "add sources"
+sudo sed -i -e 's|\\(us.\\)\\?archive.ubuntu.com|ubuntu.wikimedia.org|g' sources.list
+git add --force sources.list
+git commit --message "switch repos to wikimedia"
+sudo apt-get update -qq
+popd >/dev/null

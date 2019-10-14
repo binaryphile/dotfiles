@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+! which bower >/dev/null || exit 0
+sudo npm -g install bower

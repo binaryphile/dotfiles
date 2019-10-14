@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+which CrashPlanDesktop >/dev/null && exit
+mkdir -p "$HOME"/Downloads
+pushd "$HOME"/Downloads >/dev/null
+wget https://download2.code42.com/installs/linux/install/CrashPlan/CrashPlan_4.5.0_Linux.tgz
+tar xzf CrashPlan_4.5.0_Linux.tgz
+rm CrashPlan_4.5.0_Linux.tgz
+cd crashplan-install
+./install.sh
+cd ..
+rm -rf crashplan-install
+popd >/dev/null

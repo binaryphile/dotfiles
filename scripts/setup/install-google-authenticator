@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+pushd "/etc/pam.d" >/dev/null
+git ls-files | grep -q '^sshd$' && popd >/dev/null && exit
+git add --force sshd
+git commit --message "add /etc/pam.d/sshd"
+sudo sed -i -e "1i auth required pam_google_authenticator.so" sshd
+git add --force sshd
+cd ../ssh
+sudo sed -i -e "s|ChallengeResponseAuthentication no|#ChallengeResponseAuthentication yes" sshd_config
+git add --force sshd_config
+git commit --message "google authenticator"
+popd >/dev/null

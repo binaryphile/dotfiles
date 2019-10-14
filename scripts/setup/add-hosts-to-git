@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+pushd /etc >/dev/null
+git ls-files | grep -q '^hosts$' && popd >/dev/null && exit
+git add --force hosts
+git commit --message "add hosts"
+popd >/dev/null

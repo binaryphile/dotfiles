@@ -1,0 +1,482 @@
+# BEGIN ANSIBLE MANAGED BLOCK
+[[ -d $HOME/.config/ansiblerc ]] && {
+  for rcfile in "$HOME"/.config/ansiblerc/*; do
+    source "$rcfile"
+  done
+}
+unset -v rcfile
+# END ANSIBLE MANAGED BLOCK
+
+filter () {
+  local IFS=$'\n' ref_=$1 expr_=$2 arg_
+  local -i i_=0
+
+  while read -r arg_; do
+    set -- $arg_
+    eval "$expr_ && printf -v $ref_[$i_] %s $arg_"
+    i_+=1
+  done
+}
+
+include () {
+  [[ $IFS$1$IFS == *"$IFS$2$IFS"* ]]
+}
+
+paths=(
+  "$HOME"/.cargo/bin
+  "$HOME"/.local/bin
+  "$HOME"/bin
+  /usr/local/go/bin
+  /usr/local/mysql/bin
+  /usr/local/bin
+)
+
+IFS=$'\n'
+filter paths '[[ -d $1 ]]' <<<"${paths[*]}"
+
+IFS=:
+path=${paths[*]}
+! include "$PATH" "$path" && PATH=$path:$PATH
+
+IFS=$' \t\n'
+unset -v path paths
+
+installed () {
+  local item
+
+  for item; do
+    [[ -n $(type -p $item) ]] || return
+  done
+}
+
+chruby=/usr/local/share/chruby
+[[ -d $chruby ]] && {
+  export JRUBY_OPTS=${JRUBY_OPTS:---dev}
+  [[ $- == *i* ]] && {
+    alias bemar='reveal bemar; bundle exec middleman article'
+    alias bemid='reveal bemid; bundle exec middleman'
+    alias bemse='reveal bemse; bundle exec middleman server'
+    alias beraic='reveal beraic; bundle exec rails console'
+    alias berais='reveal berais; bundle exec rails server'
+    alias berak='reveal berak; bundle exec rake'
+    alias berakdm='reveal berakdm; bundle exec rake db:migrate'
+    alias bersp='reveal bersp; bundle exec rspec'
+    alias betde='reveal betde; bundle exec torquebox deploy'
+    alias betru='reveal betru; bundle exec torquebox run'
+    alias bexec='reveal bexec; bundle exec'
+    alias binst='reveal binst; bundle install'
+    alias bupda='reveal bupda; bundle update'
+    alias busou='reveal busou; bundle update --source'
+  }
+  rb () {
+    [[ $1 == -l ]] && shift
+    case $? in
+      0 ) ruby -e "STDIN.each_line { |l| puts l.chomp.instance_eval(&eval('Proc.new { $@ }')) }";;
+      * ) ruby -e "puts STDIN.each_line.instance_eval(&eval('Proc.new { $@ }'))"                ;;
+    esac
+  }
+}
+
+# Interactive shell only
+# ======================
+[[ $- == *i* ]] && {
+  set -o vi
+
+  completions=$HOME/.config/exercism/exercism_completion.bash
+  [[ -e $completions ]] && source $completions
+  unset -v completions
+
+  export XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
+  export INPUTRC=${INPUTRC:-$HOME/dotfiles/bash/inputrc}
+  [[ $(ps -o comm= $PPID) == mosh-server  ]] && TERM=screen-256color
+  [[ $TERM                != screen*      ]] && TERM=xterm-256color
+
+  [[ ! -e /etc/profile.d/liquidprompt.sh ]] && {
+    liquidprompt=$HOME/dotfiles/liquidprompt/liquidprompt
+    [[ -e $liquidprompt ]] && source $liquidprompt
+    unset -v liquidprompt
+  }
+
+  installed direnv && {
+    _direnv_hook() {
+      eval $(direnv export bash)
+    }
+    [[ ";$PROMPT_COMMAND;" != *';_direnv_hook;'* ]] && PROMPT_COMMAND+=;_direnv_hook
+  }
+
+  { ! printenv SSH_AGENT_PID && installed keychain ;} &>/dev/null && {
+    keychain -q $HOME/.ssh/id_rsa
+    source $HOME/.keychain/$HOSTNAME-sh
+  }
+}
+
+umask 022
+
+# Context-specific configuration
+bashrc=$HOME/dotfiles/context/bash/bashrc
+[[ -e $bashrc ]] && source $bashrc
+unset -v bashrc
+
+(( ! _bash_profile || reload )) && {
+  (( reload           )) && { unset -v reload && echo reloaded || return      ;}
+  (( ! _bash_profile  )) && { readonly _bash_profile=1; export _bash_profile  ;}
+
+  export LC_SSH_USER=$USER
+
+  nix=$HOME/.nix-profile/etc/profile.d/nix.sh
+  [[ -e $nix ]] && {
+    [[ -e $HOME/.nix-profile/lib/locale/locale-archive ]] && export LOCALE_ARCHIVE=$HOME/.nix-profile/lib/locale/locale-archive
+    export NIXPKGS_ALLOW_UNFREE=1
+    export NIX_CONF_DIR=/nix/etc
+    source $nix
+  }
+  unset -v nix
+
+  pager=$(type -p less 2>/dev/null) && export PAGER=$pager
+  unset -v pager
+
+  editor=$(type -p nvim 2>/dev/null || type -p vim 2>/dev/null) && export EDITOR=$editor
+  unset -v editor
+
+  bash_profile=$HOME/dotfiles/context/bash/bash_profile
+  [[ -e $bash_profile ]] && source $bash_profile
+  unset -v bash_profile
+
+  export BASHER_ROOT=${BASHER_ROOT:-$HOME/.basher}
+  [[ !  -d $BASHER_ROOT ]] && unset -v BASHER_ROOT
+  [[    -d $BASHER_ROOT ]] && {
+    cellar=$BASHER_ROOT/cellar/packages/binaryphile
+    path_ary=(
+      $cellar/kaizen/lib
+      $cellar/nano/lib
+      $cellar/sorta/lib
+      $cellar/y2s/lib
+      $cellar/concorde/lib
+    )
+    unset -v cellar
+    eval "$($BASHER_ROOT/bin/basher init -)"
+    PATH=$BASHER_ROOT/bin:$(IFS=:; echo "${path_ary[*]}"):$PATH
+    unset -v path_ary
+  }
+
+  installed go && {
+    export GOPATH=$HOME/go
+    PATH+=:$GOPATH/bin
+  }
+
+  gcsdk=$HOME/ted/.local/opt/google-cloud-sdk
+  [[ -d $gcsdk ]] && {
+    source $gcsdk/path.bash.inc
+    source $gcsdk/completion.bash.inc
+  }
+  unset -v gcsdk
+
+  final_profile=$HOME/dotfiles/context/bash/final_profile
+  [[ -e $final_profile ]] && source $final_profile
+  unset -v final_profile
+}
+
+# Interactive shell only
+# ======================
+[[ $- != *i* ]] && return
+
+# History
+shopt -s histappend
+HISTSIZE=1000000
+HISTFILESIZE=1000000
+HISTCONTROL=ignorespace:erasedups
+HISTIGNORE=ls:ps:bg:fg:history
+HISTTIMEFORMAT='%F %T '
+PROMPT_COMMAND="$PROMPT_COMMAND${PROMPT_COMMAND+;} history -a"
+
+script=/usr/local/etc/profile.d/bash_completion.sh
+[[ -r $script ]] && source "$script"
+unset -v script
+
+# Aliases and functions
+
+reveal () {
+  type $1 | sed -e "s|reveal $1; ||" -e '/reveal $FUNCNAME;/d' | grep --color . >&2
+}
+
+## bash
+alias ls="ls -h $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
+alias ll='ls -l'
+alias la='ll -a'
+
+## general
+alias road='reveal road; dig +noall +answer'
+alias path="echo \"\${PATH//:/\$'\n'}\""
+alias df='df -x squashfs -x tmpfs'
+
+miracle () {
+  reveal "$FUNCNAME"
+  setfacl -m "$1":rw "$SSH_AUTH_SOCK"
+  setfacl -m "$1":x "$(dirname "$SSH_AUTH_SOCK")"
+  sudo -u "$1" SSH_AUTH_SOCK="$SSH_AUTH_SOCK" bash -c 'cd; exec bash -l'
+}
+
+## general sudo
+become () {
+  reveal "$FUNCNAME"
+  sudo -Hu "$1" bash -c 'cd; exec bash -l'
+}
+
+runas () {
+  reveal "$FUNCNAME"
+  sudo -u "$1" bash -l -c "$2"
+}
+
+## commands
+installed encfs && {
+  alias boxcr="reveal boxcr; encfs -i 30 $HOME/Dropbox/fun.bc $HOME/mount/encfs"
+  alias unbox="reveal unbox; fusermount -zu $HOME/mount/encfs"
+}
+installed mysql && {
+  alias usermysql="reveal usermysql; mysql --defaults-extra-file=$XDG_CONFIG_HOME/mysql/my.cnf"
+  alias gmysql="reveal gmysql; mysql --defaults-extra-file=\"$XDG_CONFIG_HOME\"/mysql/device-events.cnf --ssl-ca=\"$XDG_CONFIG_HOME\"/mysql/server-ca.pem --ssl-cert=\"$XDG_CONFIG_HOME\"/mysql/client-cert.pem --ssl-key=\"$XDG_CONFIG_HOME\"/mysql/client-key.pem"
+}
+installed openssl && alias oxtni='reveal oxtni; openssl x509 -text -noout -in'
+installed ranger  && alias range='reveal range; ranger'
+
+psaux () {
+  reveal $FUNCNAME
+  pgrep -f $@ | xargs ps -fp 2>/dev/null
+}
+
+quiz () { (
+  reveal $FUNCNAME
+  cd $HOME/projects
+  shopt -s nullglob
+  dirs=( aview-nixpkgs-* )
+  (( ${#dirs[@]} )) || return
+  dir=${dirs[@]: -1}
+  number=${dir#aview-nixpkgs-}
+  (( number++ ))
+  rsync -a aview-nixpkgs/ aview-nixpkgs-$number
+  rm --recursive --force aview-nixpkgs-$number/.git
+  tar cjf nixexprs.tar.bz2 aview-nixpkgs-$number
+) }
+
+## git
+installed git && {
+  alias ga.='reveal ga.; git add .'
+  alias gadd='reveal gadd; git add'
+  alias gafor='reveal gafor; git add --force'
+  alias gapat='reveal gapat; git add --patch'
+  alias gbD='reveal gbD; git branch -D'
+  alias gball='reveal gball; git branch --all'
+  alias gbdel='reveal gbdel; git branch --delete'
+  alias gbran='reveal gbran; git branch'
+  alias gbvv='reveal gbvv; git branch -vv'
+  alias gch-.='reveal gch-.; git checkout -- .'
+  alias gch-='reveal gch-; git checkout --'
+  alias gchb='reveal gchb; git checkout -b'
+  alias gchec='reveal gchec; git checkout'
+  alias gclon='reveal gclon; git clone'
+  alias gcoam='reveal gcoam; git commit --amend'
+  alias gcoane='reveal gcoane; git commit --amend --no-edit'
+  alias gcome='reveal gcome; git commit --message'
+  alias gdcac='reveal gdcac; git diff --cached'
+  alias gdiff='reveal gdiff; git diff'
+  alias gfetc='reveal gfetc; git fetch'
+  alias ginit='reveal ginit; git init'
+  alias glg='reveal glg; git lg'
+  alias glsfi='reveal glsfi; git ls-files'
+  alias gmerg='reveal gmerg; git merge'
+  alias gmeab='reveal gmeab; git merge --abort'
+  alias gmv='reveal gmv; git mv'
+  alias gpusf='reveal gpusf; git push --force'
+  alias gpull='reveal gpull; git pull'
+  alias gpush='reveal gpush; git push'
+  alias gpussu='reveal gpussu; git push --set-upstream'
+  alias gpust='reveal gpust; git push --tags'
+  alias greba='reveal greba; git rebase'
+  alias grebc='reveal grebc; git rebase --continue'
+  alias grebi='reveal grebi; git rebase --interactive'
+  alias grebs='reveal grebs; git rebase --skip'
+  alias grefl='reveal grefl; git reflog'
+  alias gremv='reveal gremv; git remote --verbose'
+  alias gresH^='reveal gresH^; git reset HEAD^'
+  alias grese='reveal grese; git reset'
+  alias gresh='reveal gresh; git reset --hard'
+  alias greshH='reveal greshH; git reset --hard HEAD'
+  alias grm='reveal grm; git rm'
+  alias grmfo='reveal grmfo; git rm --force'
+  alias gshop='reveal gshop; git show --patch'
+  alias gshow='reveal gshow; git show'
+  alias gstasa='reveal gstasa; git stash apply'
+  alias gstasd='reveal gstasd; git stash drop'
+  alias gstasl='reveal gstasl; git stash list'
+  alias gstassa='reveal gstassa; git stash save'
+  alias gstasshp='reveal gstasshp; git stash show --patch'
+  alias gstats='reveal gstats; git status --short'
+
+  correct () {
+    reveal "$FUNCNAME"
+    git fetch
+    git branch --merged origin/$1 | grep -v $1$ | xargs -r git branch -D
+  }
+
+  europe () {
+    reveal $FUNCNAME
+    git add --patch
+    git commit -m "${1:-}"
+    git push
+  }
+
+  pastel () {
+    reveal $FUNCNAME
+    git checkout -b $1
+    git push --set-upstream origin $1
+  }
+}
+
+## stg
+installed stg && {
+  alias stbcf='reveal stbcf; stg branch --cleanup --force'
+  alias stcom='reveal stcom; stg commit'
+  alias stcal='reveal stcal; stg commit --all'
+  alias stcn='reveal stcn; stg commit -n'
+  alias stdel='reveal stdel; stg delete'
+  alias stedi='reveal stedi; stg edit'
+  alias stflo='reveal stflo; stg float'
+  alias stgot='reveal stgot; stg goto'
+  alias stini='reveal stini; stg init'
+  alias stnew='reveal stnew; stg new'
+  alias stnme='reveal stnme; stg new --message'
+  alias stnwmw='reveal stnwmw; stg new wip -m wip'
+  alias stpic='reveal stpic; stg pick'
+  alias stpop='reveal stpop; stg pop'
+  alias stpul='reveal stpul; stg pull'
+  alias stpus='reveal stpus; stg push'
+  alias stref='reveal stref; stg refresh'
+  alias strefi='reveal strefi; stg refresh --index'
+  alias stren='reveal stren; stg rename'
+  alias strep='reveal strep; stg repair'
+  alias stser='reveal stser; stg series'
+  alias stsho='reveal stsho; stg show'
+  alias stunc='reveal stunc; stg uncommit'
+  alias stuncn='reveal stuncn; stg uncommit -n'
+  alias stund='reveal stund; stg undo'
+  alias stundh='reveal stundh; stg undo --hard'
+
+  minimak () { (
+    reveal $FUNCNAME
+    cd $HOME/dotfiles
+    stg pop qwerty
+    cd $HOME/.vim
+    stg pop  qwerty
+  ) }
+
+  qwerty () { (
+    reveal $FUNCNAME
+    cd $HOME/dotfiles
+    stg push qwerty
+    cd $HOME/.vim
+    stg push qwerty
+  ) }
+
+  pretend () {
+    local target
+
+    reveal $FUNCNAME
+    target=${2:-$(stg top)}
+    stg rename  $target $1 || return
+    stg edit    $1 -m $1
+  }
+
+  salt () {
+    local name=$1
+    local target=$2
+    local dirty
+    local top
+
+    reveal $FUNCNAME
+    top=$(stg top)
+    git diff --quiet
+    dirty=$?
+    (( dirty )) && git stash save
+    [[ -n $target ]] && { stg goto "$target" || return ;}
+    stg new $name -m $name
+    (( dirty )) && {
+      git stash apply || return
+      git stash drop
+      stg refresh
+    }
+    [[ -n $target ]] && stg goto $top;:
+  }
+}
+
+installed shpec && {
+  alias amber="reveal amber; find . -name '*_shpec.*sh' -print0 | xargs -t0I % bash -c 'echo \$BASH_VERSION; shpec %'"
+  installed entr && dallas () {
+    reveal $FUNCNAME
+    find . -path ./.git -prune -o -type f -print | entr bash -c "shpec $1"
+  }
+}
+
+installed openssl mnencode && randword () {
+  local statement
+  local word
+
+  reveal $FUNCNAME
+  while true; do
+    set -- $(openssl rand -hex 8 | mnencode -x 2>/dev/null)
+    printf -v statement 'echo "${%s/./}"' "$(($RANDOM % 4 + 1))"
+    word=$(eval $statement)
+    declare -f $word &>/dev/null || break
+  done
+  echo $word
+}
+
+installed pandoc && shannon () {
+  reveal $FUNCNAME
+  pandoc -f markdown -t markdown_github-hard_line_breaks+smart --reference-links -o $1 $1
+}
+
+## sudo aliases
+installed apt && {
+  alias suaiy='reveal suaiy; sudo apt install --yes'
+  alias suaupd='reveal suaupd; sudo apt update'
+  alias suaupdq='reveal suaupdq; sudo apt update -qq'
+}
+
+## vagrant aliases
+installed vagrant && {
+  alias ssvag='reveal ssvag; ssh vagrant'
+  alias vdest='reveal vdest; vagrant destroy'
+  alias vgsta='reveal vgsta; vagrant global-status'
+  alias vhalt='reveal vhalt; vagrant halt'
+  alias vinit='reveal vinit; vagrant init'
+  alias vrelo='reveal vrelo; vagrant reload'
+  alias vrelp='reveal vrelp; vagrant reload --provision'
+  alias vsnde='reveal vsnde; vagrant snapshot delete'
+  alias vsnre='reveal vsnre; vagrant snapshot restore'
+  alias vsnsa='reveal vsnsa; vagrant snapshot save'
+  alias vssh='reveal vssh; vagrant ssh'
+  alias vstat='reveal vstat; vagrant status'
+  alias vup='reveal vup; vagrant up'
+}
+
+final_interactive=$HOME/dotfiles/context/bash/final_interactive.bash
+[[ -e $final_interactive ]] && source $final_interactive
+unset -v final_interactive
+
+validations=$HOME/dotfiles/context/bash/validations.bash
+{ ! (( _validated )) && [[ -e $validations ]] ;} && {
+  readonly _validated=1
+  export _validated
+  result=$(source $validations)
+  [[ -n $result ]] && {
+    cat <<END
+Notice: some shell settings were not as expected.
+You may find a list of the validations in "$validations".
+Unexpected values:
+
+$result
+END
+  }
+}
+unset -v result validations
+unset -f filter include installed

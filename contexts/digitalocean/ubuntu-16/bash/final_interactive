@@ -1,0 +1,5 @@
+[[ -z $SSH_AGENT_PID ]] && {
+  eval $(keychain --quiet --eval --agents ssh id_rsa)
+}
+
+# vim: ft=sh

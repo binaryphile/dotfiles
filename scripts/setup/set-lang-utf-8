@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+[[ $LANG != en_US.UTF-8 ]] || exit 0
+sudo update-locale LANG="en_US.UTF-8"

@@ -1,0 +1,7 @@
+# Interactive shell only
+# ======================
+[[ $- != *i* ]] && return
+
+exec newgrp avwobt4
+
+# vim: ft=sh

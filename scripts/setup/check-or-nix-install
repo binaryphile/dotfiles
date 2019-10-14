@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+nix-env -q | grep -q "^$1" && exit
+nix-env -ibA nixpkgs."$1"

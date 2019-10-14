@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+! [[ -d $HOME/.basher ]] || exit 0
+pushd "$HOME" >/dev/null
+git clone git://github.com/basherpm/basher .basher
+popd >/dev/null

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+[[ -z "$(pip3 show neovim)" ]] || exit 0
+sudo pip3 install neovim

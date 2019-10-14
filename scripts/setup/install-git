@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+files=( gitconfig gitignore_global )
+for file in "${files[@]}"; do
+  [[ -e $HOME/.$file ]] && continue
+  ln -sf "$HOME"/dotfiles/"$file" "$HOME"/."$file"
+done

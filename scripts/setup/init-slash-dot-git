@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+! [[ -d /.git ]] || exit 0
+pushd / >/dev/null
+cat <<IGNORE | sudo tee .gitignore >/dev/null
+*
+id_rsa*
+*.pem
+*.pfx
+*.key
+*.key.*
+IGNORE
+sudo chown "$USER":sudo .gitignore
+sudo mkdir -p .git
+sudo chown "$USER":sudo .git
+setfacl -m d:g::rwx,g::rwx .git
+chmod g+s .git
+git config --global user.name "Ted Lilley"
+git config --global user.email "ted.lilley@gmail.com"
+git init
+git add --force .gitignore
+git commit --message "initial commit"
+popd >/dev/null

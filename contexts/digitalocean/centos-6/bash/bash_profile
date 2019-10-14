@@ -1,0 +1,4 @@
+export GIT_DISCOVERY_ACROSS_FILESYSTEM=1
+PATH=/nix/var/nix/profiles/default/bin:$PATH
+
+# vim: ft=sh

@@ -1,0 +1,16 @@
+---
+
+- name:         Set Default ruby
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+
+  tasks:
+  - stat:     path=$HOME/.ruby-version
+    register: ruby_version_file
+
+  - name: Set Default ruby
+    when: not ruby_version_file.stat.exists
+    template:
+      src:  ruby-version
+      dest: $HOME/.ruby-version

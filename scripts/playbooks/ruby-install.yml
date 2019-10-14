@@ -1,0 +1,35 @@
+---
+
+- name:         Install ruby-install
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+  vars:
+    tmp_dir:              /tmp/ansible
+    ruby_install_version: 0.7.0
+    ruby_install_dir:     '{{ tmp_dir }}/ruby-install-{{ ruby_install_version }}'
+
+  tasks:
+  - name: tmp Directory
+    file:
+      path:   '{{ tmp_dir }}'
+      state:  directory
+
+  - name: Unarchive ruby-install
+    unarchive:
+      src:        https://github.com/postmodern/ruby-install/archive/v{{ ruby_install_version }}.tar.gz
+      dest:       '{{ tmp_dir }}'
+      remote_src: yes
+      creates:    '{{ ruby_install_dir }}'
+
+  - name:     Install ruby-install
+    become:   yes
+    command:  make install
+    args:
+      chdir:    '{{ ruby_install_dir }}'
+      creates:  /usr/local/share/ruby-install
+
+  - name: Remove tmp
+    file:
+      path:   '{{ tmp_dir }}'
+      state:  absent

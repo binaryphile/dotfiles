@@ -1,0 +1,6 @@
+[[ -d $HOME/.config/ansiblerc ]] && {
+  for rcfile in "$HOME"/.config/ansiblerc/*; do
+    source "$rcfile"
+  done
+}
+unset -v rcfile

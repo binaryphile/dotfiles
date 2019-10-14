@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+unset -v CDPATH
+
+[[ -d $HOME/dotfiles ]] && exit
+(
+  cd "$HOME"
+  touch .hushlogin
+  mkdir -pm 700 dotfiles
+  setfacl -m g::-,o:-,d:g::-,d:o:- dotfiles
+  git clone git://github.com/binaryphile/dotfiles
+  cd dotfiles
+  git remote set-url origin git@github.com:binaryphile/dotfiles
+  cd "$HOME"
+  files=(
+    ctags
+    gemrc
+    gitconfig
+    gitignore_global
+    inputrc
+    tmux.conf
+    Xmodmap
+    pryrc
+    ruby-version
+  )
+  for file in "${files[@]}"; do
+    [[ -e $HOME/$file ]] && continue
+    ln -sf "$HOME"/dotfiles/"$file" ".$file"
+  done
+  mkdir -pm 700 .ssh
+  files=( known_hosts config )
+  for file in "${files[@]}"; do
+    [[ -e $HOME/.ssh/$file ]] && continue
+    ln -sf "$HOME"/dotfiles/ssh/"$file" .ssh/"$file"
+  done
+  mkdir -p .bundle
+  ln -sf "$HOME"/dotfiles/bundle-config .bundle/config
+  mkdir -p .config
+  cd .config
+  mkdir -p ranger
+  ln -sf "$HOME"/dotfiles/ranger/rc.conf ranger/rc.conf
+)

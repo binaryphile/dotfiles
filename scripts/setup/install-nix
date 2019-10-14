@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+unset -v CDPATH
+
+[[ -d /nix ]] && exit
+(
+  cd "$HOME"
+  curl http://nix.accns.com/dependencies/install-nix | sh -s "$HOME"/aview
+)

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+dir="$HOME"/.config
+! [[ -h "$dir"/hexchat/hexchat.conf ]] || exit 0
+pushd "$dir" >/dev/null
+mkdir -p hexchat
+ln -sf "$HOME"/dotfiles/hexchat/hexchat.conf hexchat/hexchat.conf
+popd >/dev/null

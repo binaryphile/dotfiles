@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+dpkg --get-selections hipchat | grep -q '^hipchat[[:space:]]\\+install$' && exit
+pushd /etc/apt/sources.list.d >/dev/null
+echo "deb http://downloads.hipchat.com/linux/apt stable main" | sudo tee atlassian-hipchat.list > /dev/null
+wget -O - https://www.hipchat.com/keys/hipchat-linux.key | sudo apt-key add -
+sudo apt-get update -qq
+sudo apt-get install -y hipchat
+popd >/dev/null

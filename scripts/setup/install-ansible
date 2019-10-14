@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# parent is the parent of this script's dir
+parent=$(dirname "$BASH_SOURCE")/..
+
+# legible is the vendored framework dir
+legible=$parent/vendor/legible
+source "$legible"/sys.bash
+
+# shell directives
+sys.wordSplitOnSpaceAndTab  off
+sys.globbing                off
+sys.aliases                 on
+
+# other framework imports
+source $legible/os.bash
+
+main () {
+  os.installed? ansible && sys.die "Ansible already installed."
+  case $(os.distro) in
+    mac )
+      brew install ansible
+      ! os.installed? gtar && brew install gnu-tar
+      ;;
+    ubuntu )
+      sudo apt-add-repository --yes --update ppa:ansible/ansible
+      sudo apt install -y ansible
+      ;;
+  esac
+}
+
+# __name__ != '__main__'
+sys.sourced? && return
+
+# halt on error
+sys.strict on
+
+main $*

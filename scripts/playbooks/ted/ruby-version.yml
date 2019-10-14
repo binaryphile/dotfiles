@@ -1,0 +1,13 @@
+---
+
+- name:         Set Default ruby
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+
+  tasks:
+  - name: Set Default ruby
+    file:
+      path:   $HOME/.ruby-version
+      src:    $HOME/dotfiles/ruby-version
+      state:  link

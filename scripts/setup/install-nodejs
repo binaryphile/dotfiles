@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+! which node >/dev/null || exit 0
+sudo ln -sf /usr/bin/nodejs /usr/bin/node

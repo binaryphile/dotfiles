@@ -1,0 +1,13 @@
+UseRoaming no
+
+Host *
+UserKnownHostsFile ~/.ssh/new_known_hosts ~/.ssh/known_hosts
+ControlMaster auto
+ControlPersist yes
+ServerAliveInterval 300
+ServerAliveCountMax 2
+NoHostAuthenticationForLocalhost yes
+LogLevel ERROR
+
+Host bertrand
+Hostname 172.16.3.44

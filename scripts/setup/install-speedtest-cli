@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+! which speedtest-cli >/dev/null || exit 0
+sudo pip2 install speedtest-cli

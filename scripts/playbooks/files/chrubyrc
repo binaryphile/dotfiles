@@ -1,0 +1,6 @@
+#!/usr/bin/env bash - for file detection, not execution
+
+[[ -d /usr/local/share/chruby ]] && {
+  source /usr/local/share/chruby/chruby.sh
+  [[ $- == *i* ]] && source /usr/local/share/chruby/auto.sh
+};:

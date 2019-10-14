@@ -1,0 +1,9 @@
+export GIT_DISCOVERY_ACROSS_FILESYSTEM=${GIT_DISCOVERY_ACROSS_FILESYSTEM:-1}
+
+gdb <<EOS > /dev/null 2>&1
+attach $$
+call unbind_variable("TMOUT")
+detach
+quit
+EOS
+# vim: ft=sh

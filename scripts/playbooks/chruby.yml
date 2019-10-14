@@ -1,0 +1,60 @@
+---
+
+- name:         Install chruby
+  hosts:        127.0.0.1
+  connection:   local
+  gather_facts: no
+  vars:
+    tmp_dir:        /tmp/ansible
+    chruby_version: 0.3.9
+    chruby_dir:     '{{ tmp_dir }}/chruby-{{ chruby_version }}'
+
+  tasks:
+  - name: tmp Directory
+    file:
+      path:   '{{ tmp_dir }}'
+      state:  directory
+
+  - name: Unarchive chruby
+    unarchive:
+      src:        https://github.com/postmodern/chruby/archive/v{{ chruby_version }}.tar.gz
+      dest:       '{{ tmp_dir }}'
+      remote_src: yes
+      creates:    '{{ chruby_dir }}'
+
+  - name:     Install chruby
+    become:   yes
+    command:  make install
+    args:
+      chdir:    '{{ chruby_dir }}'
+      creates:  /usr/local/share/chruby
+
+  - name: Remove tmp
+    file:
+      path:   '{{ tmp_dir }}'
+      state:  absent
+
+  - name: Directories
+    file:
+      path:   $HOME/.config/ansiblerc
+      state:  directory
+
+  - name: Check Bashrc
+    find:
+      paths:    $HOME
+      patterns: .bashrc
+      contains: chruby
+      follow:   yes
+    register: grep_chruby
+
+  - name: Update Bashrc
+    when: grep_chruby.matched == 0
+    blockinfile:
+      path:         $HOME/.bashrc
+      insertbefore: BOF
+      block: "{{ lookup('file', 'ansiblerc')}}"
+
+  - name: Install chrubyrc
+    copy:
+      src:  chrubyrc
+      dest: $HOME/.config/ansiblerc
