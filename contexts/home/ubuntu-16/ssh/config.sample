@@ -9,5 +9,14 @@ ServerAliveCountMax 2
 NoHostAuthenticationForLocalhost yes
 LogLevel ERROR
 
+Host pinch
+Hostname 45.55.131.155
+Port 3333
+
+Host vagrant
+Hostname localhost
+Port 2222
+
 Host bertrand
-Hostname 10.250.1.89
+Hostname localhost
+Port 12345

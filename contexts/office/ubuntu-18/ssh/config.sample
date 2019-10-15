@@ -1,0 +1,92 @@
+UseRoaming no
+
+Host *
+IdentityAgent /run/user/1000/keyring/ssh
+ControlMaster auto
+ControlPersist yes
+ServerAliveInterval 300
+ServerAliveCountMax 2
+NoHostAuthenticationForLocalhost yes
+LogLevel ERROR
+GSSAPIAuthentication no
+
+Host bertr bertrand
+Hostname 10.250.1.89
+User ted
+
+Host pweb1 prod-web-001
+Hostname prod-web-001.accns.com
+User ted
+
+Host pweb2 prod-web-002
+Hostname prod-web-002.accns.com
+User ted
+
+Host pkaf1 prod-kafka-001
+Hostname prod-kafka-001.accns.com
+User ted
+
+Host pkaf2 prod-kafka-002
+Hostname prod-kafka-002.accns.com
+User ted
+
+Host pkaf3 prod-kafka-003
+Hostname prod-kafka-003.accns.com
+User ted
+
+Host pkaf4 prod-kafka-004
+Hostname prod-kafka-004.accns.com
+User ted
+
+Host pmys1 prod-mysql-001
+Hostname prod-mysql-001.accns.com
+User ted
+
+Host sapp1 staging-app-001
+Hostname staging-app-001.accns.com
+User ted
+
+Host papp1 prod-app-001
+Hostname prod-app-001.accns.com
+User ted
+
+Host smys1 staging-mysql-001
+Hostname staging-mysql-001.accns.com
+User ted
+
+Host smys2 staging-mysql-002
+Hostname staging-mysql-002.accns.com
+User ted
+
+Host seren serenity
+Hostname serenity.accns.com
+User ted
+
+Host bebop
+Hostname 10.250.1.109
+User ted
+
+Host vagra vagrant
+Hostname localhost
+User vagrant
+Port 2222
+IdentityFile /home/ted/.vagrant.d/insecure_private_key
+LogLevel FATAL
+ForwardAgent yes
+
+Host pinch
+Hostname 45.55.131.155
+Port 3333
+User ted
+
+Host aview-jenkins aview-jenkins.digi.com
+User jenkins
+
+Host mtk-vln-avbld01 mtk-vln-avbld01.digi.com
+User jenkins
+
+Host tctli tpa-cap-tlilley
+ProxyCommand ssh -W %h:%p pinch
+Hostname localhost
+Port 12346
+User tlilley
