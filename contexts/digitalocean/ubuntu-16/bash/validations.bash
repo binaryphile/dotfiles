@@ -12,8 +12,12 @@
     $HOME/.basher/cellar/packages/binaryphile/concorde/lib
     $HOME/.basher/cellar/bin
     $HOME/.nix-profile/bin
-    $HOME/.nix-profile/sbin
+    $HOME/.cargo/bin
     $HOME/.local/bin
+    $HOME/bin
+    /usr/local/go/bin
+    /usr/local/mysql/bin
+    /usr/local/bin
     /usr/local/sbin
     /usr/local/bin
     /usr/sbin
