@@ -1,0 +1,51 @@
+IFS=$'\n'
+
+backup-eclipse () {
+  local backups basename dir dirs=() excludes=()
+  local IFS=,
+
+  basename=$HOME
+  backups=backups
+
+  # directories under $basename
+  dirs=(
+    .eclipse
+    eclipse-workspace
+    git/pepin
+    git/idigitesting
+    git/idigiutils
+    git/idigiutils
+  )
+
+  # file patterns (no backslashes)
+  excludes=(
+    cache
+    org.eclipse.m2e.logback.configuration
+    target
+    .git
+    dojotoolkit
+    third-libs
+    ThirdApps
+  )
+
+  for dir in ${dirs[*]}; do
+    mkdir -p $basename/$backups/$dir
+
+    # mirror
+    rsync -a --delete $HOME/$dir/ $basename/$backups/$dir
+  done
+
+  # add one directory above to the dirnames
+  # "local -a" double-evaluates the assignment
+  # IFS=, so the array is joined with commas then evaluated again as a brace-expansion
+  local -a dirs="( $backups/{${dirs[*]}} )"
+
+  # create exclude arguments
+  local -a excludes="( --exclude={${excludes[*]}} )"
+
+  # cd to directory above so tar includes $backups dirname
+  cd $basename
+  gtar ${excludes[*]} -czf $basename/$backups/eclipse-backup-$(date +%Y-%m-%d).tar.gz ${dirs[*]}
+}
+
+# vim: ft=sh
