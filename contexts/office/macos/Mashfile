@@ -15,6 +15,7 @@ backup-eclipse () {
     git/idigitesting
     git/idigiutils
     git/idigiutils
+    git/universal-profile-manager
   )
 
   # file patterns (no backslashes)
@@ -26,6 +27,7 @@ backup-eclipse () {
     dojotoolkit
     third-libs
     ThirdApps
+    node_modules
   )
 
   for dir in ${dirs[*]}; do
