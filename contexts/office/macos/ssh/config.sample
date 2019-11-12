@@ -85,3 +85,12 @@ User jenkins
 
 Host mtk-vln-avbld01 mtk-vln-avbld01.digi.com
 User jenkins
+
+Host tm1-* dm1-* dm2-*
+ProxyCommand ssh -W %h:%p 10.10.235.17
+
+Host pa1-*
+ProxyCommand ssh -W %h:%p 172.31.5.1
+
+Host pvt01-*
+ProxyCommand ssh -W %h:%p 10.148.10.22
