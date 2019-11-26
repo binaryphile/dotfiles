@@ -1,4 +1,6 @@
-IFS=$'\n'
+sys.wordSplitOnSpaceAndTab off
+
+HERE=$(dirname $BASH_SOURCE)
 
 backup-eclipse () {
   local backups basename dir dirs=() excludes=()
