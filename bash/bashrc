@@ -142,21 +142,15 @@ unset -v bashrc
   [[ -e $bash_profile ]] && source $bash_profile
   unset -v bash_profile
 
-  export BASHER_ROOT=${BASHER_ROOT:-$HOME/.basher}
-  [[ !  -d $BASHER_ROOT ]] && unset -v BASHER_ROOT
-  [[    -d $BASHER_ROOT ]] && {
-    cellar=$BASHER_ROOT/cellar/packages/binaryphile
-    path_ary=(
-      $cellar/kaizen/lib
-      $cellar/nano/lib
-      $cellar/sorta/lib
-      $cellar/y2s/lib
-      $cellar/concorde/lib
-    )
-    unset -v cellar
-    eval "$($BASHER_ROOT/bin/basher init -)"
-    PATH=$BASHER_ROOT/bin:$(IFS=:; echo "${path_ary[*]}"):$PATH
+  [[ -d $BASHER_ROOT ]] && {
+    path_ary=( $BASHER_ROOT/cellar/packages/binaryphile/{kaizen,nano,sorta,y2s,concorde}/lib )
+    PATH=$(IFS=:; echo "${path_ary[*]}"):$PATH
     unset -v path_ary
+  }
+
+  installed mash && {
+    alias mctl='mash ctl'
+    alias msup='mash sup'
   }
 
   installed go && {
