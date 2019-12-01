@@ -108,6 +108,11 @@ chruby=/usr/local/share/chruby
     keychain -q $HOME/.ssh/id_rsa
     source $HOME/.keychain/$HOSTNAME-sh
   }
+
+  installed mash && {
+    alias mctl='mash ctl'
+    alias msup='mash sup'
+  }
 }
 
 umask 022
@@ -146,11 +151,6 @@ unset -v bashrc
     path_ary=( $BASHER_ROOT/cellar/packages/binaryphile/{kaizen,nano,sorta,y2s,concorde}/lib )
     PATH=$(IFS=:; echo "${path_ary[*]}"):$PATH
     unset -v path_ary
-  }
-
-  installed mash && {
-    alias mctl='mash ctl'
-    alias msup='mash sup'
   }
 
   installed go && {
