@@ -465,6 +465,10 @@ installed vagrant && {
   alias vup='reveal vup; vagrant up'
 }
 
+export NVM_DIR="$HOME/.nvm"
+[ -s "/usr/local/opt/nvm/nvm.sh" ] && . "/usr/local/opt/nvm/nvm.sh"  # This loads nvm
+[ -s "/usr/local/opt/nvm/etc/bash_completion.d/nvm" ] && . "/usr/local/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
+
 final_interactive=$HOME/dotfiles/context/bash/final_interactive.bash
 [[ -e $final_interactive ]] && source $final_interactive
 unset -v final_interactive
