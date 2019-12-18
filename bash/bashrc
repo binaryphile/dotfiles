@@ -309,7 +309,7 @@ installed git && {
   correct () {
     reveal "$FUNCNAME"
     git fetch
-    git branch --merged origin/$1 | grep -v $1$ | xargs -r git branch -D
+    git branch --merged origin/$1 | grep -v $1$ | xargs $([[ $OSTYPE != darwin* ]] && echo -r) git branch -D
   }
 
   europe () {
