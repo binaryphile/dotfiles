@@ -7,6 +7,7 @@ id_*
 tmp/
 .vagrant/
 build/
+target/
 tags
 *.csv
 *.sql
@@ -26,3 +27,4 @@ Vagrantfile
 patches-*/
 *.box
 .vscode/
+.envrc
