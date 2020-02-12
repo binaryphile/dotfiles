@@ -1,8 +1,7 @@
 ---
 
 - name:         Setup user
-  hosts:        127.0.0.1
-  connection:   local
+  hosts:        all
   gather_facts: no
 
   tasks:
@@ -15,22 +14,14 @@
         - .config/liquidprompt
         - tmp
 
-    - name: utilities
-      homebrew:
-        name:
-          - ranger
-          - stgit
-          - neovim
-          - tmux
-
     - name: repos
       git:
         repo:   "{{ item.repo }}"
         dest:   $HOME/{{ item.dest }}
         update: yes
       loop:
-        - { repo: git://github.com/binaryphile/dotfiles,  dest: dotfiles      }
-        - { repo: git://github.com/binaryphile/dot_vim,   dest: .config/nvim  }
+        - { repo: "git://github.com/binaryphile/dotfiles",  dest: dotfiles                  }
+        - { repo: "git://github.com/binaryphile/dot_vim",   dest: .vim,     branch: minimal }
 
     - name: dotfile links
       file:
@@ -41,23 +32,15 @@
       loop:
         - { src: bash/bashrc,                 path: .bash_profile                     }
         - { src: bash/bashrc,                 path: .bashrc                           }
+        - { src: bash/bashrc,                 path: .profile                          }
+        - { src: bash/dir_colors,             path: .dir_colors                       }
         - { src: gitconfig,                   path: .gitconfig                        }
         - { src: liquidprompt/liquid.theme,   path: .config/liquidprompt/liquid.theme }
-        - { src: liquidprompt/liquidprompt,   path: .config/liquidprompt/liquidprompt }
         - { src: liquidprompt/liquidpromptrc, path: .config/liquidpromptrc            }
         - { src: ssh/config,                  path: .ssh/config                       }
-        - { src: tmux.conf,                   path: .tmux.conf                        }
-
-    - name: links
-      file:
-        src:    "{{ item.src }}"
-        path:   $HOME/{{ item.path }}
-        state:  link
-      loop:
-        - { src: $HOME/.config/nvim, path: .vim }
 
     - name: context link
       file:
-        src:    contexts/office/macos
+        src:    contexts/digi/ubuntu-16
         path:   $HOME/dotfiles/context
         state:  link
