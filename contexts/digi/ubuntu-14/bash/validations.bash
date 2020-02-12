@@ -3,8 +3,6 @@
 
   # PATH items
   get_repr <<EOS
-    $HOME/.nix-profile/bin
-    $HOME/.nix-profile/sbin
     /usr/local/sbin
     /usr/local/bin
     /usr/sbin
@@ -46,55 +44,6 @@ EOS
 
   # Aliases
   get_repr <<'  EOS'
-    ga.
-    gadd
-    gafor
-    gapat
-    gbD
-    gball
-    gbdel
-    gbran
-    gbvv
-    gch-
-    gch-.
-    gchb
-    gchec
-    gclon
-    gcoam
-    gcome
-    gdcac
-    gdiff
-    gfetc
-    ginit
-    glg
-    glsfi
-    gmeab
-    gmv
-    gpull
-    gpusf
-    gpush
-    gpussu
-    gpust
-    greba
-    grebc
-    grebi
-    grebs
-    grefl
-    gremv
-    gresH^
-    grese
-    gresh
-    greshH
-    grm
-    grmfo
-    gshop
-    gshow
-    gstasa
-    gstasd
-    gstasl
-    gstassa
-    gstasshp
-    gstats
     la
     ll
     ls
