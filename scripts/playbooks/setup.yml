@@ -14,14 +14,11 @@
         - .config/liquidprompt
         - tmp
 
-    - name: repos
-      git:
-        repo:   "{{ item.repo }}"
-        dest:   $HOME/{{ item.dest }}
-        update: yes
-      loop:
-        - { repo: "git://github.com/binaryphile/dotfiles",  dest: dotfiles                  }
-        - { repo: "git://github.com/binaryphile/dot_vim",   dest: .vim,     branch: minimal }
+    - name: authorized keys
+      copy:
+        src:        $HOME/dotfiles/ssh/authorized_keys
+        dest:       $HOME/.ssh/authorized_keys2
+        remote_src: yes
 
     - name: dotfile links
       file:
@@ -37,6 +34,7 @@
         - { src: gitconfig,                   path: .gitconfig                        }
         - { src: liquidprompt/liquid.theme,   path: .config/liquidprompt/liquid.theme }
         - { src: liquidprompt/liquidpromptrc, path: .config/liquidpromptrc            }
+        - { src: ssh/authorized_keys,         path: .ssh/authorized_keys              }
         - { src: ssh/config,                  path: .ssh/config                       }
 
     - name: context link
