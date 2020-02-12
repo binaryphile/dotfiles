@@ -39,8 +39,12 @@ Hostname localhost
 Port 12346
 User tlilley
 
+Host om1-jump-1
+Hostname 10.10.235.17
+User tlilley
+
 Host tm1-* dm1-* dm2-*
-ProxyCommand ssh -W %h:%p 10.10.235.17
+ProxyCommand ssh -W %h:%p om1-jump-1
 User tlilley
 
 Host pa1-*
