@@ -41,6 +41,6 @@
 
     - name: context link
       file:
-        src:    contexts/digi/ubuntu-16
+        src:    contexts/digi/ubuntu-14
         path:   $HOME/dotfiles/context
         state:  link
