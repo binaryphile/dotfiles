@@ -23,6 +23,7 @@ include () {
 }
 
 paths=(
+  "$HOME"/node_modules/.bin
   "$HOME"/.cargo/bin
   "$HOME"/.local/bin
   "$HOME"/bin
