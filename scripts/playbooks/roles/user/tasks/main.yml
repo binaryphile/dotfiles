@@ -1,0 +1,86 @@
+---
+- name: nix link
+  file:
+    src:    /nix/var/nix/profiles/default
+    path:   $HOME/.nix-profile
+    state:  link
+
+- name: dotfiles directory
+  file:
+    path:   $HOME/dotfiles
+    state:  directory
+    mode:   '700'
+
+- name:     dotfiles acl
+  command:  'setfacl -m d:g::-,d:o:- "$HOME"/dotfiles'
+  args:
+    creates: $HOME/dotfiles/bash
+
+- name: dotfiles clone
+  git:
+    repo:           ssh://git@localhost:12346/binaryphile/dotfiles
+    dest:           $HOME/dotfiles
+    update:         yes
+    accept_hostkey: yes
+
+- name: context link
+  file:
+    src:    contexts/avwob/mechid
+    path:   $HOME/dotfiles/context
+    state:  link
+
+- name: ssh config
+  file:
+    src:    $HOME/dotfiles/ssh/config
+    path:   $HOME/.ssh/config
+    state:  link
+
+- name: gitconfig
+  file:
+    src:    $HOME/dotfiles/gitconfig
+    path:   $HOME/.gitconfig
+    state:  link
+
+- name: config dir
+  file:
+    path:   $HOME/.config
+    state:  directory
+    mode:   '775'
+
+- name: liquidpromptrc
+  file:
+    src:    $HOME/dotfiles/liquidprompt/liquidpromptrc
+    path:   $HOME/.config/liquidpromptrc
+    state:  link
+
+- name: liquidprompt dir
+  file:
+    path:   $HOME/.config/liquidprompt
+    state:  directory
+    mode:   '775'
+
+- name: liquidprompt
+  file:
+    src:    $HOME/dotfiles/liquidprompt/liquidprompt
+    path:   $HOME/.config/liquidprompt/liquidprompt
+    state:  link
+
+- name: liquid.theme
+  file:
+    src:    $HOME/dotfiles/liquidprompt/liquid.theme
+    path:   $HOME/.config/liquidprompt/liquid.theme
+    state:  link
+
+- name: bashrc
+  file:
+    src:    $HOME/dotfiles/bash/bashrc
+    path:   $HOME/.bashrc
+    state:  link
+    force:  yes
+
+- name: bash_profile
+  file:
+    src:    $HOME/dotfiles/bash/bashrc
+    path:   $HOME/.bash_profile
+    state:  link
+    force:  yes

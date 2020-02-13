@@ -1,0 +1,16 @@
+---
+- name:         provision my user
+  hosts:        all
+  gather_facts: no
+
+  tasks:
+    - name:         forward github
+      local_action: command ssh -NfR 12346:github.com:22 {{ inventory_hostname }}
+      changed_when: false
+
+    - import_role:
+        name: user
+
+    - name          : stop github forward
+      local_action  : 'shell kill $(pgrep -f "[s]sh -NfR 12346:github.com:22 {{ inventory_hostname }}")'
+      changed_when  : false
