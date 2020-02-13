@@ -1,86 +1,49 @@
 ---
-- name: nix link
-  file:
-    src:    /nix/var/nix/profiles/default
-    path:   $HOME/.nix-profile
-    state:  link
 
-- name: dotfiles directory
+- name: directories
   file:
-    path:   $HOME/dotfiles
+    path:   $HOME/{{ item }}
     state:  directory
-    mode:   '700'
+    mode:   '755'
+  loop:
+    - .config/liquidprompt
+    - tmp
 
-- name:     dotfiles acl
-  command:  'setfacl -m d:g::-,d:o:- "$HOME"/dotfiles'
-  args:
-    creates: $HOME/dotfiles/bash
-
-- name: dotfiles clone
+- name: repos
   git:
-    repo:           ssh://git@localhost:12346/binaryphile/dotfiles
-    dest:           $HOME/dotfiles
+    repo:           "{{ item.repo }}"
+    dest:           $HOME/{{ item.dest }}
     update:         yes
     accept_hostkey: yes
+  loop:
+    - { repo: "ssh://git@localhost:12346/binaryphile/dotfiles", dest: dotfiles                  }
+    - { repo: "ssh://git@localhost:12346/binaryphile/dot_vim",  dest: .vim,     branch: minimal }
+
+- name: authorized keys
+  copy:
+    src:        $HOME/dotfiles/ssh/authorized_keys
+    dest:       $HOME/.ssh/authorized_keys2
+    remote_src: yes
+
+- name: dotfile links
+  file:
+    src:    $HOME/dotfiles/{{ item.src }}
+    path:   $HOME/{{ item.path }}
+    state:  link
+    force:  yes
+  loop:
+    - { src: bash/bashrc,                 path: .bash_profile                     }
+    - { src: bash/bashrc,                 path: .bashrc                           }
+    - { src: bash/bashrc,                 path: .profile                          }
+    - { src: bash/dir_colors,             path: .dir_colors                       }
+    - { src: gitconfig,                   path: .gitconfig                        }
+    - { src: liquidprompt/liquid.theme,   path: .config/liquidprompt/liquid.theme }
+    - { src: liquidprompt/liquidpromptrc, path: .config/liquidpromptrc            }
+    - { src: ssh/authorized_keys,         path: .ssh/authorized_keys              }
+    - { src: ssh/config,                  path: .ssh/config                       }
 
 - name: context link
   file:
-    src:    contexts/avwob/mechid
+    src:    contexts/digi/ubuntu-14
     path:   $HOME/dotfiles/context
     state:  link
-
-- name: ssh config
-  file:
-    src:    $HOME/dotfiles/ssh/config
-    path:   $HOME/.ssh/config
-    state:  link
-
-- name: gitconfig
-  file:
-    src:    $HOME/dotfiles/gitconfig
-    path:   $HOME/.gitconfig
-    state:  link
-
-- name: config dir
-  file:
-    path:   $HOME/.config
-    state:  directory
-    mode:   '775'
-
-- name: liquidpromptrc
-  file:
-    src:    $HOME/dotfiles/liquidprompt/liquidpromptrc
-    path:   $HOME/.config/liquidpromptrc
-    state:  link
-
-- name: liquidprompt dir
-  file:
-    path:   $HOME/.config/liquidprompt
-    state:  directory
-    mode:   '775'
-
-- name: liquidprompt
-  file:
-    src:    $HOME/dotfiles/liquidprompt/liquidprompt
-    path:   $HOME/.config/liquidprompt/liquidprompt
-    state:  link
-
-- name: liquid.theme
-  file:
-    src:    $HOME/dotfiles/liquidprompt/liquid.theme
-    path:   $HOME/.config/liquidprompt/liquid.theme
-    state:  link
-
-- name: bashrc
-  file:
-    src:    $HOME/dotfiles/bash/bashrc
-    path:   $HOME/.bashrc
-    state:  link
-    force:  yes
-
-- name: bash_profile
-  file:
-    src:    $HOME/dotfiles/bash/bashrc
-    path:   $HOME/.bash_profile
-    state:  link
-    force:  yes
