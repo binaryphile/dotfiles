@@ -12,59 +12,9 @@ LogLevel ERROR
 GSSAPIAuthentication no
 
 Host bertr bertrand
-Hostname 10.250.1.89
-User ted
-
-Host pweb1 prod-web-001
-Hostname prod-web-001.accns.com
-User ted
-
-Host pweb2 prod-web-002
-Hostname prod-web-002.accns.com
-User ted
-
-Host pkaf1 prod-kafka-001
-Hostname prod-kafka-001.accns.com
-User ted
-
-Host pkaf2 prod-kafka-002
-Hostname prod-kafka-002.accns.com
-User ted
-
-Host pkaf3 prod-kafka-003
-Hostname prod-kafka-003.accns.com
-User ted
-
-Host pkaf4 prod-kafka-004
-Hostname prod-kafka-004.accns.com
-User ted
-
-Host pmys1 prod-mysql-001
-Hostname prod-mysql-001.accns.com
-User ted
-
-Host sapp1 staging-app-001
-Hostname staging-app-001.accns.com
-User ted
-
-Host papp1 prod-app-001
-Hostname prod-app-001.accns.com
-User ted
-
-Host smys1 staging-mysql-001
-Hostname staging-mysql-001.accns.com
-User ted
-
-Host smys2 staging-mysql-002
-Hostname staging-mysql-002.accns.com
-User ted
-
-Host seren serenity
-Hostname serenity.accns.com
-User ted
-
-Host bebop
-Hostname 10.250.1.109
+ProxyCommand ssh -W %h:%p pinch
+Hostname localhost
+Port 12345
 User ted
 
 Host vagra vagrant
@@ -86,11 +36,17 @@ User jenkins
 Host mtk-vln-avbld01 mtk-vln-avbld01.digi.com
 User jenkins
 
+Host om1-jump-1
+Hostname 10.10.235.17
+User tlilley
+
 Host tm1-* dm1-* dm2-*
-ProxyCommand ssh -W %h:%p 10.10.235.17
+ProxyCommand ssh -W %h:%p om1-jump-1
+User tlilley
 
 Host pa1-*
 ProxyCommand ssh -W %h:%p 172.31.5.1
+User tlilley
 
 Host pvt01-*
 ProxyCommand ssh -W %h:%p 10.148.10.22
