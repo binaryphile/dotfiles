@@ -9,16 +9,6 @@
     - .config/liquidprompt
     - tmp
 
-- name: repos
-  git:
-    repo:           "{{ item.repo }}"
-    dest:           $HOME/{{ item.dest }}
-    update:         yes
-    accept_hostkey: yes
-  loop:
-    - { repo: "ssh://git@localhost:12346/binaryphile/dotfiles", dest: dotfiles                  }
-    - { repo: "ssh://git@localhost:12346/binaryphile/dot_vim",  dest: .vim,     branch: minimal }
-
 - name: authorized keys
   copy:
     src:        $HOME/dotfiles/ssh/authorized_keys
