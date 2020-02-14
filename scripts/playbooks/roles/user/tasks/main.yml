@@ -9,6 +9,9 @@
     - .config/liquidprompt
     - tmp
 
+- name: dotfiles
+  local_action: "command rsync -az --delete $HOME/dotfiles/ {{ inventory_hostname }}:dotfiles"
+
 - name: authorized keys
   copy:
     src:        $HOME/dotfiles/ssh/authorized_keys
