@@ -452,6 +452,7 @@ installed vagrant && {
   alias vssh='reveal vssh; vagrant ssh'
   alias vstat='reveal vstat; vagrant status'
   alias vup='reveal vup; vagrant up'
+  alias vupnp='reveal vupnp; vagrant up --no-provision'
 }
 
 export NVM_DIR="$HOME/.nvm"
