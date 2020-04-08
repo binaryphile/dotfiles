@@ -77,5 +77,5 @@ Hostname 172.17.1.22
 User tlilley
 
 Host perf01-*
-ProxyCommand ssh -W %h:%p 172.31.5.1
+ProxyCommand ssh -W %h:%p perf01
 User tlilley
