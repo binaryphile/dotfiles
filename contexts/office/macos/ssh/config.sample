@@ -40,17 +40,42 @@ User jenkins
 Host mtk-vln-avbld01 mtk-vln-avbld01.digi.com
 User jenkins
 
-Host om1-jump-1
+Host tm1 dm1 dm2
 Hostname 10.10.235.17
 User tlilley
 
-Host tm1-* dm1-* dm2-*
-ProxyCommand ssh -W %h:%p om1-jump-1
+Host tm1-*
+ProxyCommand ssh -W %h:%p tm1
+User tlilley
+
+Host dm1-*
+ProxyCommand ssh -W %h:%p dm1
+User tlilley
+
+Host dm2-*
+ProxyCommand ssh -W %h:%p dm2
+User tlilley
+
+Host pa1
+Hostname 172.31.5.1
 User tlilley
 
 Host pa1-*
-ProxyCommand ssh -W %h:%p 172.31.5.1
+ProxyCommand ssh -W %h:%p pa1
+User tlilley
+
+Host pvt01
+Hostname 10.148.10.22
 User tlilley
 
 Host pvt01-*
-ProxyCommand ssh -W %h:%p 10.148.10.22
+ProxyCommand ssh -W %h:%p pvt01
+User tlilley
+
+Host perf01
+Hostname 172.17.1.22
+User tlilley
+
+Host perf01-*
+ProxyCommand ssh -W %h:%p 172.31.5.1
+User tlilley
