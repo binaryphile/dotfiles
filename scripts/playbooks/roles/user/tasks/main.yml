@@ -1,5 +1,10 @@
 ---
 
+- name: hushlogin
+  file:
+    path:   $HOME/.hushlogin
+    state:  touch
+
 - name: directories
   file:
     path:   $HOME/{{ item }}
