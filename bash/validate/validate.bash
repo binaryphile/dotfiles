@@ -1,10 +1,13 @@
 (
+  HERE=$(cd $(dirname $BASH_SOURCE); cd -P $(dirname $(readlink $BASH_SOURCE || echo $BASH_SOURCE)); pwd)
+  [[ -v LOADED[initutil] ]] || source $HERE/../lib/initutil.bash
+
   source $HERE/lib/truth.bash
 
-  HERE=$(cd $(dirname $BASH_SOURCE); cd -P $(dirname $(readlink $BASH_SOURCE || echo $BASH_SOURCE)); pwd)
+  source $HERE/env.assertions
+  source $HERE/cmds.assertions
+  source $HERE/bash.assertions
+  source $HERE/interactive.assertions
 
-  source $HERE/environment.bash
-  source $HERE/config.bash
-  source $HERE/interactive.bash
   source $HERE/apps.bash
 )

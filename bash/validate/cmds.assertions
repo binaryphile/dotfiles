@@ -1,0 +1,5 @@
+assertThat aliases exist <<'END'
+  validate-bash
+END
+
+# vim: ft=sh

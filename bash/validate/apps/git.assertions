@@ -1,0 +1,5 @@
+assertThat aliases exist <<'END'
+  gstats
+END
+
+# vim: ft=sh

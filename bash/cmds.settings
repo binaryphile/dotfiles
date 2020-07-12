@@ -1,0 +1,5 @@
+shopt -s expand_aliases   # enable aliases even when non-interactive
+
+alias validate-bash='source $HOME/dotfiles/bash/validate/validate.bash'
+
+# vim: ft=sh

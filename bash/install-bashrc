@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+NL=$'\n'  # NL is newline
+IFS=$NL   # don't require quotes on normal string vars
+
+main () {
+  testAndLink $HOME/.bashrc $DotfileDir/bash/bashrc
+  testAndLink $CfgDir/interactive.bash $DotfileDir/bash/interactive.bash 
+}
+
+# testAndLink tests the existence of a link between arguments one and two.  The
+# link is created if it does not exist already.
+testAndLink () {
+  local link=$1
+  local target=$2
+  local linkParent
+
+  linkParent=$(dirname $link)
+
+  ! isDir $linkParent && {
+    mkdir -m 700 -p $linkParent
+    echo "Made $linkParent"
+  }
+
+  [[ $(readlink $link) != "$target" ]] && {
+    ln -sf $target $link
+    echo "Linked $link"
+  }
+}
+
+isDir () {
+  [[ -d $1 ]]
+}
+
+# Globals
+CfgDir=$HOME/.config/bash
+DotfileDir=$HOME/dotfiles
+
+Main
