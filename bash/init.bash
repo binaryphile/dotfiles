@@ -11,18 +11,18 @@ VARS+=(    # cleanup vars
   NL
 )
 
-shellIsLogin || [[ $1 == reload ]] &&
+{ shellIsLogin || [[ $1 == reload ]]; } && {
   source $HERE/env.settings   # general environment vars
+  source $HERE/login.settings # one-time login tasks
+}
+
 source $HERE/bash.settings    # bash-specific configuration
 source $HERE/cmds.settings    # general aliases and functions
 source $HERE/apps.bash        # app-specific environment and commands, see apps/
 
-# interactive only
-[[ $- == *i* ]] && {
-  source $HERE/interactive.settings       # interactive mode settings
-  shellIsLogin &&
-    source $HERE/validate/validate.bash   # validate everything
-}
+# interactive settings and validation of configuration
+shellIsInteractive          && source $HERE/interactive.settings
+shellIsInteractiveAndLogin  && source $HERE/validate/validate.bash
 
 [[ $1 == reload ]] && echo reloaded
 

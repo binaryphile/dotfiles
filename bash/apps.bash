@@ -1,8 +1,9 @@
 cd $HERE/apps
 
 for dir in *; do
+  ! isCmd $dir            && continue
   ! isDir $HERE/apps/$dir && continue
-  ! isCmd $dir && continue
+
   dir=$HERE/apps/$dir
   { isFile $dir/env.settings && shellIsLogin; } &&
     source $dir/env.settings

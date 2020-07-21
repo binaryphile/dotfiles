@@ -33,6 +33,14 @@ isPathCmd () {
   type -p $1 &>/dev/null
 }
 
+shellIsInteractive () {
+  [[ $- == *i* ]]
+}
+
+shellIsInteractiveAndLogin () {
+  shellIsInteractive && shellIsLogin
+}
+
 shellIsLogin () {
   [[ $(shopt login_shell) == *on ]]
 }

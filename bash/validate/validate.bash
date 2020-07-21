@@ -5,6 +5,7 @@
   source $HERE/lib/truth.bash
 
   source $HERE/env.assertions
+  source $HERE/login.assertions
   source $HERE/cmds.assertions
   source $HERE/bash.assertions
   source $HERE/interactive.assertions

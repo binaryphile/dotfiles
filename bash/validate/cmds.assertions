@@ -1,5 +1,19 @@
 assertThat aliases exist <<'END'
+  df
+  la
+  ll
+  ls
+  ltr
+  path
+  road
   validate-bash
+END
+
+assertThat functions exist <<'END'
+  become
+  miracle
+  reveal
+  runas
 END
 
 # vim: ft=sh
