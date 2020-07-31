@@ -22,6 +22,14 @@ aliases.exist () {
   done
 }
 
+envVar.contains () {
+  [[ $(printenv $1) == *"$2"* ]]
+}
+
+envVar.isEqualTo () {
+  [[ $(printenv $1) == "$2" ]]
+}
+
 file.exists () {
   isFile $1
 }
@@ -42,10 +50,10 @@ set.isOn () {
   [[ $(set -o | grep "^$1\W" | cut -f2) == on ]]
 }
 
-envVar.contains () {
+shellVar.contains () {
   [[ ${!1} == *"$2"* ]]
 }
 
-envVar.isEqualTo () {
+shellVar.isEqualTo () {
   [[ ${!1} == "$2" ]]
 }

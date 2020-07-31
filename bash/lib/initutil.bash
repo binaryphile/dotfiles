@@ -1,6 +1,6 @@
 # initutil.bash - useful functions for init.bash
 
-functionList=$(compgen -A function)
+functionList=$(compgen -A function | sort)
 
 # cleanup removes the initutil functions and vars and returns IFS to normal
 cleanup () {
@@ -11,6 +11,10 @@ cleanup () {
 
 cmdPath () {
   type -p $1
+}
+
+contains () {
+  [[ "$IFS$1$IFS" == *"$IFS$2$IFS" ]]
 }
 
 isCmd () {
@@ -42,7 +46,25 @@ shellIsInteractiveAndLogin () {
 }
 
 shellIsLogin () {
-  [[ $(shopt login_shell) == *on ]]
+  [[ $(shopt login_shell) == *on || $SHLVL == 1 ]]
+}
+
+strContains () {
+  [[ $1 == *$2* ]]
+}
+
+testAndSource () {
+  [[ -r $1 ]] && echo "source$IFS$1"
+}
+
+testAndTouch () {
+  ! isFile $1 && touch $1
+}
+
+testLoginAndSource () {
+  ! [[ $(shopt login_shell) == *on || $SHLVL == 1 ]] && return
+
+  [[ -r $1 ]] && echo "source$IFS$1"
 }
 
 # trim strips leading and trailing whitespace from a string
@@ -57,7 +79,7 @@ trim () {
 
 VARS=( VARS )
 
-FUNCTIONS=( $(comm -13 <(echo "$functionList") <(compgen -A function)) )
+FUNCTIONS=( $(comm -13 <(echo "$functionList") <(compgen -A function | sort)) )
 VARS+=( FUNCTIONS )
 unset -v functionList
 

@@ -1,3 +1,5 @@
+assertThat function rb exists
+
 assertThat aliases exist <<'END'
   bemar
   bemid
@@ -14,7 +16,5 @@ assertThat aliases exist <<'END'
   bupda
   busou
 END
-
-assertThat function exists rb
 
 # vim: ft=sh

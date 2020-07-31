@@ -1,15 +1,23 @@
-cd $HERE/apps
+pushd $HERE/apps >/dev/null
 
 for dir in *; do
-  ! isCmd $dir            && continue
-  ! isDir $HERE/apps/$dir && continue
+  isDir $dir || continue
+
+  if isFile $dir/detect.bash; then
+    source $dir/detect.bash || continue
+  else
+    isCmd $dir || continue
+  fi
 
   dir=$HERE/apps/$dir
-  { isFile $dir/env.settings && shellIsLogin; } &&
-    source $dir/env.settings
-  isFile $dir/init.settings && source $dir/init.settings
-  isFile $dir/cmds.settings && source $dir/cmds.settings
+
+  IFS=$' \t\n'
+  $(testAndSource "$dir"/init.settings)
+  IFS=$NL
+
+  $(testLoginAndSource $dir/env.settings)
+  $(testAndSource $dir/cmds.settings)
 done
 
 unset -v dir
-cd - >/dev/null
+popd >/dev/null

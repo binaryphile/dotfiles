@@ -1,0 +1,27 @@
+# middleman
+ralias bemar='bundle exec middleman article'
+ralias bemid='bundle exec middleman'
+ralias bemse='bundle exec middleman server'
+
+# rails
+ralias beraic='bundle exec rails console'
+ralias berais='bundle exec rails server'
+
+# rake
+ralias berak='bundle exec rake'
+ralias berakdm='bundle exec rake db:migrate'
+
+# rspec
+ralias bersp='bundle exec rspec'
+
+# torquebox
+ralias betde='bundle exec torquebox deploy'
+ralias betru='bundle exec torquebox run'
+
+# bundler
+ralias bexec='bundle exec'
+ralias binst='bundle install'
+ralias bupda='bundle update'
+ralias busou='bundle update --source'
+
+# vim: ft=sh

@@ -1,3 +1,0 @@
-assertThat file $HOME/.hushlogin exists
-
-# vim: ft=sh

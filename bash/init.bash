@@ -13,7 +13,7 @@ VARS+=(    # cleanup vars
 
 { shellIsLogin || [[ $1 == reload ]]; } && {
   source $HERE/env.settings   # general environment vars
-  source $HERE/login.settings # one-time login tasks
+  shellIsInteractive && source $HERE/interactive-login.settings # one-time login tasks
 }
 
 source $HERE/bash.settings    # bash-specific configuration

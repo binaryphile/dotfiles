@@ -1,3 +1,0 @@
-! isFile $HOME/.hushlogin && touch $HOME/.hushlogin
-
-# vim: ft=sh
