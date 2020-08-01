@@ -1,7 +1,3 @@
-lp=$HOME/dotfiles/liquidprompt/liquidprompt
-
-{ ! isFile /etc/profile.d/liquidprompt.sh && isFile "$lp"; } && source "$lp"
-
-unset -v lp
+! isFile /etc/profile.d/liquidprompt.sh && testAndSource "$HOME"/dotfiles/liquidprompt/liquidprompt
 
 # vim: ft=sh

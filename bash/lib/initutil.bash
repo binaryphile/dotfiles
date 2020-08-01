@@ -1,6 +1,6 @@
 # initutil.bash - useful functions for init.bash
 
-functionList=$(compgen -A function | sort)
+FunctionList=$(compgen -A function | sort)
 
 # cleanup removes the initutil functions and vars and returns IFS to normal
 cleanup () {
@@ -37,6 +37,17 @@ isPathCmd () {
   type -p $1 &>/dev/null
 }
 
+remove () {
+  local -n ary=$1
+  local remove=$2
+  local result=()
+
+  for item in ${ary[*]}; do
+    [[ $item != "$remove" ]] && result+=( $item )
+  done
+  ary=( ${results[*]} )
+}
+
 shellIsInteractive () {
   [[ $- == *i* ]]
 }
@@ -53,18 +64,16 @@ strContains () {
   [[ $1 == *$2* ]]
 }
 
-testAndSource () {
-  [[ -r $1 ]] && echo "source$IFS$1"
+testAndExportCmd () {
+  isPathCmd $2 && export $1=$(cmdPath $2)
 }
+
+alias testAndSource='{ read -r Candidate; isFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
+
+alias testLoginAndSource='{ read -r Candidate; { shellIsLogin && isFile $Candidate; } && source $Candidate; unset -v Candidate; } <<<'
 
 testAndTouch () {
   ! isFile $1 && touch $1
-}
-
-testLoginAndSource () {
-  ! [[ $(shopt login_shell) == *on || $SHLVL == 1 ]] && return
-
-  [[ -r $1 ]] && echo "source$IFS$1"
 }
 
 # trim strips leading and trailing whitespace from a string
@@ -77,11 +86,15 @@ trim () {
   echo ${result%$indent}
 }
 
+varExists () {
+  [[ -v $1 ]]
+}
+
 VARS=( VARS )
 
-FUNCTIONS=( $(comm -13 <(echo "$functionList") <(compgen -A function | sort)) )
+FUNCTIONS=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )
 VARS+=( FUNCTIONS )
-unset -v functionList
+unset -v FunctionList
 
 declare -A LOADED=([initutil]=1)
 VARS+=( LOADED )

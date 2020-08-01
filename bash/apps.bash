@@ -1,23 +1,53 @@
 pushd $HERE/apps >/dev/null
 
-for dir in *; do
-  isDir $dir || continue
+declare -A Deps=()
+declare -A Satisfied=()
 
-  if isFile $dir/detect.bash; then
-    source $dir/detect.bash || continue
+for Dir in *; do
+  isDir $Dir || continue
+
+  if isFile $Dir/detect.bash; then
+    source $Dir/detect.bash || continue
   else
-    isCmd $dir || continue
+    isCmd $Dir || continue
   fi
 
-  dir=$HERE/apps/$dir
+  isFile $Dir/deps && {
+    Deps[$Dir]=$(<$Dir/deps)
+    for Dep in ${Deps[$Dir]}; do
+      (( ${Satisfied[$Dep]} )) || continue 2
+    done
+    unset -v Deps[$Dir]
+  }
 
   IFS=$' \t\n'
-  $(testAndSource "$dir"/init.settings)
+  testAndSource "$Dir"/init.settings
   IFS=$NL
 
-  $(testLoginAndSource $dir/env.settings)
-  $(testAndSource $dir/cmds.settings)
+  testLoginAndSource $Dir/env.settings
+  testAndSource $Dir/interactive.settings
+  testAndSource $Dir/cmds.settings
+
+  Satisfied[$Dir]=1
+
+  for Key in ${!Deps[*]}; do
+    ! contains "${Deps[$Key]}" $Dir && continue
+    Ary=( ${Deps[$Key]} )
+    remove Ary $Dir
+    Deps[$Key]=${Ary[*]}
+    ! (( ${#Ary} )) && {
+      unset -v Deps[$Key]
+
+      IFS=$' \t\n'
+      testAndSource "$Key"/init.settings
+      IFS=$NL
+
+      testLoginAndSource $Key/env.settings
+      testAndSource $Key/interactive.settings
+      testAndSource $Key/cmds.settings
+    }
+  done
 done
 
-unset -v dir
+unset -v Ary Dep Deps Dir Key Satisfied
 popd >/dev/null

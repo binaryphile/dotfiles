@@ -24,4 +24,12 @@ ralias binst='bundle install'
 ralias bupda='bundle update'
 ralias busou='bundle update --source'
 
+rb () {
+  [[ $1 == -l ]] && shift
+  case $? in
+    0 ) ruby -e "STDIN.each_line { |l| puts l.chomp.instance_eval(&eval('Proc.new { $@ }')) }";;
+    * ) ruby -e "puts STDIN.each_line.instance_eval(&eval('Proc.new { $@ }'))"                ;;
+  esac
+}
+
 # vim: ft=sh
