@@ -2,6 +2,14 @@
 
 FunctionList=$(compgen -A function | sort)
 
+areApps () {
+  local dir
+
+  for dir; do
+    isApp $dir && echo $dir
+  done
+}
+
 # cleanup removes the initutil functions and vars and returns IFS to normal
 cleanup () {
   unset -f ${FUNCTIONS[*]}
@@ -15,6 +23,19 @@ cmdPath () {
 
 contains () {
   [[ "$IFS$1$IFS" == *"$IFS$2$IFS" ]]
+}
+
+isApp () {
+  local dir=$1
+
+  isDir $dir || return
+
+  isFile $dir/detect.bash && {
+    source $dir/detect.bash
+    return
+  }
+
+  isCmd $dir
 }
 
 isCmd () {
@@ -35,6 +56,35 @@ isFunc () {
 
 isPathCmd () {
   type -p $1 &>/dev/null
+}
+
+orderByDependencies () {
+  local -A satisfied=()
+
+  OrderByDependencies $*
+}
+
+OrderByDependencies () {
+  local app dep
+
+  for app; do
+    (( ${satisfied[$app]} )) && continue
+
+    ! isFile $app/deps && {
+      echo $app
+      satisfied[$app]=1
+      continue
+    }
+
+    for dep in $(OrderByDependencies $(<$app/deps)); do
+      (( ${satisfied[$dep]} )) && continue
+      echo $dep
+      satisfied[$dep]=1
+    done
+
+    echo $app
+    satisfied[$app]=1
+  done
 }
 
 remove () {
