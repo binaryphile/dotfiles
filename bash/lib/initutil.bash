@@ -136,10 +136,6 @@ trim () {
   echo ${result%$indent}
 }
 
-varExists () {
-  [[ -v $1 ]]
-}
-
 VARS=( VARS )
 
 FUNCTIONS=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )

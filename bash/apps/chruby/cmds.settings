@@ -24,6 +24,7 @@ ralias binst='bundle install'
 ralias bupda='bundle update'
 ralias busou='bundle update --source'
 
+# rb runs ruby code from the command line
 rb () {
   [[ $1 == -l ]] && shift
   case $? in
