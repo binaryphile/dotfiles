@@ -26,8 +26,12 @@ envVar.contains () {
   [[ $(printenv $1) == *"$2"* ]]
 }
 
+envVar.exists () {
+  [[ $(printenv $1) != '' ]]
+}
+
 envVar.isEqualTo () {
-  [[ $(printenv $1) == "$2" ]]
+  printenv $1 >/dev/null
 }
 
 file.exists () {
