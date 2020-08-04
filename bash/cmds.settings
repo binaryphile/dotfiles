@@ -2,7 +2,7 @@ shopt -s expand_aliases   # enable aliases even when non-interactive
 
 # reveal shows the function/alias definition on stderr
 reveal () {
-  type $1 | sed -e "s|reveal $1; ||" -e '/reveal $FUNCNAME;/d' | grep --color . >&2
+  type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' | grep --color . >&2
 }
 
 # ralias aliases with reveal
