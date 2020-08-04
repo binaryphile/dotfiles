@@ -11,7 +11,10 @@ END
 
 assertThat functions exist <<'END'
   become
+  minimak
   miracle
+  psaux
+  qwerty
   reveal
   runas
 END
