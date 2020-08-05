@@ -87,17 +87,6 @@ OrderByDependencies () {
   done
 }
 
-remove () {
-  local -n ary=$1
-  local remove=$2
-  local results=()
-
-  for item in ${ary[*]}; do
-    [[ $item != "$remove" ]] && results+=( $item )
-  done
-  ary=( ${results[*]} )
-}
-
 shellIsInteractive () {
   [[ $- == *i* ]]
 }
@@ -111,7 +100,7 @@ shellIsLogin () {
 }
 
 strContains () {
-  [[ $1 == *$2* ]]
+  [[ $1 == *"$2"* ]]
 }
 
 testAndExportCmd () {
