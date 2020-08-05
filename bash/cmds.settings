@@ -45,22 +45,6 @@ runas () {
   sudo -u "$1" bash -l -c "$2"
 }
 
-minimak () { (
-  reveal "$FUNCNAME"
-  cd "$HOME"/dotfiles
-  stg pop qwerty
-  cd "$HOME"/.vim
-  stg pop  qwerty
-) }
-
-qwerty () { (
-  reveal "$FUNCNAME"
-  cd "$HOME"/dotfiles
-  stg push qwerty
-  cd "$HOME"/.vim
-  stg push qwerty
-) }
-
 psaux () {
   reveal "$FUNCNAME"
   pgrep -f "$@" | xargs ps -fp 2>/dev/null

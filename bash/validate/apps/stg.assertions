@@ -1,0 +1,6 @@
+assertThat functions exist <<'END'
+  minimak
+  qwerty
+END
+
+# vim: ft=sh
