@@ -22,7 +22,7 @@ cmdPath () {
 }
 
 contains () {
-  [[ "$IFS$1$IFS" == *"$IFS$2$IFS" ]]
+  [[ "$IFS$1$IFS" == *"$IFS$2$IFS"* ]]
 }
 
 isApp () {
@@ -90,10 +90,10 @@ OrderByDependencies () {
 remove () {
   local -n ary=$1
   local remove=$2
-  local result=()
+  local results=()
 
   for item in ${ary[*]}; do
-    [[ $item != "$remove" ]] && result+=( $item )
+    [[ $item != "$remove" ]] && results+=( $item )
   done
   ary=( ${results[*]} )
 }
