@@ -61,3 +61,7 @@ shellVar.contains () {
 shellVar.isEqualTo () {
   [[ ${!1} == "$2" ]]
 }
+
+str.isEqualTo () {
+  [[ $1 == "$2" ]]
+}

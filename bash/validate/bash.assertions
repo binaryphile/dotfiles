@@ -1,1 +1,3 @@
+assertThat str $(umask) isEqualTo 0022
+
 # vim: ft=sh
