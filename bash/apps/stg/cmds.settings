@@ -44,10 +44,10 @@ qwerty () { (
 pretend () {
   local target
 
-  reveal $FUNCNAME
+  reveal "$FUNCNAME"
   target=${2:-$(stg top)}
-  stg rename  $target $1 || return
-  stg edit    $1 -m $1
+  stg rename "$target" "$1" || return
+  stg edit "$1" -m "$1"
 }
 
 salt () {
@@ -62,13 +62,13 @@ salt () {
   dirty=$?
   (( dirty )) && git stash save
   [[ -n $target ]] && { stg goto "$target" || return ;}
-  stg new $name -m $name
+  stg new "$name" -m "$name"
   (( dirty )) && {
     git stash apply || return
     git stash drop
     stg refresh
   }
-  [[ -n $target ]] && stg goto $top;:
+  [[ -n $target ]] && stg goto "$top";:
 }
 
 # vim: ft=sh

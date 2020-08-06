@@ -51,22 +51,22 @@ ralias gstasshp='git stash show --patch'
 ralias gstats='git status --short'
 
 correct () {
-  reveal $FUNCNAME
+  reveal "$FUNCNAME"
   git fetch
-  git branch --merged origin/$1 | grep -v $1$ | xargs $([[ $OSTYPE != darwin* ]] && echo -r) git branch -D
+  git branch --merged origin/"$1" | grep -v "$1"$ | xargs $([[ $OSTYPE != darwin* ]] && echo -r) git branch -D
 }
 
 europe () {
-  reveal $FUNCNAME
+  reveal "$FUNCNAME"
   git add --patch
   git commit -m "${1:-}"
   git push
 }
 
 pastel () {
-  reveal $FUNCNAME
-  git checkout -b $1
-  git push --set-upstream origin $1
+  reveal "$FUNCNAME"
+  git checkout -b "$1"
+  git push --set-upstream origin "$1"
 }
 
 # vim: ft=sh
