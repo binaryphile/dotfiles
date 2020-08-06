@@ -8,7 +8,7 @@ for App in $AppList; do
   testAndSource "$App"/init.settings
   IFS=$NL
 
-  testLoginAndSource $App/env.settings
+  shellIsLogin && testAndSource $App/env.settings
   testAndSource $App/interactive.settings
   testAndSource $App/cmds.settings
 done

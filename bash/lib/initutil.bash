@@ -103,13 +103,15 @@ strContains () {
   [[ $1 == *"$2"* ]]
 }
 
-testAndExportCmd () {
+testAndExport () {
+  export $1=${!1:-$2}
+}
+
+testCmdAndExport () {
   isPathCmd $2 && export $1=$(cmdPath $2)
 }
 
 alias testAndSource='{ read -r Candidate; isFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
-
-alias testLoginAndSource='{ read -r Candidate; { shellIsLogin && isFile $Candidate; } && source $Candidate; unset -v Candidate; } <<<'
 
 testAndTouch () {
   ! isFile $1 && touch $1
