@@ -4,11 +4,12 @@ AppList=$(areApps *)
 AppList=$(orderByDependencies $AppList)
 
 for App in $AppList; do
+  shellIsLogin && testAndSource $App/env.settings
+
   IFS=$' \t\n'
-  testAndSource "$App"/init.settings
+  testAndSource "$App"/init.bash
   IFS=$NL
 
-  shellIsLogin && testAndSource $App/env.settings
   testAndSource $App/interactive.settings
   testAndSource $App/cmds.settings
 done
