@@ -1,3 +1,1 @@
 set -o vi
-
-# vim: ft=sh

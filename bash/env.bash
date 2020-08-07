@@ -5,5 +5,3 @@ testCmdAndExport EDITOR nvim
 testCmdAndExport PAGER less
 
 testAndExport XDG_CONFIG_HOME $HOME/.config
-
-# vim: ft=sh

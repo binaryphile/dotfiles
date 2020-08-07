@@ -49,5 +49,3 @@ psaux () {
   reveal "$FUNCNAME"
   pgrep -f "$@" | xargs ps -fp 2>/dev/null
 }
-
-# vim: ft=sh
