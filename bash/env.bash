@@ -5,3 +5,5 @@ testCmdAndExport EDITOR nvim
 testCmdAndExport PAGER less
 
 testAndExport XDG_CONFIG_HOME $HOME/.config
+
+export LC_SSH_USER=$USER
