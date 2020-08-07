@@ -1,3 +1,1 @@
 assertThat function _exercism exists
-
-# vim: ft=sh

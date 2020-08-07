@@ -3,5 +3,3 @@ _direnv_hook() {
 }
 
 ! strContains $PROMPT_COMMAND _direnv_hook && PROMPT_COMMAND=$PROMPT_COMMAND${PROMPT_COMMAND:+;}_direnv_hook
-
-# vim: ft=sh

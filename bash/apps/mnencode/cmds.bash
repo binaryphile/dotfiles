@@ -11,5 +11,3 @@ randword () {
   done
   echo "$word"
 }
-
-# vim: ft=sh

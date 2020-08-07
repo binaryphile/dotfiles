@@ -1,3 +1,1 @@
 assertThat function shannon exists
-
-# vim: ft=sh

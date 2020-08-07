@@ -32,5 +32,3 @@ rb () {
     * ) ruby -e "puts STDIN.each_line.instance_eval(&eval('Proc.new { $@ }'))"                ;;
   esac
 }
-
-# vim: ft=sh

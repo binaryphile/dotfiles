@@ -57,5 +57,3 @@ assertThat functions exist <<'END'
   europe
   pastel
 END
-
-# vim: ft=sh

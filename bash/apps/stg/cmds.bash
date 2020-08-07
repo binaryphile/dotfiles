@@ -70,5 +70,3 @@ salt () {
   }
   [[ -n $target ]] && stg goto "$top";:
 }
-
-# vim: ft=sh

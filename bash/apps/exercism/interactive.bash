@@ -1,3 +1,1 @@
 testAndSource $HOME/.config/exercism/exercism_completion.bash
-
-# vim: ft=sh

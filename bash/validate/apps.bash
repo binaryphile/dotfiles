@@ -1,3 +1,3 @@
-for file in $HERE/apps/*.assertions; do
+for file in $HERE/apps/*; do
   source $file
 done

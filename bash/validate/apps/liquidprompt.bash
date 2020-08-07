@@ -1,3 +1,1 @@
 assertThat function prompt_on exists
-
-# vim: ft=sh

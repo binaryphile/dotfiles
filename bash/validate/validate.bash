@@ -4,11 +4,11 @@
 
   source $HERE/lib/truth.bash
 
-  source $HERE/env.assertions
-  source $HERE/interactive-login.assertions
-  source $HERE/cmds.assertions
-  source $HERE/bash.assertions
-  source $HERE/interactive.assertions
+  source $HERE/env.bash
+  source $HERE/interactive-login.bash
+  source $HERE/cmds.bash
+  source $HERE/bash.bash
+  source $HERE/interactive.bash
 
   source $HERE/apps.bash
 )

@@ -33,5 +33,3 @@ assertThat aliases exist <<'END'
   stund
   stundh
 END
-
-# vim: ft=sh

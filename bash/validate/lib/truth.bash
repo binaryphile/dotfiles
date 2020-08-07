@@ -50,7 +50,7 @@ functions.exist () {
   done
 }
 
-set.isOn () {
+setting.isOn () {
   [[ $(set -o | grep "^$1\W" | cut -f2) == on ]]
 }
 
@@ -62,6 +62,6 @@ shellVar.isEqualTo () {
   [[ ${!1} == "$2" ]]
 }
 
-str.isEqualTo () {
+string.isEqualTo () {
   [[ $1 == "$2" ]]
 }

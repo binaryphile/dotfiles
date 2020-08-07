@@ -68,5 +68,3 @@ pastel () {
   git checkout -b "$1"
   git push --set-upstream origin "$1"
 }
-
-# vim: ft=sh

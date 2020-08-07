@@ -16,5 +16,3 @@ assertThat aliases exist <<'END'
   bupda
   busou
 END
-
-# vim: ft=sh

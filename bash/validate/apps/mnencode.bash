@@ -1,3 +1,1 @@
 assertThat function randword exists
-
-# vim: ft=sh

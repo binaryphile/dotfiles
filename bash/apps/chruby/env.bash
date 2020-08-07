@@ -1,3 +1,1 @@
 export JRUBY_OPTS=--dev
-
-# vim: ft=sh

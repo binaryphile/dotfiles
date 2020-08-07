@@ -16,5 +16,3 @@ assertThat functions exist <<'END'
   reveal
   runas
 END
-
-# vim: ft=sh
