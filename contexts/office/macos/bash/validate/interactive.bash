@@ -1,0 +1,1 @@
+assertThat setting vi isOn
