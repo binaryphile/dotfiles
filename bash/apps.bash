@@ -1,17 +1,20 @@
-pushd $HERE/apps >/dev/null
+pushd $Here/apps >/dev/null
 
-AppList=$(areApps *)
-AppList=$(orderByDependencies $AppList)
+AppList=$(ListDir . | Filter IsDir | Filter IsApp | OrderByDependencies)
 
 for App in $AppList; do
-  { shellIsLogin || [[ $1 == reload ]]; } && testAndSource $App/env.bash
+  { ShellIsLogin || [[ $1 == reload ]]; } && TestAndSource $App/env.bash
 
-  IFS=$' \t\n'
-  testAndSource "$App"/init.bash
-  IFS=$NL
+  SplitSpace on
+  Globbing on
 
-  testAndSource $App/interactive.bash
-  testAndSource $App/cmds.bash
+  TestAndSource "$App"/init.bash
+
+  SplitSpace off
+  Globbing off
+
+  TestAndSource $App/interactive.bash
+  TestAndSource $App/cmds.bash
 done
 
 unset -v AppList App

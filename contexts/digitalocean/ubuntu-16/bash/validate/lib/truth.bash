@@ -18,7 +18,7 @@ aliases.exist () {
   local alias
 
   while read -r alias; do
-    alias.exists $(trim $alias) || return
+    alias.exists $(Trim $alias) || return
   done
 }
 
@@ -35,7 +35,7 @@ envVar.isEqualTo () {
 }
 
 file.exists () {
-  isFile $1
+  IsFile $1
 }
 
 function.exists () {
@@ -46,7 +46,7 @@ functions.exist () {
   local function
 
   while read -r function; do
-    function.exists $(trim $function) || return
+    function.exists $(Trim $function) || return
   done
 }
 

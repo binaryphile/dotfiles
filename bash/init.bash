@@ -1,29 +1,41 @@
-NL=$'\n'  # NL is newline
-IFS=$NL   # don't require quotes on normal string vars
+# Here is the location of this script, normalized for symlinks
+Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo "$BASH_SOURCE")")"; pwd)
 
-# HERE is the location of this script, normalized for symlinks
-HERE=$(cd $(dirname $BASH_SOURCE); cd -P $(dirname $(readlink $BASH_SOURCE || echo $BASH_SOURCE)); pwd)
+source "$Here"/lib/initutil.bash
 
-source $HERE/lib/initutil.bash
+Nl=$'\n'        # Nl is newline
+SplitSpace off  # don't require quotes on normal string vars by setting IFS to newline
+Globbing off    # turn off globbing until I need it
 
-VARS+=(    # cleanup vars
-  HERE
-  NL
+
+Vars+=(    # add to list of variables to cleanup before ending
+  Here
+  Nl
 )
 
-{ shellIsLogin || [[ $1 == reload ]]; } && {
-  source $HERE/env.bash   # general environment vars
-  shellIsInteractive && source $HERE/interactive-login.bash # one-time login tasks
+# "source ~/.bashrc reload" allows forcing reload of environment and login actions.
+# shellIsLogin defines login as any environment where this script hasn't yet
+# run (by testing for ENV_SET), as opposed to bash --login.
+{ ShellIsLogin || [[ $1 == reload ]]; } && {
+  source $Here/env.bash   # general environment vars
+  ShellIsInteractive && source $Here/interactive-login.bash # one-time login tasks
 }
 
-source $HERE/bash.bash    # bash-specific configuration
-source $HERE/cmds.bash    # general aliases and functions
-source $HERE/apps.bash    # app-specific environment and commands, see apps/
+source $Here/bash.bash    # bash-specific configuration
+source $Here/cmds.bash    # general aliases and functions
+source $Here/apps.bash    # app-specific environment and commands, see apps/
 
 # interactive settings and validation of configuration
-shellIsInteractive && source $HERE/interactive.bash
-{ shellIsInteractiveAndLogin || [[ $1 == reload ]]; } && source $HERE/validate/validate.bash
+ShellIsInteractive && source $Here/interactive.bash
+{ ShellIsInteractiveAndLogin || [[ $1 == reload ]]; } && source $Here/validate/validate.bash
 
 [[ $1 == reload ]] && echo reloaded
 
-cleanup
+# so we can tell this script has been run
+export ENV_SET=1
+
+# cleanup
+unset -v ${Vars[*]}
+unset -f ${Functions[*]}
+SplitSpace on
+Globbing on

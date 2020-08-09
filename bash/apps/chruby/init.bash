@@ -1,2 +1,2 @@
-testAndSource /usr/local/share/chruby/chruby.sh
-testAndSource /usr/local/share/chruby/auto.sh
+TestAndSource /usr/local/share/chruby/chruby.sh
+TestAndSource /usr/local/share/chruby/auto.sh

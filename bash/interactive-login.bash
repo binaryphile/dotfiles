@@ -1,3 +1,1 @@
-testAndTouch $HOME/.hushlogin
-
-export INPUTRC=$HOME/dotfiles/bash/inputrc
+TestAndTouch $HOME/.hushlogin

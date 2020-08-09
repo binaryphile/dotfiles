@@ -1,9 +1,9 @@
 PATH=$HOME/.local/bin:$PATH
 
-testCmdAndExport EDITOR vim
-testCmdAndExport EDITOR nvim
-testCmdAndExport PAGER less
+TestCmdAndExport EDITOR vim
+TestCmdAndExport EDITOR nvim
+TestCmdAndExport PAGER less
 
-testAndExport XDG_CONFIG_HOME $HOME/.config
+TestAndExport XDG_CONFIG_HOME $HOME/.config
 
 export LC_SSH_USER=$USER

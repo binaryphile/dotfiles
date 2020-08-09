@@ -1,3 +1,3 @@
-for file in $HERE/apps/*; do
-  source $file
+for file in $(ListDir $Here/apps); do
+  source $Here/apps/$file
 done

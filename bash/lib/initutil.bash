@@ -2,81 +2,88 @@
 
 FunctionList=$(compgen -A function | sort)
 
-areApps () {
-  local dir
-
-  for dir; do
-    isApp $dir && echo $dir
-  done
-}
-
-# cleanup removes the initutil functions and vars and returns IFS to normal
-cleanup () {
-  unset -f ${FUNCTIONS[*]}
-  unset -v ${VARS[*]}
-  IFS=$' \t\n'
-}
-
-cmdPath () {
+CmdPath () {
   type -p $1
 }
 
-contains () {
+Contains () {
   [[ "$IFS$1$IFS" == *"$IFS$2$IFS"* ]]
 }
 
-isApp () {
+Filter () {
+  local item
+
+  while read -r item; do
+    $1 $item && echo $item
+  done
+}
+
+Globbing () {
+  case $1 in
+    on  ) set +o noglob;;
+    off ) set -o noglob;;
+  esac
+}
+
+IsApp () {
   local dir=$1
 
-  isDir $dir || return
-
-  isFile $dir/detect.bash && {
+  IsFile $dir/detect.bash && {
     source $dir/detect.bash
     return
   }
 
-  isCmd $dir
+  IsCmd $dir
 }
 
-isCmd () {
+IsCmd () {
   type $1 &>/dev/null
 }
 
-isDir () {
+IsDir () {
   [[ -d $1 ]]
 }
 
-isFile () {
+IsFile () {
   [[ -r $1 ]]
 }
 
-isFunc () {
+IsFunc () {
   [[ $(type -t $1) == function ]]
 }
 
-isPathCmd () {
+IsPathCmd () {
   type -p $1 &>/dev/null
 }
 
-orderByDependencies () {
-  local -A satisfied=()
+ListDir () { (
+  local items=()
 
-  OrderByDependencies $*
-}
+  cd $1
+  Globbing on
+  items=( * )
+  echo "${items[*]}"
+) }
 
 OrderByDependencies () {
+  local -A satisfied=()
+
+  ORDER_BY_DEPENDENCIES
+}
+
+ORDER_BY_DEPENDENCIES () {
   local app dep
 
-  for app; do
+  while read -r app; do
     (( ${satisfied[$app]} )) && continue
 
-    ! isFile $app/deps && {
+    ! IsFile $app/deps && {
       echo $app
       satisfied[$app]=1
       continue
     }
 
-    for dep in $(OrderByDependencies $(<$app/deps)); do
+    for dep in $(ORDER_BY_DEPENDENCIES $(<$app/deps)); do
       (( ${satisfied[$dep]} )) && continue
       echo $dep
       satisfied[$dep]=1
@@ -87,38 +94,53 @@ OrderByDependencies () {
   done
 }
 
-shellIsInteractive () {
+# Ralias aliases with reveal
+Ralias () {
+  local name=${1%%=*}
+  local cmd=${1#*=}
+
+  alias $name="reveal $name; $cmd"
+}
+
+ShellIsInteractive () {
   [[ $- == *i* ]]
 }
 
-shellIsInteractiveAndLogin () {
-  shellIsInteractive && shellIsLogin
+ShellIsInteractiveAndLogin () {
+  ShellIsInteractive && ShellIsLogin
 }
 
-shellIsLogin () {
-  [[ $(shopt login_shell) == *on || $SHLVL == 1 ]]
+ShellIsLogin () {
+  ! (( ENV_SET ))
 }
 
-strContains () {
+SplitSpace () {
+  case $1 in
+    on  ) IFS=$' \t\n';;
+    off ) IFS=$'\n'
+  esac
+}
+
+StrContains () {
   [[ $1 == *"$2"* ]]
 }
 
-testAndExport () {
+TestAndExport () {
   export $1=${!1:-$2}
 }
 
-testCmdAndExport () {
-  isPathCmd $2 && export $1=$(cmdPath $2)
+TestCmdAndExport () {
+  IsPathCmd $2 && export $1=$(CmdPath $2)
 }
 
-alias testAndSource='{ read -r Candidate; isFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
+alias TestAndSource='{ read -r Candidate; IsFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
 
-testAndTouch () {
-  ! isFile $1 && touch $1
+TestAndTouch () {
+  ! IsFile $1 && touch $1
 }
 
 # trim strips leading and trailing whitespace from a string
-trim () {
+Trim () {
   local indent result
 
   indent=${1%%[^[:space:]]*}
@@ -127,11 +149,11 @@ trim () {
   echo ${result%$indent}
 }
 
-VARS=( VARS )
+Vars=( Vars )
 
-FUNCTIONS=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )
-VARS+=( FUNCTIONS )
+Functions=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )
+Vars+=( Functions )
 unset -v FunctionList
 
-declare -A LOADED=([initutil]=1)
-VARS+=( LOADED )
+declare -A Loaded=([initutil]=1)
+Vars+=( Loaded )

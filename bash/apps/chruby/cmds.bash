@@ -1,28 +1,28 @@
 # middleman
-ralias bemar='bundle exec middleman article'
-ralias bemid='bundle exec middleman'
-ralias bemse='bundle exec middleman server'
+Ralias bemar='bundle exec middleman article'
+Ralias bemid='bundle exec middleman'
+Ralias bemse='bundle exec middleman server'
 
 # rails
-ralias beraic='bundle exec rails console'
-ralias berais='bundle exec rails server'
+Ralias beraic='bundle exec rails console'
+Ralias berais='bundle exec rails server'
 
 # rake
-ralias berak='bundle exec rake'
-ralias berakdm='bundle exec rake db:migrate'
+Ralias berak='bundle exec rake'
+Ralias berakdm='bundle exec rake db:migrate'
 
 # rspec
-ralias bersp='bundle exec rspec'
+Ralias bersp='bundle exec rspec'
 
 # torquebox
-ralias betde='bundle exec torquebox deploy'
-ralias betru='bundle exec torquebox run'
+Ralias betde='bundle exec torquebox deploy'
+Ralias betru='bundle exec torquebox run'
 
 # bundler
-ralias bexec='bundle exec'
-ralias binst='bundle install'
-ralias bupda='bundle update'
-ralias busou='bundle update --source'
+Ralias bexec='bundle exec'
+Ralias binst='bundle install'
+Ralias bupda='bundle update'
+Ralias busou='bundle update --source'
 
 # rb runs ruby code from the command line
 rb () {

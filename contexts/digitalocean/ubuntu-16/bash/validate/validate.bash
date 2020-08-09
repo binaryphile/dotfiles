@@ -1,14 +1,14 @@
 (
-  HERE=$(cd $(dirname $BASH_SOURCE); cd -P $(dirname $(readlink $BASH_SOURCE || echo $BASH_SOURCE)); pwd)
-  ! (( ${LOADED[initutil]} )) && source $HERE/../../../../../bash/lib/initutil.bash
+  Here=$(cd $(dirname $BASH_SOURCE); cd -P $(dirname $(readlink $BASH_SOURCE || echo $BASH_SOURCE)); pwd)
+  ! (( ${Loaded[initutil]} )) && source $Here/../../../../../bash/lib/initutil.bash
 
-  source $HERE/lib/truth.bash
+  source $Here/lib/truth.bash
 
-  source $HERE/env.bash
-  source $HERE/interactive-login.bash
-  source $HERE/cmds.bash
-  source $HERE/bash.bash
-  source $HERE/interactive.bash
+  source $Here/env.bash
+  source $Here/interactive-login.bash
+  source $Here/cmds.bash
+  source $Here/bash.bash
+  source $Here/interactive.bash
 
-  source $HERE/apps.bash
+  source $Here/apps.bash
 )

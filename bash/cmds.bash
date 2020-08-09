@@ -5,25 +5,16 @@ reveal () {
   type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' | grep --color . >&2
 }
 
-# ralias aliases with reveal
-ralias () {
-  local name=${1%%=*}
-  local cmd=${1#*=}
-
-  alias $name="reveal $name; $cmd"
-}
-FUNCTIONS+=( ralias )
-
-ralias validate-bash="source $HOME/dotfiles/bash/validate/validate.bash"
+Ralias validate-bash="source $HOME/dotfiles/bash/validate/validate.bash"
 
 alias ls="ls -hF --group-directories-first $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
-ralias ll='ls -l'
-ralias la='ls -la'
-ralias ltr='ls -ltr'
+Ralias ll='ls -l'
+Ralias la='ls -la'
+Ralias ltr='ls -ltr'
 
-ralias road='dig +noall +answer'
-ralias path="echo \"\${PATH//:/$NL}\""
-ralias df='df -x squashfs -x tmpfs'
+Ralias road='dig +noall +answer'
+Ralias path="echo \"\${PATH//:/$Nl}\""
+Ralias df='df -x squashfs -x tmpfs'
 
 # miracle sets up ssh agent forwarding for an account you sudo to
 miracle () {

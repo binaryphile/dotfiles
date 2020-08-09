@@ -1,1 +1,1 @@
-! isFile /etc/profile.d/liquidprompt.sh && testAndSource "$HOME"/dotfiles/liquidprompt/liquidprompt
+! IsFile /etc/profile.d/liquidprompt.sh && TestAndSource "$HOME"/dotfiles/liquidprompt/liquidprompt

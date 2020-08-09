@@ -1,1 +1,1 @@
-isDir /usr/local/share/chruby
+IsDir /usr/local/share/chruby

@@ -1,1 +1,1 @@
-isFile $HOME/dotfiles/liquidprompt/liquidprompt
+IsFile $HOME/dotfiles/liquidprompt/liquidprompt
