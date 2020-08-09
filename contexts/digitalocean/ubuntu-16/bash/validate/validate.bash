@@ -1,6 +1,6 @@
 (
   HERE=$(cd $(dirname $BASH_SOURCE); cd -P $(dirname $(readlink $BASH_SOURCE || echo $BASH_SOURCE)); pwd)
-  ! (( ${LOADED[initutil]} )) && source $HERE/../lib/initutil.bash
+  ! (( ${LOADED[initutil]} )) && source $HERE/../../../../../bash/lib/initutil.bash
 
   source $HERE/lib/truth.bash
 

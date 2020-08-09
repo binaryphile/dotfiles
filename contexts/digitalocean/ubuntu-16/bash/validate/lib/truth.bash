@@ -50,8 +50,16 @@ functions.exist () {
   done
 }
 
+outputOf.isEqualTo () {
+  string.isEqualTo $($1) $2
+}
+
 setting.isOn () {
-  [[ $(set -o | grep "^$1\W" | cut -f2) == on ]]
+  [[ $(shopt -op $1) == *-o* ]]
+}
+
+shellOpt.isOn () {
+  [[ $(shopt -p $1) == *-s* ]]
 }
 
 shellVar.contains () {

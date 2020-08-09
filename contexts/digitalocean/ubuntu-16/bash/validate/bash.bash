@@ -1,1 +1,2 @@
-assertThat string $(umask) isEqualTo 0022
+assertThat outputOf umask isEqualTo 0022
+assertThat shellOpt histappend isOn
