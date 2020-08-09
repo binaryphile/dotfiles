@@ -14,7 +14,7 @@ Vars+=(    # add to list of variables to cleanup before ending
 )
 
 # "source ~/.bashrc reload" allows forcing reload of environment and login actions.
-# shellIsLogin defines login as any environment where this script hasn't yet
+# ShellIsLogin defines login as any environment where this script hasn't yet
 # run (by testing for ENV_SET), as opposed to bash --login.
 { ShellIsLogin || [[ $1 == reload ]]; } && {
   source $Here/env.bash   # general environment vars
@@ -35,7 +35,7 @@ ShellIsInteractive && source $Here/interactive.bash
 export ENV_SET=1
 
 # cleanup
-unset -v ${Vars[*]}
-unset -f ${Functions[*]}
 SplitSpace on
 Globbing on
+unset -v "${Vars[@]}"
+unset -f "${Functions[@]}"
