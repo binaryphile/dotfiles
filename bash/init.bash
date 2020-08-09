@@ -37,5 +37,5 @@ export ENV_SET=1
 # cleanup
 SplitSpace on
 Globbing on
-unset -v "${Vars[@]}"
 unset -f "${Functions[@]}"
+unset -v "${Vars[@]}"
