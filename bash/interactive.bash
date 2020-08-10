@@ -1,6 +1,8 @@
 set -o vi
 
 shopt -s histappend
-PROMPT_COMMAND="$PROMPT_COMMAND${PROMPT_COMMAND+; }history -a"
+HISTCONTROL=ignorespace:erasedups
+HISTIGNORE=ls:ps:bg:fg:history
+HISTTIMEFORMAT='%F %T '
 
 INPUTRC=$HOME/dotfiles/bash/inputrc

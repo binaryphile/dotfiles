@@ -66,6 +66,12 @@ shellVar.contains () {
   [[ ${!1} == *"$2"* ]]
 }
 
+shellVar.containsAll () {
+  while read -r item; do
+    StrContains :${!1}: :$(Trim $item): || return
+  done
+}
+
 shellVar.isEqualTo () {
   [[ ${!1} == "$2" ]]
 }
