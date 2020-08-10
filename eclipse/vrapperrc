@@ -1,0 +1,41 @@
+" ---------------
+" Searching
+" ---------------
+set ignorecase " Case insensitive search
+set smartcase  " Non-case sensitive search
+
+" ---------------
+" Mappings
+" ---------------
+nnoremap n j
+vnoremap n j
+nnoremap e k
+vnoremap e k
+nnoremap j n
+vnoremap j n
+nnoremap k e
+vnoremap k e
+nnoremap N J
+vnoremap N J
+nnoremap E K
+vnoremap E K
+nnoremap J N
+vnoremap J N
+nnoremap K E
+vnoremap K E
+
+" Create newlines without entering insert mode
+nnoremap go o<Esc>e
+nnoremap gO O<Esc>
+
+" remap U to <C-r> for easier redo
+" from http://vimbits.com/bits/356
+nnoremap U <C-r>
+
+" Scroll larger amounts with g
+nnoremap gn 15jzz
+nnoremap ge 15kzz
+vnoremap gn 15jzz
+vnoremap ge 15kzz
+
+" vim: ft=vim
