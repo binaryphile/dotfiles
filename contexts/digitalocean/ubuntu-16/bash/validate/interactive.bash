@@ -17,3 +17,4 @@ assertThat shellVar HISTIGNORE containsAll <<'END'
 END
 
 assertThat shellVar HISTTIMEFORMAT isEqualTo '%F %T '
+assertThat shellVar PROMPT_COMMAND contains 'echo $$ $USER "$(history 1)" >>$HOME/.bash_eternal_history'
