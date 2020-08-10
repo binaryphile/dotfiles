@@ -1,2 +1,1 @@
-assertThat file $HOME/.hushlogin exists
-assertThat envVar INPUTRC isEqualTo $HOME/dotfiles/bash/inputrc
+../../../../digitalocean/ubuntu-16/bash/validate/interactive-login.bash

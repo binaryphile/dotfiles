@@ -1,1 +1,1 @@
-assertThat setting vi isOn
+../../../../digitalocean/ubuntu-16/bash/validate/interactive.bash

@@ -1,1 +1,1 @@
-assertThat string $(umask) isEqualTo 0022
+../../../../digitalocean/ubuntu-16/bash/validate/bash.bash

@@ -1,3 +1,1 @@
-for file in $HERE/apps/*; do
-  source $file
-done
+../../../../digitalocean/ubuntu-16/bash/validate/apps.bash

@@ -1,1 +1,1 @@
-assertThat function _exercism exists
+../../../../../digitalocean/ubuntu-16/bash/validate/apps/exercism.bash

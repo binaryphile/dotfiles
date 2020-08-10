@@ -1,1 +1,1 @@
-assertThat function shannon exists
+../../../../../digitalocean/ubuntu-16/bash/validate/apps/pandoc.bash

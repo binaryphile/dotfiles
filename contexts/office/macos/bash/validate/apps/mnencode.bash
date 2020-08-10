@@ -1,1 +1,1 @@
-assertThat function randword exists
+../../../../../digitalocean/ubuntu-16/bash/validate/apps/mnencode.bash

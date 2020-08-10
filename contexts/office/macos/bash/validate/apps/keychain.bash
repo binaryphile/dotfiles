@@ -1,1 +1,1 @@
-assertThat envVar SSH_AGENT_PID exists
+../../../../../digitalocean/ubuntu-16/bash/validate/apps/keychain.bash
