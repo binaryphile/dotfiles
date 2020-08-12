@@ -7,10 +7,10 @@ reveal () {
 
 Ralias validate-bash="source $HOME/dotfiles/bash/validate/validate.bash"
 
-alias ls="ls -hF --group-directories-first $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
-Ralias ll='ls -l'
-Ralias la='ls -la'
-Ralias ltr='ls -ltr'
+alias l="ls -hF --group-directories-first $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
+Ralias ll='l -l'
+Ralias la='l -la'
+Ralias ltr='l -ltr'
 
 Ralias road='dig +noall +answer'
 Ralias path="echo \"\${PATH//:/$Nl}\""

@@ -28,6 +28,7 @@ assertThat aliases exist <<'END'
   strep
   stser
   stsho
+  stsqu
   stunc
   stuncn
   stund

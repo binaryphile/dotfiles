@@ -1,8 +1,8 @@
 assertThat aliases exist <<'END'
   df
+  l
   la
   ll
-  ls
   ltr
   path
   road
