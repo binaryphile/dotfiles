@@ -1,0 +1,5 @@
+machine test.idigi.com login tlilley password yourpassword
+machine tm1.idigi.com login tlilleyadmin password yourpassword
+machine firmware-tm1.idigi.com login tlilleyadmin password yourpassword
+machine dm1.idigi.com login tlilley password yourpassword
+machine localhost login GetGo password yourpassword
