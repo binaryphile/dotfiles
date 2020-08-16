@@ -5,16 +5,16 @@ reveal () {
   type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' | grep --color . >&2
 }
 
-Ralias validate-bash="source $HOME/dotfiles/bash/validate/validate.bash"
+Alias validate-bash="source $HOME/dotfiles/bash/validate/validate.bash"
 
-alias l="ls -hF --group-directories-first $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
-Ralias ll='l -l'
-Ralias la='l -la'
-Ralias ltr='l -ltr'
+alias l="ls -hF $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
+Alias ll='l -l'
+Alias la='l -la'
+Alias ltr='l -ltr'
 
-Ralias road='dig +noall +answer'
-Ralias path="echo \"\${PATH//:/$Nl}\""
-Ralias df='df -x squashfs -x tmpfs'
+Alias road='dig +noall +answer'
+Alias path="echo \"\${PATH//:/$Nl}\""
+Alias df='df -x squashfs -x tmpfs'
 
 # miracle sets up ssh agent forwarding for an account you sudo to
 miracle () {

@@ -2,6 +2,14 @@
 
 FunctionList=$(compgen -A function | sort)
 
+# Alias aliases with reveal
+Alias () {
+  local name=${1%%=*}
+  local cmd=${1#*=}
+
+  alias $name="reveal $name; $cmd"
+}
+
 CmdPath () {
   type -p $1
 }
@@ -92,14 +100,6 @@ ORDER_BY_DEPENDENCIES () {
     echo $app
     satisfied[$app]=1
   done
-}
-
-# Ralias aliases with reveal
-Ralias () {
-  local name=${1%%=*}
-  local cmd=${1#*=}
-
-  alias $name="reveal $name; $cmd"
 }
 
 ShellIsInteractive () {
