@@ -3,8 +3,8 @@ Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURC
 
 source "$Here"/lib/initutil.bash
 
-Nl=$'\n'        # Nl is newline
-SplitSpace off  # don't require quotes on normal string vars by setting IFS to newline
+Nl=$'\n'        # Nl is newline, can be handy and is easier on the eyes
+SplitSpace off  # don't require quotes on normal string vars, by setting IFS to newline
 Globbing off    # turn off globbing until I need it
 
 Vars+=(    # add to list of variables to cleanup before ending
@@ -25,9 +25,9 @@ Vars+=(    # add to list of variables to cleanup before ending
   ShellIsInteractive && source $Here/interactive-login.bash
 }
 
+source $Here/apps.bash    # app-specific environment and commands, see apps/
 source $Here/bash.bash    # bash-specific configuration
 source $Here/cmds.bash    # general aliases and functions
-source $Here/apps.bash    # app-specific environment and commands, see apps/
 
 # interactive settings
 ShellIsInteractive && source $Here/interactive.bash
