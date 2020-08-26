@@ -11,7 +11,6 @@ END
 
 assertThat functions exist <<'END'
   become
-  minimak
   psaux
   reveal
   runas
