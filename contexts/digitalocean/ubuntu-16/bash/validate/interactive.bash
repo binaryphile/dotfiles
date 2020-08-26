@@ -9,10 +9,11 @@ assertThat shellVar HISTCONTROL containsAll <<'END'
 END
 
 assertThat shellVar HISTIGNORE containsAll <<'END'
-  ls
+  l
+  l[asl]
+  ltr
   ps
-  bg
-  fg
+  [bf]g
   history
 END
 
