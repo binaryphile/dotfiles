@@ -1,1 +1,0 @@
-../../ubuntu-16/bash/validation_functions.bash
