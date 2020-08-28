@@ -1,4 +1,5 @@
 # initutil.bash - useful functions for init.bash
+shopt -s expand_aliases
 
 FunctionList=$(compgen -A function | sort)
 

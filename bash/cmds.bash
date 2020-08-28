@@ -1,4 +1,4 @@
-shopt -s expand_aliases   # enable aliases even when non-interactive
+# aliases are turned on for non-interactive as well in lib/initutil.bash
 
 # reveal shows the function/alias definition on stderr
 reveal () {
