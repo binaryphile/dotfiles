@@ -40,3 +40,9 @@ psaux () {
   reveal "$FUNCNAME"
   pgrep -f "$@" | xargs ps -fp 2>/dev/null
 }
+
+new () {
+  case $1 in
+    alias ) ${EDITOR:-vim} "$HOME"/dotfiles/bash/${2:+apps/$2/}cmds.bash;;
+  esac
+}
