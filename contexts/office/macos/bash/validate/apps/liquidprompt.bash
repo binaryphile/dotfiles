@@ -1,1 +1,1 @@
-../../../../../digitalocean/ubuntu-16/bash/validate/apps/liquidprompt.bash
+assertThat function prompt_on exists

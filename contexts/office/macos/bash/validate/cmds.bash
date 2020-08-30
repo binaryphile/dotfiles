@@ -1,1 +1,17 @@
-../../../../digitalocean/ubuntu-16/bash/validate/cmds.bash
+assertThat aliases exist <<'END'
+  df
+  l
+  la
+  ll
+  ltr
+  path
+  road
+  validate-bash
+END
+
+assertThat functions exist <<'END'
+  become
+  psaux
+  reveal
+  runas
+END

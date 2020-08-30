@@ -1,1 +1,1 @@
-../../../../digitalocean/ubuntu-16/bash/validate/bash.bash
+assertThat outputOf umask isEqualTo 0022

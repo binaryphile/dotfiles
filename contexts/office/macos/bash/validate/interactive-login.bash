@@ -1,1 +1,1 @@
-../../../../digitalocean/ubuntu-16/bash/validate/interactive-login.bash
+assertThat file $HOME/.hushlogin exists

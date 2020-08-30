@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+IFS=$'\n'     # don't require quotes on normal string vars
+set -o noglob # turn off globbing until I need it
+
+# Here is the location of this script
+Here=$(dirname $BASH_SOURCE)
+
+main () {
+  replace $HOME/.bashrc $Here/init.bash
+  replace $HOME/.bash_profile $Here/init.bash
+}
+
+# die exits with the last result code and prints the arguments on stdout
+die () {
+  local -i rc=$?
+  local arg
+
+  for arg; { echo "$arg"; }
+  exit $rc
+}
+
+replace () {
+  mv $1 $1_old  || die "couldn't move $1"
+  ln -sf $2 $1  || die "couldn't link $1"
+  echo "moved $1 to $1_old and installed init"
+}
+
+return 2>/dev/null
+set -eu
+
+main
