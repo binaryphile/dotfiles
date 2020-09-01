@@ -1,4 +1,4 @@
-pushd $Here/apps >/dev/null
+pushd $Root/apps >/dev/null
 
 AppList=$(ListDir . | Filter IsDir | Filter IsApp | OrderByDependencies)
 

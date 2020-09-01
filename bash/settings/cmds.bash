@@ -5,7 +5,7 @@ reveal () {
   type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' | grep --color . >&2
 }
 
-Alias validate-bash="source $HOME/dotfiles/bash/validate/validate.bash"
+Alias validate-bash="source $HOME/dotfiles/bash/lib/validate.bash"
 
 alias l="ls -hF $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
 Alias ll='l -l'

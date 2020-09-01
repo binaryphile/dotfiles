@@ -1,42 +1,28 @@
-# Here is the location of this script, normalized for symlinks
-Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo "$BASH_SOURCE")")"; pwd)
+# init.bash - main script for init
 
-source "$Here"/lib/initutil.bash
+# Root is the location of this script, normalized for symlinks
+Root=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo "$BASH_SOURCE")")"; pwd)
 
-Nl=$'\n'        # Nl is newline, can be handy and is easier on the eyes
+Vars=( Root ) # vars to cleanup
+
+source "$Root"/lib/initutil.bash
+
 SplitSpace off  # don't require quotes on normal string vars, by setting IFS to newline
 Globbing off    # turn off globbing until I need it
 
-Vars+=(    # add to list of variables to cleanup before ending
-  Here
-  Nl
-)
+# "source ~/.bashrc reload" forces reload of everything, including environment
+# and login actions.
+{ ShellIsLogin || [[ $1 == reload ]]; } && source $Root/settings/env.bash
 
-# uncomment and create in case the order below doesn't work for something
-# source $Here/pre.bash
-
-# "source ~/.bashrc reload" allows forcing reload of environment and login actions.
-# ShellIsLogin defines login as any environment where this script hasn't yet
-# run (by testing for ENV_SET), as opposed to bash --login.
-{ ShellIsLogin || [[ $1 == reload ]]; } && {
-  source $Here/env.bash   # general environment vars
-
-  # one-time login tasks
-  ShellIsInteractive && source $Here/interactive-login.bash
-}
-
-source $Here/apps.bash    # app-specific environment and commands, see apps/
-source $Here/bash.bash    # bash-specific configuration
-source $Here/cmds.bash    # general aliases and functions
+source $Root/lib/apps.bash        # app-specific environment and commands, see apps/
+source $Root/settings/base.bash   # general configuration, always loaded
+source $Root/settings/cmds.bash   # aliases and functions
 
 # interactive settings
-ShellIsInteractive && source $Here/interactive.bash
+ShellIsInteractive && source $Root/settings/interactive.bash
 
-# uncomment and create in case the order above doesn't work for something
-# source $Here/post.bash
-
-# configuration validation
-{ ShellIsInteractiveAndLogin || [[ $1 == reload ]]; } && source $Here/validate/validate.bash
+# one-time, interactive-only login tasks and configuration validation
+{ ShellIsInteractiveAndLogin || [[ $1 == reload ]]; } && source $Root/settings/login.bash
 
 [[ $1 == reload ]] && echo reloaded
 
