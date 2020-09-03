@@ -43,6 +43,6 @@ psaux () {
 
 new () {
   case $1 in
-    alias ) ${EDITOR:-vim} "$HOME"/dotfiles/bash/${2:+apps/$2/}cmds.bash;;
+    cmd ) $EDITOR "$HOME"/dotfiles/bash/${2:+apps/$2/}cmds.bash;;
   esac
 }
