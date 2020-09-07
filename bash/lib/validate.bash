@@ -5,6 +5,7 @@
   ! (( ${Loaded[initutil]} )) && {
     source "$Here"/initutil.bash
     SplitSpace off
+    Globbing off
   }
 
   source $Here/truth.bash

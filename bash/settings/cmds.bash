@@ -13,7 +13,7 @@ Alias la='l -la'
 Alias ltr='l -ltr'
 
 Alias road='dig +noall +answer'
-Alias path="echo \"\${PATH//:/$Nl}\""
+Alias path="echo \"\${PATH//:/$'\n'}\""
 Alias df='df -x squashfs -x tmpfs'
 
 # miracle sets up ssh agent forwarding for an account you sudo to

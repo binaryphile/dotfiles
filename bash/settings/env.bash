@@ -1,7 +1,6 @@
 PATH=$HOME/.local/bin:$PATH
 
-TestCmdAndExport EDITOR vim
-TestCmdAndExport EDITOR nvim
+TestCmdAndExport EDITOR nvim vim
 TestCmdAndExport PAGER less
 
 TestAndExport XDG_CONFIG_HOME $HOME/.config

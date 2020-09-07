@@ -3,11 +3,11 @@ set -o vi
 INPUTRC=$HOME/dotfiles/bash/inputrc
 
 historymerge () {
-  <"$HOME"/.bash_history nl |
-    sort -k2 |
-    tac |
-    uniq -f1 |
-    sort -n |
+  nl <"$HOME"/.bash_history |
+    sort -k2  |
+    tac       |
+    uniq -f1  |
+    sort -n   |
     cut -f2 >"$HOME"/.bash_history_new
     mv "$HOME"/.bash_history_new "$HOME"/.bash_history
 }

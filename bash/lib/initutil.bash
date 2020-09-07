@@ -131,7 +131,14 @@ TestAndExport () {
 }
 
 TestCmdAndExport () {
-  IsPathCmd $2 && export $1=$(CmdPath $2)
+  local ref=$1; shift
+  local candidate
+
+  for candidate; {
+    ! IsPathCmd $candidate && continue
+    export $ref=$(CmdPath $candidate)
+    return
+  }
 }
 
 alias TestAndSource='{ read -r Candidate; IsFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
