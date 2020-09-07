@@ -51,7 +51,7 @@ functions.exist () {
 }
 
 outputOf.isEqualTo () {
-  string.isEqualTo $($1) $2
+  string.isEqualTo $(IFS=$' \t\n'; $1) $2
 }
 
 setting.isOn () {
