@@ -1,4 +1,4 @@
-PATH=$HOME/.local/bin:$PATH
+PATH=$HOME/.local/bin:$HOME/.go/bin:$PATH
 
 TestCmdAndExport EDITOR nvim vim
 TestCmdAndExport PAGER less
