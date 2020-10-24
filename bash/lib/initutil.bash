@@ -157,7 +157,7 @@ Trim () {
   echo ${result%$indent}
 }
 
-Vars=( Vars )
+Vars+=( Vars )
 
 Functions=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )
 Vars+=( Functions )

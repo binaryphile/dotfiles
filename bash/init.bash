@@ -2,8 +2,9 @@
 
 # Root is the location of this script, normalized for symlinks
 Root=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo "$BASH_SOURCE")")"; pwd)
+[[ $1 == reload ]] && Reload=1 || Reload=0
 
-Vars=( Root ) # vars to cleanup
+Vars=( Reload Root ) # vars to cleanup
 
 source "$Root"/lib/initutil.bash
 
@@ -12,8 +13,9 @@ Globbing off    # turn off globbing until I need it
 
 # "source ~/.bashrc reload" forces reload of everything, including environment
 # and login actions.
-{ ShellIsLogin || [[ $1 == reload ]]; } && source $Root/settings/env.bash
+{ ShellIsLogin || (( Reload )); } && source $Root/settings/env.bash
 
+TestAndSource $Root/context/init.bash  # context-specific initialization, if applicable
 source $Root/lib/apps.bash        # app-specific environment and commands, see apps/
 source $Root/settings/base.bash   # general configuration, always loaded
 source $Root/settings/cmds.bash   # aliases and functions
@@ -22,9 +24,9 @@ source $Root/settings/cmds.bash   # aliases and functions
 ShellIsInteractive && source $Root/settings/interactive.bash
 
 # one-time, interactive-only login tasks and configuration validation
-{ ShellIsInteractiveAndLogin || [[ $1 == reload ]]; } && source $Root/settings/login.bash
+{ ShellIsInteractiveAndLogin || (( Reload )); } && source $Root/settings/login.bash
 
-[[ $1 == reload ]] && echo reloaded
+(( Reload ))&& echo reloaded
 
 # so we can tell this script has been run
 export ENV_SET=1
