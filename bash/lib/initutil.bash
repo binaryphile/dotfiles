@@ -1,4 +1,5 @@
 # initutil.bash - useful functions for init.bash
+
 shopt -s expand_aliases
 
 FunctionList=$(compgen -A function | sort)
@@ -118,7 +119,7 @@ ShellIsLogin () {
 SplitSpace () {
   case $1 in
     on  ) IFS=$' \t\n';;
-    off ) IFS=$'\n'
+    off ) IFS=$'\n'   ;;
   esac
 }
 
@@ -157,10 +158,8 @@ Trim () {
   echo ${result%$indent}
 }
 
-Vars+=( Vars )
-
 Functions=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )
-Vars+=( Functions )
+Vars+=( Vars Functions )
 unset -v FunctionList
 
 declare -A Loaded=([initutil]=1)
