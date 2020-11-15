@@ -36,3 +36,6 @@ SplitSpace on
 Globbing on
 unset -f "${Functions[@]}"
 unset -v "${Vars[@]}"
+
+# add Pulumi to the PATH
+export PATH=$PATH:$HOME/.pulumi/bin
