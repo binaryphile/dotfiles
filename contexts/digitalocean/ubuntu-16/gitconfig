@@ -28,3 +28,5 @@
   status = auto
 [url "git@bitbucket.org:accelecon"]
 	insteadOf = https://bitbucket.org/accelecon
+[url "git@github.com:"]
+  insteadOf = https://github.com/
