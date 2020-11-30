@@ -48,6 +48,10 @@ Host tm1-*
 ProxyCommand ssh -W %h:%p tm1
 User tlilley
 
+Host dm-*
+ProxyCommand ssh -W %h:%p dm1
+User tlilley
+
 Host dm1-*
 ProxyCommand ssh -W %h:%p dm1
 User tlilley
