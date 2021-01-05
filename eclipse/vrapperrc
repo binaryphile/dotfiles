@@ -38,4 +38,14 @@ nnoremap ge 15kzz
 vnoremap gn 15jzz
 vnoremap ge 15kzz
 
+" Line numbering
+set relativenumber
+set number
+
+" Presentation
+set scrolloff=3   " top/bottom margin
+
+" Search
+set incsearch
+
 " vim: ft=vim
