@@ -30,9 +30,9 @@
     state:  link
     force:  yes
   loop:
-    - { src: bash/bashrc,                 path: .bash_profile                     }
-    - { src: bash/bashrc,                 path: .bashrc                           }
-    - { src: bash/bashrc,                 path: .profile                          }
+    - { src: bash/init.bash,              path: .bash_profile                     }
+    - { src: bash/init.bash,              path: .bashrc                           }
+    - { src: bash/init.bash,              path: .profile                          }
     - { src: bash/dir_colors,             path: .dir_colors                       }
     - { src: gitconfig,                   path: .gitconfig                        }
     - { src: liquidprompt/liquid.theme,   path: .config/liquidprompt/liquid.theme }
