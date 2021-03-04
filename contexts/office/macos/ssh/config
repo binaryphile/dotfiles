@@ -40,8 +40,12 @@ User jenkins
 Host mtk-vln-avbld01 mtk-vln-avbld01.digi.com
 User jenkins
 
-Host tm1 dm1 dm2
+Host tm1 dm1 dm2 mtk
 Hostname 10.10.235.17
+User tlilley
+
+Host cnc
+ProxyCommand ssh -W 172.28.1.51:22 mtk
 User tlilley
 
 Host tm1-*
