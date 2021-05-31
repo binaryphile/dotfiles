@@ -131,6 +131,12 @@ TestAndExport () {
   export $1=${!1:-$2}
 }
 
+alias TestAndSource='{ read -r Candidate; IsFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
+
+TestAndTouch () {
+  ! IsFile $1 && touch $1
+}
+
 TestCmdAndExport () {
   local ref=$1; shift
   local candidate
@@ -142,10 +148,19 @@ TestCmdAndExport () {
   }
 }
 
-alias TestAndSource='{ read -r Candidate; IsFile $Candidate && source $Candidate; unset -v Candidate; } <<<'
+TEST_LIST_CONTAINS () { (
+  IFS=:
+  Contains "$1" "$2"
+) }
 
-TestAndTouch () {
-  ! IsFile $1 && touch $1
+TestContainsAndAppend () {
+  TEST_LIST_CONTAINS ${!1} $2 && return
+  declare -g $1=${!1}:$2
+}
+
+TestContainsAndPrepend () {
+  TEST_LIST_CONTAINS ${!1} $2 && return
+  declare -g $1=$2:${!1}
 }
 
 # trim strips leading and trailing whitespace from a string

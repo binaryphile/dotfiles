@@ -1,1 +1,1 @@
-PATH+=:$HOME/.pulumi/bin
+TestContainsAndAppend PATH $HOME/.pulumi/bin

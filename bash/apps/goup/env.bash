@@ -1,1 +1,1 @@
-PATH=$HOME/.go/bin:$HOME/.go/current/bin:$PATH
+TestContainsAndPrepend PATH $HOME/.go/current/bin
