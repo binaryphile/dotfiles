@@ -1,0 +1,1 @@
+IsDir $HOME/.go

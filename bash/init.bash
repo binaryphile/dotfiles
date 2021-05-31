@@ -1,7 +1,7 @@
 # init.bash - main script for init
 
 # Root is the location of this script, normalized for symlinks
-Root=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo "$BASH_SOURCE")")"; pwd)
+Root=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo .)")"; pwd)
 [[ $1 == reload ]] && Reload=1 || Reload=0
 
 Vars=( Reload Root ) # vars to cleanup
