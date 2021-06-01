@@ -1,1 +1,1 @@
-IsDir $HOME/.go
+IsFile $HOME/.local/bin/goup
