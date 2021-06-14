@@ -26,7 +26,7 @@ ShellIsInteractive && source $Root/settings/interactive.bash
 # one-time, interactive-only login tasks and configuration validation
 { ShellIsInteractiveAndLogin || (( Reload )); } && source $Root/settings/login.bash
 
-(( Reload ))&& echo reloaded
+(( Reload )) && echo reloaded
 
 # so we can tell this script has been run
 export ENV_SET=1
