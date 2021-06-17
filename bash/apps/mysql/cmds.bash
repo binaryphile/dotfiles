@@ -1,1 +1,1 @@
-Alias usermysql="mysql --defaults-extra-file=\"$HOME\"/.config/mysql/my.cnf"
+Alias usermysql="mysql --defaults-extra-file=\"$CFGDIR\"/mysql/my.cnf"
