@@ -1,1 +1,1 @@
-PATH+=:/usr/local/mysql/bin
+TestContainsAndAppend PATH /usr/local/mysql/bin

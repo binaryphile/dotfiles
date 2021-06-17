@@ -1,0 +1,1 @@
+IsDir /usr/local/mysql

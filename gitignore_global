@@ -28,3 +28,5 @@ patches-*/
 *.box
 .vscode/
 .envrc
+.idea/
+*.log
