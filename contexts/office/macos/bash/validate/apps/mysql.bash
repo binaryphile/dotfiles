@@ -1,1 +1,1 @@
-assertThat envVar PATH contains /usr/local/opt/mysql@5.7
+assertThat envVar PATH contains /usr/local/mysql
