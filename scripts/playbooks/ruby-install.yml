@@ -6,7 +6,7 @@
   gather_facts: no
   vars:
     tmp_dir:              /tmp/ansible
-    ruby_install_version: 0.7.0
+    ruby_install_version: 0.8.1
     ruby_install_dir:     '{{ tmp_dir }}/ruby-install-{{ ruby_install_version }}'
 
   tasks:
