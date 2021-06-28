@@ -1,1 +1,1 @@
-IsFile $HOME/.local/bin/goup
+IsFile $HOME/.go/bin/goup

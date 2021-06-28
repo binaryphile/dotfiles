@@ -1,1 +1,1 @@
-TestContainsAndAppend PATH ~/go/bin
+TestContainsAndAppend PATH $HOME/go/bin
