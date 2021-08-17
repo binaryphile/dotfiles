@@ -1,11 +1,3 @@
-# BEGIN ANSIBLE MANAGED BLOCK
-[[ -d $HOME/.config/ansiblerc ]] && {
-  for rcfile in "$HOME"/.config/ansiblerc/*; do
-    source "$rcfile"
-  done
-}
-unset -v rcfile
-# END ANSIBLE MANAGED BLOCK
 # init.bash - main script for init
 
 # Root is the location of this script, normalized for symlinks
