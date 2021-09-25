@@ -14,7 +14,6 @@ Alias gchec='git checkout'
 Alias gclon='git clone'
 Alias gcoam='git commit --amend'
 Alias gcoane='git commit --amend --no-edit'
-Alias gcome='git commit --message'
 Alias gdcac='git diff --cached'
 Alias gdiff='git diff'
 Alias gfetc='git fetch'
@@ -49,6 +48,11 @@ Alias gstasl='git stash list'
 Alias gstassa='git stash save'
 Alias gstasshp='git stash show --patch'
 Alias gstats='git status --short'
+
+gcome () {
+  reveal "$FUNCNAME"
+  git commit --message "$JIRA${JIRA:+: }$@"
+}
 
 correct () {
   reveal "$FUNCNAME"
