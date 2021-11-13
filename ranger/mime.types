@@ -2,3 +2,6 @@ text/x-crt crt
 text/x-rst rst
 text/x-puml puml
 text/x-md md
+text/x-go go
+text/x-bash bash
+text/x-sh sh

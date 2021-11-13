@@ -1,6 +1,7 @@
 [user]
   email = ted.lilley@digi.com
   name = Ted Lilley
+	signingkey = 80AE993D8489ECAD
 [core]
   filemode = false
   excludesfile = /Users/tlilley/.gitignore_global
@@ -32,3 +33,5 @@
 	rebase = false
 [init]
 	defaultBranch = main
+[gpg]
+	program = /usr/local/bin/gpg
