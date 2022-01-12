@@ -87,3 +87,11 @@ User tlilley
 Host perf01-*
 ProxyCommand ssh -W %h:%p perf01
 User tlilley
+
+# ARMT DEV MySQL Credentials
+Host armt-dev-k8s-ansible
+User root
+HostName 35.227.80.199
+Port 12122
+StrictHostKeyChecking no
+UserKnownHostsFile /dev/null
