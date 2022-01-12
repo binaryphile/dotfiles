@@ -1,0 +1,1 @@
+IsDir /Library/TeX/texbin
