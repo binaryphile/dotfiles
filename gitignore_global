@@ -30,3 +30,4 @@ patches-*/
 .envrc
 .idea/
 *.log
+conf.py
