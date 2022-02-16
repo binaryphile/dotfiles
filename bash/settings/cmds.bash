@@ -2,7 +2,7 @@
 
 # reveal shows the function/alias definition on stderr
 reveal () {
-  type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' | grep --color . >&2
+  type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' >&2
 }
 
 Alias validate-bash="source $HOME/dotfiles/bash/lib/validate.bash"
