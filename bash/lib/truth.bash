@@ -31,7 +31,7 @@ envVar.exists () {
 }
 
 envVar.isEqualTo () {
-  printenv $1 >/dev/null
+  [[ $(printenv $1) == "$2" ]]
 }
 
 file.exists () {

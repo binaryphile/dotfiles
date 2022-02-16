@@ -1,7 +1,7 @@
 [user]
   email = ted.lilley@digi.com
   name = Ted Lilley
-	signingkey = 80AE993D8489ECAD
+  signingkey = 80AE993D8489ECAD
 [core]
   filemode = false
   excludesfile = /Users/tlilley/.gitignore_global
@@ -30,8 +30,8 @@
 [url "git@bitbucket.org:accelecon"]
   insteadOf = https://bitbucket.org/accelecon
 [pull]
-	rebase = false
+  rebase = false
 [init]
-	defaultBranch = main
+  defaultBranch = main
 [gpg]
-	program = /usr/local/bin/gpg
+  program = /usr/local/bin/gpg

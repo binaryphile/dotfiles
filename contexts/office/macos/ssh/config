@@ -31,7 +31,6 @@ ForwardAgent yes
 
 Host pinch
 Hostname 45.55.131.155
-Port 3333
 User ted
 
 Host aview-jenkins aview-jenkins.digi.com

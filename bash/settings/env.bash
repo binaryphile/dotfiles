@@ -1,3 +1,4 @@
+TestContainsAndPrepend PATH /usr/local/bin
 TestContainsAndPrepend PATH $HOME/.local/bin
 
 TestCmdAndExport EDITOR nvim vim
