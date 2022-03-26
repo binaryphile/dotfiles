@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+IFS=$'\n'
+set -o noglob
+
+main() {
+  sudo apt update -qq
+  sudo apt upgrade -y
+  sudo apt install ansible
+  ansible-pull -U https://github.com/binaryphile/ansible
+}
+
+return 2>/dev/null
+set -eu
+
+main "$@"
