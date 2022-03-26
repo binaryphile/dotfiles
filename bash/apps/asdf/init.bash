@@ -1,2 +1,2 @@
-TestAndSource "$HOME"/.local/opt/asdf/asdf.sh
-TestAndSource "$HOME"/.local/opt/asdf/completions/asdf.bash
+TestAndSource "$HOME"/.asdf/asdf.sh
+TestAndSource "$HOME"/.asdf/completions/asdf.bash

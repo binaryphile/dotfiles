@@ -1,1 +1,1 @@
-IsDir $HOME/.local/opt/asdf
+IsFile $HOME/.asdf/asdf.sh
