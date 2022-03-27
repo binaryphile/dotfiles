@@ -6,6 +6,10 @@ set -o noglob
 main() {
   sudo apt update -qq
   sudo apt upgrade -y
+  sudo apt install -y software-properties-common
+  curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
+  sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
+  sudo apt update -qq
   sudo apt install ansible
   ansible-pull -U https://github.com/binaryphile/ansible
 }
