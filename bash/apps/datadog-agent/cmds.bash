@@ -1,6 +1,0 @@
-alias ddagent='sudo -u dd-agent'
-Alias ddstat='ddagent datadog-agent status'
-Alias ddconf='ddagent -e /etc/datadog-agent/datadog.yaml'
-Alias ddnsconf='ddagent -e /etc/datadog-agent/conf.d/ns.d/conf.yaml'
-Alias ddcsconf='ddagent -e /etc/datadog-agent/conf.d/cs.d/conf.yaml'
-Alias ddjmx='ddagent datadog-agent jmx list'
