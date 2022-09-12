@@ -1,0 +1,6 @@
+#!/bin/bash
+for (( i = 1; i <= 64; i++ )); do
+  trap "echo $i" $i
+done
+
+exec 1>signals;sleep 100
