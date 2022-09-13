@@ -1,0 +1,4 @@
+mkdir -p ~/.config/systemd/user/sommelier-x@0.service.d
+echo -e '[Service]\nEnvironment="SOMMELIER_ACCELERATORS=Super_L,<Alt>tab"' > ~/.config/systemd/user/sommelier-x@0.service.d/override.conf
+systemctl --user daemon-reload
+systemctl --user restart sommelier-x@0.service
