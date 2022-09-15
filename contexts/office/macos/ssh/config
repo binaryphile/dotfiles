@@ -94,3 +94,18 @@ HostName 35.227.80.199
 Port 12122
 StrictHostKeyChecking no
 UserKnownHostsFile /dev/null
+
+Host armt-jump
+HostName 135.195.7.2
+User mz149x
+
+Host armt-dev-prem-app-01
+HostName 135.195.7.28
+User root
+ProxyCommand ssh -W %h:%p armt-jump
+
+# DEV
+Host armt-dev-prem-app-01
+HostName 135.195.7.28
+User root
+ProxyCommand ssh -W %h:%p armt-jump
