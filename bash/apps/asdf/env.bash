@@ -1,0 +1,1 @@
+TestAndExport CHARYBDIS_ROOT $HOME/GolandProjects/charybdis

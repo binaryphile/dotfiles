@@ -10,6 +10,7 @@ build/
 target/
 tags
 *.csv
+*.tsv
 *.sql
 *.tar
 *.gz
