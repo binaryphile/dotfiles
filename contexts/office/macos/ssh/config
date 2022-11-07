@@ -109,3 +109,7 @@ Host armt-dev-prem-app-01
 HostName 135.195.7.28
 User root
 ProxyCommand ssh -W %h:%p armt-jump
+
+Host ex12
+HostName 192.168.50.57
+User admin

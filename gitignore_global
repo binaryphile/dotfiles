@@ -31,5 +31,6 @@ patches-*/
 .envrc
 .idea/
 *.log
+*.json
 conf.py
 ignore/
