@@ -1,0 +1,59 @@
+UseRoaming no
+
+Host *
+IdentityAgent /run/user/1000/keyring/ssh
+ControlMaster auto
+ControlPersist yes
+ServerAliveInterval 300
+ServerAliveCountMax 2
+NoHostAuthenticationForLocalhost yes
+LogLevel ERROR
+GSSAPIAuthentication no
+
+Host bertr bertrand
+Hostname 10.250.1.89
+User ted
+
+Host vagra vagrant
+Hostname localhost
+User vagrant
+Port 2222
+UserKnownHostsFile /dev/null
+StrictHostKeyChecking no
+PasswordAuthentication no
+IdentityFile /home/ted/.vagrant.d/insecure_private_key
+IdentitiesOnly yes
+LogLevel FATAL
+ForwardAgent yes
+
+Host pinch
+Hostname 45.55.131.155
+Port 3333
+User ted
+
+Host aview-jenkins aview-jenkins.digi.com
+User jenkins
+
+Host mtk-vln-avbld01 mtk-vln-avbld01.digi.com
+User jenkins
+
+Host tctli tpa-cap-tlilley
+ProxyCommand ssh -W %h:%p pinch
+Hostname localhost
+Port 12346
+User tlilley
+
+Host om1-jump-1
+Hostname 10.10.235.17
+User tlilley
+
+Host tm1-* dm1-* dm2-*
+ProxyCommand ssh -W %h:%p om1-jump-1
+User tlilley
+
+Host pa1-*
+ProxyCommand ssh -W %h:%p 172.31.5.1
+User tlilley
+
+Host pvt01-*
+ProxyCommand ssh -W %h:%p 10.148.10.22
