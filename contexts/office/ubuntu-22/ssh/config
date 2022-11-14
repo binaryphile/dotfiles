@@ -1,0 +1,50 @@
+UseRoaming no
+
+Host *
+IdentityAgent /run/user/1000/keyring/ssh
+ControlMaster auto
+ControlPersist yes
+ServerAliveInterval 300
+ServerAliveCountMax 2
+NoHostAuthenticationForLocalhost yes
+LogLevel ERROR
+GSSAPIAuthentication no
+
+Host vagra vagrant
+Hostname localhost
+User vagrant
+Port 2222
+UserKnownHostsFile /dev/null
+StrictHostKeyChecking no
+PasswordAuthentication no
+IdentityFile /home/ted/.vagrant.d/insecure_private_key
+IdentitiesOnly yes
+LogLevel FATAL
+ForwardAgent yes
+
+# ARMT DEV MySQL Credentials
+Host armt-dev-k8s-ansible
+User root
+HostName 35.227.80.199
+Port 12122
+StrictHostKeyChecking no
+UserKnownHostsFile /dev/null
+
+Host armt-jump
+HostName 135.195.7.2
+User mz149x
+
+Host armt-dev-prem-app-01
+HostName 135.195.7.28
+User root
+ProxyCommand ssh -W %h:%p armt-jump
+
+# DEV
+Host armt-dev-prem-app-01
+HostName 135.195.7.28
+User root
+ProxyCommand ssh -W %h:%p armt-jump
+
+Host ex12
+HostName 192.168.50.57
+User admin
