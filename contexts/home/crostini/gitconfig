@@ -4,7 +4,7 @@
   signingkey = 80AE993D8489ECAD
 [core]
   filemode = false
-  excludesfile = /Users/tlilley/.gitignore_global
+  excludesfile = /home/ted/.gitignore_global
   mergeoptions = --no-edit
 [push]
   default = tracking
