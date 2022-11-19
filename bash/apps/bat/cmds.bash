@@ -1,0 +1,1 @@
+Alias bat='bat -n'

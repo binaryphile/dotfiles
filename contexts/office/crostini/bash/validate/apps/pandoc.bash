@@ -1,0 +1,1 @@
+assertThat function shannon exists
