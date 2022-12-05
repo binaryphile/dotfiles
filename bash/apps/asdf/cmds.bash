@@ -1,0 +1,1 @@
+Alias godoc='godoc -play'
