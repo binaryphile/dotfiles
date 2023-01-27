@@ -10,18 +10,6 @@ NoHostAuthenticationForLocalhost yes
 LogLevel ERROR
 GSSAPIAuthentication no
 
-Host vagra vagrant
-Hostname localhost
-User vagrant
-Port 2222
-UserKnownHostsFile /dev/null
-StrictHostKeyChecking no
-PasswordAuthentication no
-IdentityFile /home/ted/.vagrant.d/insecure_private_key
-IdentitiesOnly yes
-LogLevel FATAL
-ForwardAgent yes
-
 # ARMT DEV MySQL Credentials
 Host armt-dev-k8s-ansible
 User root

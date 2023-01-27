@@ -1,9 +1,0 @@
-UseRoaming no
-
-Host *
-ControlMaster auto
-ControlPersist yes
-ServerAliveInterval 300
-ServerAliveCountMax 2
-NoHostAuthenticationForLocalhost yes
-LogLevel ERROR

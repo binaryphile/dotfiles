@@ -1,1 +1,0 @@
-assertThat function dallas exists

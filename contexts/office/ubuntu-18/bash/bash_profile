@@ -1,5 +1,0 @@
-# vim: ft=sh
-
-gemstash=$XDG_CONFIG_HOME/gemstash/credentials.bash
-[[ -e $gemstash ]] && source "$gemstash"
-unset -v gemstash

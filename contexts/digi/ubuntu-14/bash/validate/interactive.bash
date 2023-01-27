@@ -1,1 +1,0 @@
-../../../original/bash/validate/interactive.bash
