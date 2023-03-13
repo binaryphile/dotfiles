@@ -36,3 +36,7 @@ ProxyCommand ssh -W %h:%p armt-jump
 Host ex12
 HostName 192.168.50.57
 User admin
+
+Host tctli
+HostName 100.80.253.27
+User tlilley
