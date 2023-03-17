@@ -1,2 +1,6 @@
 set editing-mode vi
 set keymap vi
+
+set show-mode-in-prompt on
+set vi-cmd-mode-string "N "
+set vi-ins-mode-string "I "
