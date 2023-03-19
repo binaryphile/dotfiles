@@ -28,3 +28,5 @@
   status = auto
 [url "git@bitbucket.org:accelecon"]
 	insteadOf = https://bitbucket.org/accelecon
+[pull]
+	ff = only
