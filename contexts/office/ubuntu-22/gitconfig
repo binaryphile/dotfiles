@@ -30,3 +30,5 @@
 	insteadOf = https://bitbucket.org/accelecon
 [pull]
 	ff = only
+[advice]
+	detachedHead = false
