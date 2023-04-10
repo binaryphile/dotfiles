@@ -34,5 +34,4 @@ patches-*/
 *.json
 conf.py
 ignore/
-
-NAME
+mk
