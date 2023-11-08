@@ -34,4 +34,4 @@ patches-*/
 *.json
 conf.py
 ignore/
-mk
+.obsidian/
