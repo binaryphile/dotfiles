@@ -47,3 +47,15 @@ AddressFamily inet
 Host fantasy
 HostName 192.168.50.93
 User ted
+
+Host armt-prod-k8s-jump
+User root
+HostName 35.227.110.5
+Port 12122
+StrictHostKeyChecking no
+
+Host armt-prod-prem
+User mz149x
+HostName 144.160.7.206
+StrictHostKeyChecking no
+ProxyCommand ssh -W %h:%p armt-prod-k8s-jump
