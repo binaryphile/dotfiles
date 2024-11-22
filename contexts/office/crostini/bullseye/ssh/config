@@ -59,3 +59,8 @@ User mz149x
 HostName 144.160.7.206
 StrictHostKeyChecking no
 ProxyCommand ssh -W %h:%p armt-prod-k8s-jump
+
+Host mesaview1
+User mz149x
+HostName 135.89.175.30
+ProxyCommand ssh -W %h:%p tctli

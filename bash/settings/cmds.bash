@@ -46,3 +46,8 @@ new () {
     cmd ) $EDITOR "$HOME"/dotfiles/bash/${2:+apps/$2/}cmds.bash;;
   esac
 }
+
+ainst () {
+  reveal "$FUNCNAME"
+  sudo bash -c "set -eu; apt update -qq; apt install -y '$1'; apt autoremove"
+}

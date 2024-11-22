@@ -12,6 +12,7 @@ tags
 *.csv
 *.tsv
 *.sql
+*.sqlite
 *.tar
 *.gz
 *.bz2
@@ -35,3 +36,5 @@ patches-*/
 conf.py
 ignore/
 .obsidian/
+*.sqlite
+optlint.so

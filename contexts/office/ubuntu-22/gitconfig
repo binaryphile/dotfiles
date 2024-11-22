@@ -32,3 +32,5 @@
 	ff = only
 [advice]
 	detachedHead = false
+[init]
+	defaultBranch = main
