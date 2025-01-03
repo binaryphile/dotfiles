@@ -20,6 +20,8 @@
   home.packages = with pkgs; [
     obsidian
     jetbrains.goland
+    go
+    golangci-lint
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
