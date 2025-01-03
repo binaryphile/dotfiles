@@ -19,6 +19,7 @@
   # environment.
   home.packages = with pkgs; [
     obsidian
+    jetbrains.goland
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
@@ -74,4 +75,9 @@
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
+
+  home.file."obsidian" = {
+    source = "/mnt/chromeos/MyFiles/Downloads/crostini/obsidian"; # Absolute path to the target
+    text = null;                      # Ensure it's treated as a symlink, not a file
+  };
 }
