@@ -72,3 +72,17 @@ pastel () {
   git checkout -b "$1"
   git push --set-upstream origin "$1"
 }
+
+flute () {
+  reveal "$FUNCNAME"
+  git add .
+  git commit -m "${1:-}"
+  git push -f
+}
+
+wolf () {
+  reveal "$FUNCNAME"
+  git add .
+  git commit -m "${1:-}"
+  git push
+}
