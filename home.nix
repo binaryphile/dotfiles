@@ -18,16 +18,18 @@
   # The home.packages option allows you to install Nix packages into your
   # environment.
   home.packages = with pkgs; [
+    diff-so-fancy
+    highlight
+    mnemonicode
+    neovim
     obsidian
-    jetbrains.goland
+    ranger
+    scc
+    tmux
+
     go
     golangci-lint
-    scc
-    mnemonicode
-    tmux
-    ranger
-    highlight
-    neovim
+    jetbrains.goland
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
