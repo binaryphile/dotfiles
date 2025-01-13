@@ -87,8 +87,4 @@
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
-  home.file."obsidian" = {
-    source = "/mnt/chromeos/MyFiles/Downloads/crostini/obsidian"; # Absolute path to the target
-    text = null;                      # Ensure it's treated as a symlink, not a file
-  };
 }
