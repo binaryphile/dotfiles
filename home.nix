@@ -23,6 +23,7 @@
     mnemonicode
     neovim
     # obsidian
+    pandoc
     ranger
     rsync
     scc
