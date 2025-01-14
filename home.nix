@@ -24,12 +24,12 @@
     neovim
     # obsidian
     ranger
+    scc
     tmux
 
     # go
     # golangci-lint
     # jetbrains.goland
-    # scc
 
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
