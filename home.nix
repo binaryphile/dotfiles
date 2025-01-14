@@ -25,6 +25,7 @@
     # obsidian
     ranger
     scc
+    silver-searcher
     tmux
 
     # go
