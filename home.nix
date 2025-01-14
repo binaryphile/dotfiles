@@ -24,6 +24,7 @@
     neovim
     # obsidian
     ranger
+    rsync
     scc
     silver-searcher
     tmux
