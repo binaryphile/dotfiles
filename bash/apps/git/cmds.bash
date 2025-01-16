@@ -83,6 +83,6 @@ flute () {
 wolf () {
   reveal "$FUNCNAME"
   git add .
-  git commit -m "${1:-}"
+  git commit -m "$*"
   git push
 }
