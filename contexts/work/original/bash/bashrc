@@ -1,5 +1,0 @@
-# Interactive shell only
-# ======================
-[[ $- == *i* ]] && {
-  alias forward="type forward; ssh -NfR 9888:localhost:8888"
-};:
