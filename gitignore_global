@@ -38,3 +38,4 @@ ignore/
 .obsidian/
 *.sqlite
 optlint.so
+.tool-versions
