@@ -51,7 +51,7 @@ Alias gstats='git status --short'
 
 gcome () {
   reveal "$FUNCNAME"
-  git commit --message "$JIRA${JIRA:+: }$@"
+  git commit --message "$JIRA${JIRA:+: }$*"
 }
 
 correct () {
@@ -80,9 +80,17 @@ flute () {
   git push -f
 }
 
+venice() {
+  reveal "$FUNCNAME"
+  git fetch
+  git checkout --no-track -b "$1" origin/develop
+  git push --set-upstream origin "$1"
+  git branch -m "$1" "$2"
+}
+
 wolf () {
   reveal "$FUNCNAME"
   git add .
-  git commit -m "$*"
+  git commit -m "${JIRA:-}${JIRA:+: }$*"
   git push
 }
