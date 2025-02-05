@@ -82,10 +82,11 @@ flute () {
 
 venice() {
   reveal "$FUNCNAME"
+  local long=$1 short=$2
   git fetch
-  git checkout --no-track -b "$1" origin/develop
-  git push --set-upstream origin "$1"
-  git branch -m "$1" "$2"
+  git checkout --no-track -b "$long" origin/develop
+  git push --set-upstream origin "$long"
+  git branch -m "$long" "$short"
 }
 
 wolf () {
