@@ -21,6 +21,7 @@
     diff-so-fancy
     highlight
     mnemonicode
+    ncdu
     neovim
     obsidian
     pandoc
