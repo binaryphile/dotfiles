@@ -22,7 +22,7 @@
     highlight
     mnemonicode
     neovim
-    # obsidian
+    obsidian
     pandoc
     ranger
     rsync
