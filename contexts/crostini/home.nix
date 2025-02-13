@@ -19,6 +19,7 @@
   # environment.
   home.packages = with pkgs; [
     diff-so-fancy
+    git
     highlight
     mnemonicode
     ncdu
@@ -29,6 +30,7 @@
     rsync
     scc
     silver-searcher
+    stgit
     tmux
 
     # go
