@@ -1,2 +1,1 @@
-keychain -q $HOME/.ssh/id_rsa
-TestAndSource $HOME/.keychain/$HOSTNAME-sh
+eval "$(keychain --eval --agents ssh id_ed25519)"
