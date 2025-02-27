@@ -32,6 +32,7 @@
     silver-searcher
     stgit
     tmux
+    tree
 
     # go
     # golangci-lint
