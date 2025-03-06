@@ -30,6 +30,7 @@ patches-*/
 *.box
 .vscode/
 .envrc
+envrc
 .idea/
 *.log
 *.json
@@ -37,5 +38,5 @@ conf.py
 ignore/
 .obsidian/
 *.sqlite
-optlint.so
 .tool-versions
+mk
