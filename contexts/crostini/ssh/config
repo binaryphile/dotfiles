@@ -1,14 +1,13 @@
 UseRoaming no
 
 Host *
-IdentityAgent /run/user/1000/keyring/ssh
+UserKnownHostsFile ~/.ssh/new_known_hosts ~/.ssh/known_hosts
 ControlMaster auto
 ControlPersist yes
 ServerAliveInterval 300
 ServerAliveCountMax 2
 NoHostAuthenticationForLocalhost yes
 LogLevel ERROR
-GSSAPIAuthentication no
 
 # ARMT DEV MySQL Credentials
 Host armt-dev-k8s-ansible
