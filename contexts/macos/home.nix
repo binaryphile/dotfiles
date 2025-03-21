@@ -19,8 +19,11 @@
   # environment.
   home.packages = with pkgs; [
     diff-so-fancy
+    git
     highlight
+    jq
     mnemonicode
+    ncdu
     neovim
     obsidian
     pandoc
@@ -28,7 +31,9 @@
     rsync
     scc
     silver-searcher
+    stgit
     tmux
+    tree
 
     # go
     # golangci-lint
