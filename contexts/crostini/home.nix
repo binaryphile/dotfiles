@@ -21,6 +21,7 @@
     diff-so-fancy
     git
     highlight
+    jq
     mnemonicode
     ncdu
     neovim
