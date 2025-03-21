@@ -3,8 +3,8 @@
 {
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
-  home.username = "tlilley";
-  home.homeDirectory = "/Users/tlilley";
+  home.username = "ted";
+  home.homeDirectory = "/home/ted";
 
   # This value determines the Home Manager release that your configuration is
   # compatible with. This helps avoid breakage when a new Home Manager release
@@ -19,8 +19,11 @@
   # environment.
   home.packages = with pkgs; [
     diff-so-fancy
+    git
     highlight
+    jq
     mnemonicode
+    ncdu
     neovim
     obsidian
     pandoc
@@ -28,7 +31,9 @@
     rsync
     scc
     silver-searcher
+    stgit
     tmux
+    tree
 
     # go
     # golangci-lint
