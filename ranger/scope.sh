@@ -49,7 +49,7 @@ handle_extension() {
             ;;
 
         ## text
-        js|ts|jsx|tsx)
+        js|ts|jsx|tsx|svg)
             ## Syntax highlight
             if [[ "$( stat --printf='%s' -- "${FILE_PATH}" )" -gt "${HIGHLIGHT_SIZE_MAX}" ]]; then
                 exit 2
