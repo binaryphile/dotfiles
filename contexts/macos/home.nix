@@ -18,8 +18,13 @@
   # The home.packages option allows you to install Nix packages into your
   # environment.
   home.packages = with pkgs; [
+    coreutils
     diff-so-fancy
+<<<<<<< HEAD
     git
+=======
+    direnv
+>>>>>>> aca4b44 (coreutils)
     highlight
     jq
     mnemonicode
