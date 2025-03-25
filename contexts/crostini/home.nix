@@ -22,6 +22,7 @@
     git
     highlight
     jq
+    kcov
     mnemonicode
     ncdu
     neovim

@@ -1,3 +1,4 @@
+TestContainsAndPrepend PATH $HOME/.local/lib
 TestContainsAndPrepend PATH /usr/local/bin
 TestContainsAndPrepend PATH $HOME/.local/bin
 
