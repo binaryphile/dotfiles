@@ -35,6 +35,7 @@
     stgit
     tmux
     tree
+    wl-clipboard
 
     # go
     # golangci-lint
