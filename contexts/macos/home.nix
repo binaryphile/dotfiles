@@ -27,6 +27,7 @@
     mnemonicode
     ncdu
     neovim
+    nodePackages.prettier
     obsidian
     pandoc
     ranger
