@@ -33,7 +33,6 @@
     ranger
     rsync
     scc
-    stgit
     silver-searcher
     stgit
     tmux

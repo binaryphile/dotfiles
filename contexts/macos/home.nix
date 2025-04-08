@@ -20,14 +20,10 @@
   home.packages = with pkgs; [
     coreutils
     diff-so-fancy
-    git
     direnv
-    highlight
-    jq
     git
     highlight
     jq
-    kcov
     mnemonicode
     ncdu
     neovim
@@ -36,7 +32,6 @@
     ranger
     rsync
     scc
-    stgit
     silver-searcher
     stgit
     tmux
