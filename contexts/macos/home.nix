@@ -38,6 +38,7 @@
     stgit
     tmux
     tree
+    zip
 
     # go
     # golangci-lint

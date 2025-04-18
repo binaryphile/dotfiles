@@ -40,6 +40,7 @@
     tmux
     tree
     wl-clipboard
+    zip
 
     # go
     # golangci-lint
