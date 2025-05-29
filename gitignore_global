@@ -40,3 +40,4 @@ ignore/
 *.sqlite
 .tool-versions
 mk
+gitlab-ci.yml
