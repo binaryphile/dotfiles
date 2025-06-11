@@ -22,6 +22,7 @@
     coreutils
     diff-so-fancy
     direnv
+    firefox
     git
     highlight
     jq
