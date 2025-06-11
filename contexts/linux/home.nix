@@ -22,8 +22,10 @@
     coreutils
     diff-so-fancy
     direnv
+    firefox
     git
     highlight
+    htop
     jq
     kcov
     mnemonicode
