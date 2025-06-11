@@ -25,6 +25,7 @@
     firefox
     git
     highlight
+    htop
     jq
     kcov
     mnemonicode
