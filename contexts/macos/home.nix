@@ -24,6 +24,7 @@
     direnv
     git
     highlight
+    htop
     jq
     mnemonicode
     ncdu
