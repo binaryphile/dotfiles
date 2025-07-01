@@ -2,7 +2,9 @@
 
 shopt -s expand_aliases
 
-FunctionList=$(compgen -A function | sort)
+command -v compgen >/dev/null && Compgen=compgen || Compgen=':'
+
+FunctionList=$($Compgen -A function | sort)
 
 # Alias aliases with reveal
 Alias () {
@@ -173,9 +175,9 @@ Trim () {
   echo ${result%$indent}
 }
 
-Functions=( $(comm -13 <(echo "$FunctionList") <(compgen -A function | sort)) )
+Functions=( $(comm -13 <(echo "$FunctionList") <($Compgen -A function | sort)) )
 Vars+=( Vars Functions )
-unset -v FunctionList
+unset -v Compgen FunctionList
 
 declare -A Loaded=([initutil]=1)
 Vars+=( Loaded )
