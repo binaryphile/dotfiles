@@ -19,9 +19,11 @@
   # environment.
   home.packages = with pkgs; [
     btop
+    claude-code
     coreutils
     diff-so-fancy
     direnv
+    firefox
     git
     highlight
     htop
