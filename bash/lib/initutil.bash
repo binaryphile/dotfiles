@@ -96,6 +96,7 @@ ORDER_BY_DEPENDENCIES () {
     }
 
     for dep in $(ORDER_BY_DEPENDENCIES <$app/deps); do
+      ! IsApp $dep && continue
       (( ${satisfied[$dep]} )) && continue
       echo $dep
       satisfied[$dep]=1
@@ -107,7 +108,7 @@ ORDER_BY_DEPENDENCIES () {
 }
 
 ShellIsInteractive () {
-  [[ $- == *i* ]]
+  [[ $- == *i* && $PS1 != '' ]]
 }
 
 ShellIsInteractiveAndLogin () {
