@@ -41,3 +41,4 @@ ignore/
 .tool-versions
 mk
 gitlab-ci.yml
+age-key
