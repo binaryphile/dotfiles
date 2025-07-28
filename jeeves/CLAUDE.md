@@ -13,8 +13,6 @@
 - It updates software and git repositories, as well as confirming system configurations
 - Uses personal tool `task.bash` from ~/projects/task.bash, similar in concept to Ansible
   but custom-built
-- When Ted greets me indicating it’s a new day, offer to update the machine with update-env
-  and a nice cup of tea
 
 ## Ted's Bash Programming Style
 
@@ -23,6 +21,10 @@ Before writing any bash code, always read `/home/ted/dotfiles/jeeves/bash-rules.
 ## Development Practices
 
 When user requests code changes, feature development, or programming tasks, always read `/home/ted/dotfiles/jeeves/xp-development-protocol.md` to apply Extreme Programming practices including test-first development, story-driven planning, and continuous integration protocols.
+
+## Requirements and Use Cases
+
+When user asks for use cases, requirements documentation, or functional specifications, always read `/home/ted/dotfiles/jeeves/use-case-writing-protocol.md` to apply Alistair Cockburn's effective use case writing practices including proper scoping, goal levels, and stakeholder protection.
 
 ## Network and VPN Configuration
 
