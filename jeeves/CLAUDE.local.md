@@ -14,9 +14,10 @@
       data when you update the issue note. Don’t show the twists and turns that got us to
       the current analysis, just the most recent (while keeping the intended scope of the
       issue).
-  - ALWAYS generate an abridged chat log for each issue
+  - ALWAYS generate an abridged chat log for each ticket
+    - **TIMESTAMP ALL ENTRIES**
+    - The log is append-only -- **DO NOT EDIT THE TRANSCRIPT AFTER IT IS WRITTEN**.
     - recreate the conversation, using **Ted:** for Ted’s parts and **Claude**: for your
       parts. Just summarize multistep tasks in between conversation.
-    - chat log is append-only
     - don't include in the chat log Ted's prompts to update either the issue note or the
         chat log

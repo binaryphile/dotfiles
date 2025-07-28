@@ -20,6 +20,10 @@
 
 Before writing any bash code, always read `/home/ted/dotfiles/jeeves/bash-rules.md` to refresh knowledge of Ted's coding conventions, safe expansion techniques, testing patterns, and dependency injection approaches.
 
+## Development Practices
+
+When user requests code changes, feature development, or programming tasks, always read `/home/ted/dotfiles/jeeves/xp-development-protocol.md` to apply Extreme Programming practices including test-first development, story-driven planning, and continuous integration protocols.
+
 ## Network and VPN Configuration
 
 - A VPN connection is required to run work projects against company resources like
