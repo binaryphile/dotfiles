@@ -167,4 +167,6 @@ At start of each week:
 
 ---
 
-*Remember: XP is about discipline in small practices that compound into sustainable, high-quality development.*
+*Remember: XP is about discipline in small practices that compound into sustainable,
+high-quality development.  If there is any question, read xp-development-reference.md for
+details on XP practices.*
