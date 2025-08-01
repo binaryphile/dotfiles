@@ -2,7 +2,34 @@
 
 # reveal shows the function/alias definition on stderr
 reveal () {
-  type $1 | sed -e "s|reveal $1; ||" -e '/reveal "$FUNCNAME";/d' >&2
+  local cmd_type=$(type -t "$1" 2>/dev/null)
+  local output=""
+  
+  case "$cmd_type" in
+    alias)
+      # Get the alias definition
+      local alias_def=$(alias "$1" 2>/dev/null)
+      # Extract command between single quotes
+      if [[ "$alias_def" =~ \'(.+)\' ]]; then
+        output="${BASH_REMATCH[1]}"
+        # Remove "reveal $1; " prefix if present
+        output="${output#reveal $1; }"
+      fi
+      ;;
+    function|builtin|file)
+      # For functions, builtins, and files, just show the command with args
+      output="$*"
+      ;;
+    *)
+      # Unknown type or not found - no output
+      return 0
+      ;;
+  esac
+  
+  # Output in yellow to stderr
+  if [[ -n "$output" ]]; then
+    echo -e "\033[33m${output}\033[0m" >&2
+  fi
 }
 
 Alias validate-bash="source $HOME/dotfiles/bash/lib/validate.bash"
