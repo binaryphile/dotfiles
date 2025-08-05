@@ -20,7 +20,6 @@
   home.packages = with pkgs; [
     asciinema
     asciinema-agg
-    btop
     claude-code
     coreutils
     diff-so-fancy

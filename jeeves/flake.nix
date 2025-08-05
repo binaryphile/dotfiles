@@ -14,17 +14,12 @@
       {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
+            asciinema
+            asciinema-agg
             nodejs_20
             nodePackages.npm
-            chromium
+            tmux
           ];
-
-          shellHook = ''
-            echo "Jeeves environment activated"
-            echo "Node version: $(node --version)"
-            echo "NPM version: $(npm --version)"
-            echo "Chromium path: $(which chromium)"
-          '';
         };
       });
 }
