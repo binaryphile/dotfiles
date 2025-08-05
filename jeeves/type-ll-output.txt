@@ -1,0 +1,1 @@
+ll is aliased to `reveal ll; l -l'
