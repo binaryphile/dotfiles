@@ -1,1 +1,0 @@
-la is aliased to `reveal la; l -la'

@@ -1,8 +1,0 @@
-miracle is a function
-miracle () 
-{ 
-    reveal "$FUNCNAME";
-    setfacl -m "$1":rw "$SSH_AUTH_SOCK";
-    setfacl -m "$1":x "$(dirname "$SSH_AUTH_SOCK")";
-    sudo -u "$1" SSH_AUTH_SOCK="$SSH_AUTH_SOCK" bash -c 'cd; exec bash -l'
-}
