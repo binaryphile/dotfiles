@@ -4,7 +4,7 @@
 reveal () {
   local cmd_type=$(type -t "$1" 2>/dev/null)
   local output=""
-  
+
   case "$cmd_type" in
     alias)
       # Get the alias definition
@@ -25,7 +25,7 @@ reveal () {
       return 0
       ;;
   esac
-  
+
   # Output in yellow to stderr
   if [[ -n "$output" ]]; then
     echo -e "\033[33m${output}\033[0m" >&2
