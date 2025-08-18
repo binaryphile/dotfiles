@@ -18,7 +18,6 @@
   # The home.packages option allows you to install Nix packages into your
   # environment.
   home.packages = with pkgs; [
-    btop
     claude-code
     coreutils
     diff-so-fancy
@@ -27,6 +26,7 @@
     git
     highlight
     htop
+    jira-cli-go
     jq
     mnemonicode
     ncdu

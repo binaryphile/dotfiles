@@ -18,7 +18,7 @@
   # The home.packages option allows you to install Nix packages into your
   # environment.
   home.packages = with pkgs; [
-    btop
+    claude-code
     coreutils
     diff-so-fancy
     direnv
@@ -26,8 +26,8 @@
     git
     highlight
     htop
+    jira-cli-go
     jq
-    kcov
     mnemonicode
     ncdu
     neovim
@@ -41,8 +41,13 @@
     stgit
     tmux
     tree
-    wl-clipboard
     zip
+
+    # not available on mac
+    asciinema
+    asciinema-agg
+    kcov
+    wl-clipboard
 
     # go
     # golangci-lint
