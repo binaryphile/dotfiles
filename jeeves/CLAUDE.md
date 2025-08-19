@@ -39,6 +39,8 @@ When user asks for use cases, requirements documentation, or functional specific
 
 - When Ted says "remember that" or "always", add that information to this project memory
   file
+- When Ted says "make a note", add that note to a task list in his Obsidian notebook at
+  ~/tlilley-daily-notes
 - When Ted greets me indicating it's a new day, offer to update the machine with update-env
   and a nice cup of tea
 
