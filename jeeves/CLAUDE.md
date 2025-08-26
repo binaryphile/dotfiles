@@ -79,3 +79,89 @@ Triggers:
 
 - **CLAUDE.xp-development.protocol.md**
 - **CLAUDE.xp-development.reference.md**
+
+## Knowledge Index
+
+### Quick Guide Lookup
+# When these keywords/problems appear in user requests, immediately read the indicated guide
+# Format: problem_keywords → guide_name (brief_description)
+
+### Guide Locations
+- Vault Guides: /home/ted/projects/urma-next/urma-next/obsidian-vault/devs/tlilley/Guides/
+- Jeeves Protocols: /home/ted/dotfiles/jeeves/
+
+**Authentication & Testing**
+- bearer undefined token oauth auth jwt jwe nextauth → TOKEN-GENERATION-GUIDE (OAuth flow and JWE tokens)
+- playwright test e2e authentication setup auth.setup.ts → PLAYWRIGHT-TESTING-GUIDE (Complete test setup)
+- playwright auth token generation oauth dm1 → Playwright-Authentication-URMA-Guide (URMA-specific auth)
+- 401 unauthorized backend api authentication → URMA-Backend-Authentication-Troubleshooting-Guide
+- "Bearer undefined" "authentication failed" oauth credentials → TOKEN-GENERATION-GUIDE
+
+**Diagrams & Documentation**
+- mermaid diagram "parse error" "unsupported markdown" obsidian → obsidian-diagram-guide
+- transcript chat log generation claude conversation → transcript-generation-guide
+- "Error parsing Mermaid diagram" fence markers → obsidian-diagram-guide
+
+**Development Workflows**
+- git overlay stgit dual repo workflow urmagit → git-overlay-workflows-guide
+- upgrade framework migration methodology validation → Framework-Upgrade-Methodology
+- detailed upgrade process agans rules troubleshooting → Framework-Upgrade-Methodology-Long
+- research real world developer experiences validation → RESEARCHING-REAL-WORLD-DEVELOPER-EXPERIENCES
+- llm knowledge index guide discovery cag preloading → LLM-Knowledge-Index-Guide
+
+**Infrastructure & Troubleshooting**
+- certificate ssl "self-signed" "verify failed" dm1 dm2 → DM1-DM2-Self-Signed-Certificate-Server-Setup
+- nginx certificate ssh troubleshooting port forwarding → Nginx-Certificate-Troubleshooting-SSH-Guide
+- certificate fix research journey ssl tls → Certificate-Fix-Research-Journey
+- final certificate implementation solution → Final-Certificate-Fix-Implementation
+- "certificate verify failed" "SSL_ERROR" https → Certificate-Fix-Research-Journey
+
+**MCP & Integration**
+- microsoft teams mcp setup integration → Microsoft-Teams-MCP-Setup-Guide
+
+**Development Protocols**
+- debugging protocol bug investigation systematic → CLAUDE.debugging.protocol.md
+- xp extreme programming development test-first → CLAUDE.xp-development.protocol.md
+- use case requirements documentation cockburn → CLAUDE.use-case.protocol.md
+- protocol development creating new protocols → CLAUDE.protocol-development.protocol.md
+- bash programming style ted conventions safe expansion → bash-rules.md
+
+### Guide Recognition Behavior
+
+**Immediate Recognition Pattern:**
+1. Parse user input for keywords (no tool call needed)
+2. Check Knowledge Index for keyword matches (in memory from CLAUDE.md)
+3. If match found, immediately read guide (single Read tool call)
+4. Apply guide knowledge to problem
+
+**Multiple Matches:**
+- List all matching guides to user
+- Read most specific/relevant first
+- Mention other related guides if applicable
+
+**No Match Found:**
+- Proceed with general knowledge
+- Use filesystem search if user explicitly requests guide discovery
+- Suggest adding new keywords if pattern emerges
+
+**Error-Triggered Loading:**
+When these exact errors appear, immediately load the specified guide:
+- "unsupported markdown: link" → obsidian-diagram-guide
+- "Bearer undefined" → TOKEN-GENERATION-GUIDE
+- "Parse error" in mermaid context → obsidian-diagram-guide  
+- "certificate verify failed" → Certificate-Fix-Research-Journey
+- "ECONNREFUSED" with dm1 → URMA-Backend-Authentication-Troubleshooting-Guide
+
+### Index Maintenance
+
+**When Adding New Guide:**
+1. Add keyword mapping: `keywords → guide_name (description)`
+2. Include common error messages as keywords
+3. Test recognition with sample requests
+
+**Quarterly Review Process:**
+1. Check keyword accuracy against recent conversations
+2. Add newly discovered error patterns
+3. Consolidate redundant mappings
+4. Verify all guide files still exist
+5. Update descriptions if guide purpose changed
