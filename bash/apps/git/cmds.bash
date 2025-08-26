@@ -10,6 +10,7 @@ Alias gch='git checkout'
 Alias gcl='git clone'
 Alias gcm='git commit -m'
 Alias gco='git commit'
+Alias gdc='git diff --cached'
 Alias gdi='git diff'
 Alias gfe='git fetch'
 Alias gin='git init -b main'
@@ -30,11 +31,6 @@ Alias gsd='git stash drop'
 Alias gsh='git show'
 Alias gss='git status -s'
 Alias gst='git stash'
-
-gcome () {
-  reveal "$FUNCNAME"
-  git commit --message "$JIRA${JIRA:+: }$*"
-}
 
 correct () {
   reveal "$FUNCNAME"
@@ -94,6 +90,7 @@ Alias uch='urmagit checkout'
 Alias ucl='urmagit clone'
 Alias ucm='urmagit commit -m'
 Alias uco='urmagit commit'
+Alias udc='urmagit diff --cached'
 Alias udi='urmagit diff'
 Alias ufe='urmagit fetch'
 Alias uin='urmagit init -b main'

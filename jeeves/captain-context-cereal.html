@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captain Context Cereal Box</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Fredoka', cursive;
+            perspective: 1000px;
+        }
+        
+        .cereal-box {
+            width: 320px;
+            height: 450px;
+            background: linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%);
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            position: relative;
+            transform: rotateY(-5deg);
+            transition: transform 0.3s ease;
+            overflow: hidden;
+        }
+        
+        .cereal-box:hover {
+            transform: rotateY(5deg) scale(1.05);
+        }
+        
+        .box-top {
+            background: #FFD700;
+            height: 60px;
+            border-radius: 15px 15px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .box-top::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 10px,
+                rgba(255,255,255,0.1) 10px,
+                rgba(255,255,255,0.1) 20px
+            );
+            animation: slide 20s linear infinite;
+        }
+        
+        @keyframes slide {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+        
+        .brand-name {
+            font-family: 'Bungee', cursive;
+            font-size: 24px;
+            color: #FF1744;
+            text-shadow: 3px 3px 0 #fff, 4px 4px 10px rgba(0,0,0,0.2);
+            z-index: 1;
+            position: relative;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .captain-container {
+            position: relative;
+            height: 280px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .waves {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 100px;
+            background: #1e88e5;
+            opacity: 0.8;
+        }
+        
+        .wave {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 200%;
+            height: 100px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z' fill='%232196f3'/%3E%3C/svg%3E") repeat-x;
+            animation: wave 10s cubic-bezier(0.36, 0.45, 0.63, 0.53) infinite;
+        }
+        
+        .wave:nth-child(2) {
+            bottom: 10px;
+            opacity: 0.6;
+            animation: wave 7s cubic-bezier(0.36, 0.45, 0.63, 0.53) -0.125s infinite, swell 7s ease -1.25s infinite;
+        }
+        
+        @keyframes wave {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        
+        @keyframes swell {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        .boat {
+            position: absolute;
+            bottom: 80px;
+            width: 120px;
+            height: 40px;
+            background: #8B4513;
+            border-radius: 0 0 20px 20px;
+            z-index: 2;
+            animation: rock 3s ease-in-out infinite;
+        }
+        
+        .boat::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 30px solid transparent;
+            border-right: 30px solid transparent;
+            border-bottom: 60px solid #fff;
+        }
+        
+        @keyframes rock {
+            0%, 100% { transform: rotate(-3deg); }
+            50% { transform: rotate(3deg); }
+        }
+        
+        .captain {
+            position: absolute;
+            bottom: 120px;
+            z-index: 3;
+            animation: bounce 2s ease-in-out infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .captain-head {
+            width: 80px;
+            height: 80px;
+            background: #FFDBAC;
+            border-radius: 50%;
+            position: relative;
+            margin: 0 auto;
+        }
+        
+        .captain-hat {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90px;
+            height: 30px;
+            background: #000080;
+            border-radius: 50% 50% 0 0;
+        }
+        
+        .captain-hat::before {
+            content: '⚓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: #FFD700;
+        }
+        
+        .captain-hat::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: -10px;
+            right: -10px;
+            height: 10px;
+            background: #000;
+            border-radius: 50%;
+        }
+        
+        .eyes {
+            position: absolute;
+            top: 35px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .eye {
+            width: 15px;
+            height: 15px;
+            background: #000;
+            border-radius: 50%;
+            position: relative;
+            animation: blink 4s infinite;
+        }
+        
+        .eye::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 5px;
+            height: 5px;
+            background: #fff;
+            border-radius: 50%;
+        }
+        
+        @keyframes blink {
+            0%, 90%, 100% { transform: scaleY(1); }
+            95% { transform: scaleY(0.1); }
+        }
+        
+        .beard {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 30px;
+            background: #fff;
+            border-radius: 0 0 30px 30px;
+        }
+        
+        .mouth {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 30px;
+            height: 15px;
+            border-bottom: 3px solid #000;
+            border-radius: 0 0 50% 50%;
+        }
+        
+        .captain-body {
+            width: 100px;
+            height: 80px;
+            background: #000080;
+            border-radius: 30px 30px 0 0;
+            margin: -10px auto 0;
+            position: relative;
+        }
+        
+        .captain-body::before {
+            content: '';
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 3px;
+            background: #FFD700;
+            box-shadow: 0 10px 0 #FFD700, 0 20px 0 #FFD700;
+        }
+        
+        .name-banner {
+            position: absolute;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #FF1744;
+            color: #fff;
+            padding: 10px 20px;
+            font-size: 22px;
+            font-weight: 700;
+            border-radius: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            animation: float 3s ease-in-out infinite;
+            z-index: 10;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateX(-50%) translateY(0) rotate(-2deg); }
+            50% { transform: translateX(-50%) translateY(-5px) rotate(2deg); }
+        }
+        
+        .sparkles {
+            position: absolute;
+            top: 20%;
+            left: 10%;
+            right: 10%;
+            height: 60%;
+            pointer-events: none;
+        }
+        
+        .sparkle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #FFD700;
+            animation: sparkle 3s linear infinite;
+        }
+        
+        .sparkle:nth-child(1) { left: 10%; animation-delay: 0s; }
+        .sparkle:nth-child(2) { left: 30%; animation-delay: 0.5s; }
+        .sparkle:nth-child(3) { left: 60%; animation-delay: 1s; }
+        .sparkle:nth-child(4) { left: 80%; animation-delay: 1.5s; }
+        .sparkle:nth-child(5) { left: 45%; animation-delay: 2s; }
+        
+        @keyframes sparkle {
+            0% {
+                transform: translateY(0) scale(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            100% {
+                transform: translateY(-200px) scale(0);
+                opacity: 0;
+            }
+        }
+        
+        .tagline {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .burst {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            width: 80px;
+            height: 80px;
+            background: #FFD700;
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: spin 10s linear infinite;
+            z-index: 5;
+        }
+        
+        .burst-text {
+            font-size: 12px;
+            font-weight: 700;
+            color: #FF1744;
+            text-align: center;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="cereal-box">
+        <div class="box-top">
+            <div class="brand-name">CONTEXT CRUNCH</div>
+        </div>
+        
+        <div class="captain-container">
+            <div class="sparkles">
+                <div class="sparkle"></div>
+                <div class="sparkle"></div>
+                <div class="sparkle"></div>
+                <div class="sparkle"></div>
+                <div class="sparkle"></div>
+            </div>
+            
+            <div class="burst">
+                <div class="burst-text">NEW!<br>EXTRA<br>CRUNCHY!</div>
+            </div>
+            
+            <div class="waves">
+                <div class="wave"></div>
+                <div class="wave"></div>
+            </div>
+            
+            <div class="boat"></div>
+            
+            <div class="captain">
+                <div class="captain-head">
+                    <div class="captain-hat"></div>
+                    <div class="eyes">
+                        <div class="eye"></div>
+                        <div class="eye"></div>
+                    </div>
+                    <div class="mouth"></div>
+                    <div class="beard"></div>
+                </div>
+                <div class="captain-body"></div>
+            </div>
+        </div>
+        
+        <div class="name-banner">Captain Context</div>
+        
+        <div class="tagline">Sail into a Sea of Flavor!</div>
+    </div>
+</body>
+</html>
