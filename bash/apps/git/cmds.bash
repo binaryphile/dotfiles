@@ -33,6 +33,7 @@ Alias gsa='git stash apply'
 Alias gsd='git stash drop'
 Alias gsh='git show'
 Alias gss='git status -s'
+Alias gssh='git stash show'
 Alias gst='git stash'
 
 correct () {
