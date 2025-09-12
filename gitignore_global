@@ -43,3 +43,4 @@ mk
 gitlab-ci.yml
 age-key/
 node_modules/
+test-results-*.txt
