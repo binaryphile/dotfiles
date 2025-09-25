@@ -34,6 +34,7 @@ envrc
 .idea/
 *.log
 *.json
+*.jsonl
 conf.py
 ignore/
 .obsidian/
