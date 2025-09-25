@@ -39,3 +39,5 @@ unset -v "${Vars[@]}"
 
 # opam configuration
 test -r /home/ted/.opam/opam-init/init.sh && . /home/ted/.opam/opam-init/init.sh > /dev/null 2> /dev/null || true
+export PATH="$HOME/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
