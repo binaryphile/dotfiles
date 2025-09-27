@@ -18,6 +18,7 @@
   # The home.packages option allows you to install Nix packages into your
   # environment.
   home.packages = with pkgs; [
+    ast-grep
     claude-code
     coreutils
     diff-so-fancy
