@@ -1,1 +1,1 @@
-Alias jeeves='cd ~/projects/jeeves && exec nix develop -c claude'
+Alias jeeves='cd ~/projects/jeeves && nix develop -c claude'
