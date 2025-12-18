@@ -19,6 +19,7 @@
   # environment.
   home.packages = with pkgs; [
     ast-grep
+    chromium
     claude-code
     coreutils
     diff-so-fancy
