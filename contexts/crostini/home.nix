@@ -36,6 +36,7 @@
     nodePackages.prettier
     obsidian
     pandoc
+    podman
     ranger
     rsync
     scc
@@ -47,6 +48,7 @@
     zip
 
     # not available on mac
+    abcde
     asciinema
     asciinema-agg
     kcov
