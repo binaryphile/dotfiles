@@ -36,7 +36,6 @@
     nodePackages.prettier
     obsidian
     pandoc
-    podman
     ranger
     rsync
     scc
