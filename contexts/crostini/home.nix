@@ -19,6 +19,7 @@
   # environment.
   home.packages = with pkgs; [
     ast-grep
+    bubblewrap
     chromium
     claude-code
     coreutils
