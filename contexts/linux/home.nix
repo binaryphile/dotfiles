@@ -8,6 +8,7 @@
     direnv
     firefox
     git
+    globalprotect-openconnect
     highlight
     htop
     jira-cli-go
