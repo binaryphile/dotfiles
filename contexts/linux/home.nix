@@ -8,7 +8,7 @@
     direnv
     firefox
     git
-    globalprotect-openconnect
+    openconnect
     highlight
     htop
     jira-cli-go
@@ -29,6 +29,7 @@
     zip
 
     # not available on mac
+    cliphist
     libnotify
     asciinema
     asciinema-agg
