@@ -28,6 +28,7 @@
     zip
 
     # not available on mac
+    libnotify
     asciinema
     asciinema-agg
     kcov
