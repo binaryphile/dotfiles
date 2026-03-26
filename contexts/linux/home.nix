@@ -8,7 +8,7 @@
     direnv
     firefox
     git
-    openconnect
+    gp-saml-gui
     highlight
     htop
     jira-cli-go
@@ -17,6 +17,7 @@
     ncdu
     neovim
     nodePackages.prettier
+    openconnect
     obsidian
     pandoc
     ranger
