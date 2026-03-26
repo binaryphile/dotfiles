@@ -103,12 +103,20 @@ GlobalProtect VPN with Okta SAML SSO. Two packages:
 
 Workflow:
 ```bash
-eval $(gp-saml-gui --portal --clientos=Windows --external access.digi.com)
-echo "$COOKIE" | sudo openconnect --protocol=gp -u "$USER" --os="$OS" \
-  --usergroup=gateway:"$PRELOGIN" --passwd-on-stdin "$HOST"
+gp-saml-gui --portal --clientos=Windows access.digi.com 2>&1 | tee /tmp/saml-output.txt
+```
+Authenticate in the WebKit window. Then:
+```bash
+eval $(tail -4 /tmp/saml-output.txt)
+echo "$COOKIE" | sudo openconnect --protocol=gp '--useragent=PAN GlobalProtect' \
+  --user="$USER" --os="$OS" --usergroup=portal:prelogin-cookie \
+  --authgroup="US East" --passwd-on-stdin access.digi.com
 ```
 
-`--external` uses Firefox (for 1Password extension) instead of built-in WebKit.
+Notes:
+- Portal mode, not gateway (server returns portal-style cookie)
+- `--authgroup="US East"` pre-selects gateway, avoids interactive prompt that conflicts with stdin pipe
+- Uses built-in WebKit window (not `--external`, which doesn't render properly in Firefox)
 
 ### Relationship to nixos-config
 
