@@ -27,6 +27,7 @@
     stgit
     tmux
     tree
+    vpn-slice
     zip
 
     # not available on mac
