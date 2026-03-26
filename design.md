@@ -113,10 +113,25 @@ echo "$COOKIE" | sudo openconnect --protocol=gp '--useragent=PAN GlobalProtect' 
   --authgroup="US East" --passwd-on-stdin access.digi.com
 ```
 
+Split tunnel (routes only work hosts through VPN):
+```bash
+echo "$COOKIE" | sudo openconnect --protocol=gp '--useragent=PAN GlobalProtect' \
+  --user="$USER" --os="$OS" --usergroup=portal:prelogin-cookie \
+  --authgroup="US East" --passwd-on-stdin \
+  -s 'vpn-slice stash.digi.com dm1.idigi.com' \
+  access.digi.com
+```
+
 Notes:
 - Portal mode, not gateway (server returns portal-style cookie)
 - `--authgroup="US East"` pre-selects gateway, avoids interactive prompt that conflicts with stdin pipe
 - Uses built-in WebKit window (not `--external`, which doesn't render properly in Firefox)
+- `vpn-slice` replaces vpnc-script for split tunnel — only specified hosts route through VPN
+- NixOS requires `environment.etc.hosts.mode = "0644"` for vpn-slice to write `/etc/hosts`
+
+### DNS Diagnostics — UC-1
+
+`dig` (from bind dnsutils) for hostname resolution troubleshooting, especially useful when debugging VPN split tunnel routing.
 
 ### Relationship to nixos-config
 
