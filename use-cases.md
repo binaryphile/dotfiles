@@ -46,10 +46,11 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   - 4a. Editor not installed → add to home.nix (UC-5)
   - 5a. Toolchain missing → add a dev environment to that project
   - 6a. Can't reach work git server → check VPN connection
+  - 6b. Hostname won't resolve → use dig to diagnose DNS
 - **Postconditions:**
   - **Success:** Ted can clone, edit, build, test, and push on any host
   - **Failure:** Key tools missing; Ted must install before proceeding
-- **Technology:** neovim, Claude Code, Nix devShells
+- **Technology:** neovim, Claude Code, Nix devShells, dig (DNS diagnostics)
 
 ---
 

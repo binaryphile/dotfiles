@@ -5,6 +5,7 @@
     claude-code
     coreutils
     diff-so-fancy
+    dig
     direnv
     firefox
     git
