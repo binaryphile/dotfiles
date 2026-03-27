@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 
 # vpn-connect - connect to Digi work VPN with split tunnel
+#
+# Auto-reconnects on session expiry. Ctrl-C exits cleanly.
+
+Interrupted=false
 
 fatal() {
   local msg=$1 rc=${2:-$?}
   echo "fatal: $msg" >&2
   exit $rc
+}
+
+onInterrupt() {
+  Interrupted=true
 }
 
 authenticate() {
@@ -28,8 +36,15 @@ connect() {
 }
 
 main() {
-  authenticate
-  connect
+  trap onInterrupt INT
+
+  while true; do
+    authenticate
+    connect && rc=$? || rc=$?
+    $Interrupted && break
+    echo "VPN disconnected (exit $rc). Re-authenticating..." >&2
+    sleep 2
+  done
 }
 
 return 2>/dev/null
