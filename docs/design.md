@@ -45,14 +45,14 @@ scripts/                        # Setup utilities
 `update-env` takes a bare machine to fully configured. Seven phases:
 
 1. Git repo updates (conditional, subsequent runs)
-2. System upgrades + SSH credentials
+2. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
 3. Clone this repo, symlink dotfiles
-4. Install Nix (via Lix), install home-manager, run `home-manager switch`
-5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht)
-6. VPN client, Neovim plugins, file manager config
-7. SSH key generation (ed25519, with passphrases)
+4. Install Nix + home-manager (all platforms except NixOS — system-managed there)
+5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht, jeeves)
+6. VPN script, Neovim plugins, file manager config
+7. SSH key generation (crostini only)
 
-Idempotent. Platform detection via task.bash APIs. NixOS skips Nix install and apt. Needs updates for full NixOS support.
+Idempotent. Platform detection: macos → crostini → nixos → debian → linux.
 
 On NixOS, `~/nixos-config/flake.nix` imports `home.nix` via flake input. Dotfile symlinks still deployed by `update-env`.
 

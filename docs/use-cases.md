@@ -123,7 +123,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   1. Ted runs `update-env`
   2. Ted is productive immediately
 - **Extensions:**
-  - 1a. NixOS host → `update-env` must skip inapplicable phases (Nix install, apt); needs updates for NixOS support
+  - 1a. NixOS host → `update-env` skips apt and nix/home-manager phases (system-managed)
   - 2a. A phase fails → script reports which; diagnose
   - 2b. Package fails to build → nixpkgs compatibility issue
 - **Postconditions:**
@@ -200,6 +200,6 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 | UC-1 Software Development | Working | VPN working for work repos |
 | UC-2 Application Access | Working | gp-saml-gui + openconnect replaces globalprotect-openconnect |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Partial | Needs NixOS support in update-env |
+| UC-4 Environment Deployment | Working | NixOS platform detection added |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Not started | No CLAUDE.md yet |
