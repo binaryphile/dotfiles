@@ -48,7 +48,7 @@ scripts/                        # Setup utilities
 2. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
 3. Clone this repo, symlink dotfiles
 4. Install Nix + home-manager (all platforms except NixOS — system-managed there)
-5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht, jeeves)
+5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht)
 6. VPN script, Neovim plugins, file manager config
 7. SSH key generation (crostini only)
 
