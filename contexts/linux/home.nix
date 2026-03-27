@@ -8,6 +8,7 @@
     dig
     direnv
     firefox
+    gh
     git
     gp-saml-gui
     highlight
