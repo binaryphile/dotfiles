@@ -101,33 +101,22 @@ GlobalProtect VPN with Okta SAML SSO. Two packages:
 - `openconnect` — CLI VPN client with `--protocol=gp` for GlobalProtect
 - `gp-saml-gui` — opens browser for Okta login, extracts auth cookie for openconnect
 
-Workflow:
-```bash
-gp-saml-gui --portal --clientos=Windows access.digi.com 2>&1 | tee /tmp/saml-output.txt
-```
-Authenticate in the WebKit window. Then:
-```bash
-eval $(tail -4 /tmp/saml-output.txt)
-echo "$COOKIE" | sudo openconnect --protocol=gp '--useragent=PAN GlobalProtect' \
-  --user="$USER" --os="$OS" --usergroup=portal:prelogin-cookie \
-  --authgroup="US East" --passwd-on-stdin access.digi.com
-```
+Usage: `vpn-connect` (symlinked from `dotfiles/scripts/vpn-connect` to `~/.local/bin/`)
 
-Split tunnel (routes only work hosts through VPN):
-```bash
-echo "$COOKIE" | sudo openconnect --protocol=gp '--useragent=PAN GlobalProtect' \
-  --user="$USER" --os="$OS" --usergroup=portal:prelogin-cookie \
-  --authgroup="US East" --passwd-on-stdin \
-  -s 'vpn-slice stash.digi.com dm1.idigi.com' \
-  access.digi.com
-```
+The script:
+1. Opens gp-saml-gui WebKit window for Okta SAML login
+2. Extracts auth cookie
+3. Connects via openconnect with vpn-slice for split-tunnel routing
+
+Split tunnel routes only `stash.digi.com` and `dm1.idigi.com` through VPN. All other traffic stays on normal internet.
 
 Notes:
 - Portal mode, not gateway (server returns portal-style cookie)
 - `--authgroup="US East"` pre-selects gateway, avoids interactive prompt that conflicts with stdin pipe
 - Uses built-in WebKit window (not `--external`, which doesn't render properly in Firefox)
-- `vpn-slice` replaces vpnc-script for split tunnel — only specified hosts route through VPN
+- `vpn-slice` replaces vpnc-script — only specified hosts route through VPN
 - NixOS requires `environment.etc.hosts.mode = "0644"` for vpn-slice to write `/etc/hosts`
+- Passwordless sudo for openconnect via NixOS sudoers rule
 
 ### DNS Diagnostics — UC-1
 
