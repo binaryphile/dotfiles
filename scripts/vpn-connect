@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# vpn-connect - connect to Digi work VPN with split tunnel
+
+fatal() {
+  local msg=$1 rc=${2:-$?}
+  echo "fatal: $msg" >&2
+  exit $rc
+}
+
+authenticate() {
+  local output
+  output=$(gp-saml-gui --portal --clientos=Windows access.digi.com 2>&1) || fatal "SAML authentication failed"
+  eval "$(echo "$output" | grep -E '^(HOST|USER|COOKIE|OS)=')"
+  [[ -n ${COOKIE:-} ]] || fatal "no cookie received from SAML auth"
+}
+
+connect() {
+  echo $COOKIE | sudo openconnect --protocol=gp \
+    '--useragent=PAN GlobalProtect' \
+    --user=$USER \
+    --os=$OS \
+    --usergroup=portal:prelogin-cookie \
+    --authgroup="US East" \
+    --passwd-on-stdin \
+    -s 'vpn-slice stash.digi.com dm1.idigi.com' \
+    access.digi.com
+}
+
+main() {
+  authenticate
+  connect
+}
+
+return 2>/dev/null
+IFS=$'\n'
+set -euo pipefail
+set -o noglob
+main "$@"
