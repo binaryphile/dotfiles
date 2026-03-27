@@ -47,6 +47,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   - 5a. Toolchain missing → add a dev environment to that project
   - 6a. Can't reach work git server → check VPN connection
   - 6b. Hostname won't resolve → use dig to diagnose DNS
+  - 6c. Need to create PR or manage repo → use gh CLI
 - **Postconditions:**
   - **Success:** Ted can clone, edit, build, test, and push on any host
   - **Failure:** Key tools missing; Ted must install before proceeding

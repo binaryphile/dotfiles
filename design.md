@@ -122,6 +122,10 @@ Notes:
 
 `dig` (from bind dnsutils) for hostname resolution troubleshooting, especially useful when debugging VPN split tunnel routing.
 
+### GitHub CLI — UC-1
+
+`gh` for PR management, repo operations, and issue tracking from the terminal.
+
 ### Relationship to nixos-config
 
 ```nix
