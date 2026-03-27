@@ -54,6 +54,11 @@ scripts/                        # Setup utilities
 
 Idempotent. Platform detection: macos → crostini → nixos → debian → linux.
 
+**Private repos** (e.g., jeeves) are cloned manually, not by update-env:
+```bash
+git clone git@bitbucket.org:accelecon/jeeves ~/projects/jeeves
+```
+
 On NixOS, `~/nixos-config/flake.nix` imports `home.nix` via flake input. Dotfile symlinks still deployed by `update-env`.
 
 ### Bash Init — UC-1
