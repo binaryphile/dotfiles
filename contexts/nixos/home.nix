@@ -2,6 +2,7 @@
 
 {
   home.packages = with pkgs; [
+    btop
     claude-code
     coreutils
     diff-so-fancy

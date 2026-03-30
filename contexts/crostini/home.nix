@@ -21,6 +21,7 @@
     ast-grep
     bubblewrap
     chromium
+    btop
     claude-code
     coreutils
     diff-so-fancy
