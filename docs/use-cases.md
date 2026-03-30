@@ -74,6 +74,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   - 1b. Installed imperatively → promote to home.nix (UC-5)
   - 2a. Misbehaves → check config or system-level deps
   - 2b. Wrong version or broken build → pin version or find alternative
+  - 2c. Firefox policies not applied → ensure Nix Firefox is running, not an apt-installed one
 - **Postconditions:**
   - **Success:** All expected apps declaratively installed and working
   - **Failure:** App needs manual install or has unresolved issues
