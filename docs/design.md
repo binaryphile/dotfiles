@@ -108,6 +108,7 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 - Extensions auto-installed via `policies.ExtensionSettings` with `force_installed`: uBlock Origin, Privacy Badger, Vimium
 - All extensions enabled in private browsing (`private_browsing = true`)
 - Uses policies instead of per-profile config — policies apply to all profiles regardless of profile path, which varies per machine
+- Works on both NixOS (home-manager as NixOS module) and Debian/Crostini (standalone home-manager) — policies are baked into the wrapped Firefox package at build time
 
 ### VPN — UC-1
 
@@ -153,5 +154,4 @@ NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` s
 
 ## Open Questions
 
-- Does the `linux` context work for NixOS, or does NixOS need its own?
 - On NixOS, home-manager runs as a NixOS module. Does `update-env` skip its home-manager phase?
