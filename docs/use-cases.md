@@ -77,7 +77,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** All expected apps declaratively installed and working
   - **Failure:** App needs manual install or has unresolved issues
-- **Technology:** Firefox, Chromium, Signal, Obsidian, mpv, GlobalProtect
+- **Technology:** Firefox (declarative config via `programs.firefox` policies: DuckDuckGo default, uBlock Origin, Privacy Badger, Vimium auto-installed), Chromium, Signal, Obsidian, mpv, GlobalProtect
 
 ---
 
@@ -202,4 +202,4 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 | UC-3 File Management | Working | |
 | UC-4 Environment Deployment | Working | NixOS platform detection added |
 | UC-5 Make a Config Change | Working | |
-| UC-6 Start a New Session | Not started | No CLAUDE.md yet |
+| UC-6 Start a New Session | Working | |

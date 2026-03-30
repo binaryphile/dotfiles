@@ -100,6 +100,15 @@ Each context can override `home.nix`, `gitconfig`, `tmux.conf`, and other config
 
 Declared in `home.nix`. See the file for the current list.
 
+### Firefox — UC-2
+
+Managed via `programs.firefox` (home-manager module), not `home.packages`. This enables declarative profile and search engine configuration.
+
+- Default search engine: DuckDuckGo (via `policies.SearchEngines.Default`)
+- Extensions auto-installed via `policies.ExtensionSettings` with `force_installed`: uBlock Origin, Privacy Badger, Vimium
+- All extensions enabled in private browsing (`private_browsing = true`)
+- Uses policies instead of per-profile config — policies apply to all profiles regardless of profile path, which varies per machine
+
 ### VPN — UC-1
 
 GlobalProtect VPN with Okta SAML SSO. Two packages:
@@ -135,12 +144,12 @@ Notes:
 
 ```nix
 dotfiles = {
-  url = "github:binaryphile/dotfiles";
+  url = "path:/home/ted/dotfiles";
   flake = false;
 };
 ```
 
-NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` symlink chain doesn't resolve in the nix store) and layers Sway on top. Package changes happen here.
+NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` symlink chain doesn't resolve in the nix store) and layers Sway on top. Package changes happen here. The local path input means changes take effect on `nixos-rebuild switch` without pushing to GitHub first.
 
 ## Open Questions
 
