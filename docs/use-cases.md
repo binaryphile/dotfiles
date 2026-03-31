@@ -127,6 +127,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   2. Ted is productive immediately
 - **Extensions:**
   - 1a. NixOS host → `update-env` skips apt and nix/home-manager phases (system-managed)
+  - 1b. New machine → create a machine-specific context with per-machine config (e.g., btop network interface)
   - 2a. A phase fails → script reports which; diagnose
   - 2b. Package fails to build → nixpkgs compatibility issue
 - **Postconditions:**

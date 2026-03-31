@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+Prog=$(basename "$0")
+Version=0.1
+
+read -rd '' Usage_ <<END
+Usage:
+
+  $Prog [OPTIONS] [--] COMMAND [ARGS...]
+
+  setup         clone urma-next repo and install
+
+  Options:
+
+    -h | --help     show this message and exit
+    -v | --version  show the program version and exit
+    -x | --trace    enable debug tracing
+END
+
+## commands
+
+cmd.setup() (
+  [[ -e ~/fa-token.txt ]] || mk.Fatal 'missing fontawesome token file: ~/fa-token.txt'
+  mk.Each mk.Cue <<'  END'
+    git clone git@stash.digi.com:idigi/urma-next ~/urma-next
+    cd ~/urma-next/urma-next/scripts
+    git checkout -b local origin/tlilley/local
+  END
+  export FONTAWESOME_PACKAGE_TOKEN=$(<~/fa-token.txt)
+  mk.Cue ./urma install
+)
+
+## boilerplate
+
+source ~/.local/lib/mk.bash 2>/dev/null || { echo 'fatal: mk.bash not found' >&2; exit 1; }
+
+IFS=$'\n'
+set -o noglob
+
+mk.SetProg $Prog
+mk.SetUsage "$Usage_"
+mk.SetVersion $Version
+
+return 2>/dev/null
+mk.HandleOptions "$@"
+mk.Main "${@:$?}"
