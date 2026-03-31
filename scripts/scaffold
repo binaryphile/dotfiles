@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# scaffold - create a new project with nix-wrapper, .envrc, and flake.nix
+#
+# Usage: scaffold <project-dir> [packages...]
+# Default packages: bash coreutils git
+
+main() {
+  set -euo pipefail
+
+  [[ $# -ge 1 ]] || { echo "usage: scaffold <project-dir> [packages...]" >&2; exit 1; }
+
+  ProjectDir=$1
+  shift
+
+  if [[ $# -eq 0 ]]; then
+    Packages=(bash coreutils git)
+  else
+    Packages=("$@")
+  fi
+
+  section scaffold
+  mkdirTask "$ProjectDir/bin"
+  nixWrapperTask
+  task.Ln nix-wrapper "$ProjectDir/bin/claude"
+  envrcTask
+  flakeNixTask
+
+  task.Summarize
+}
+
+## task definitions
+
+mkdirTask() {
+  local dir=$1
+  desc  "create $dir"
+  exist "$dir"
+  cmd   "mkdir -p '$dir'"
+}
+
+nixWrapperTask() {
+  local path=$ProjectDir/bin/nix-wrapper
+  desc 'install bin/nix-wrapper'
+
+  isUpToDate() { [[ -f $path ]] && diff -q "$path" <(nixWrapperContent) >/dev/null 2>&1; }
+  ok isUpToDate
+
+  installWrapper() {
+    nixWrapperContent > "$path"
+    chmod +x "$path"
+  }
+  cmd installWrapper
+}
+
+envrcTask() {
+  local path=$ProjectDir/.envrc
+  desc 'install .envrc'
+
+  isUpToDate() { [[ -f $path ]] && diff -q "$path" <(envrcContent) >/dev/null 2>&1; }
+  ok isUpToDate
+
+  installEnvrc() { envrcContent > "$path"; }
+  cmd installEnvrc
+}
+
+flakeNixTask() {
+  local path=$ProjectDir/flake.nix
+  desc 'install flake.nix'
+
+  isUpToDate() { [[ -f $path ]] && diff -q "$path" <(flakeNixContent) >/dev/null 2>&1; }
+  ok isUpToDate
+
+  installFlake() { flakeNixContent > "$path"; }
+  cmd installFlake
+}
+
+## content generators
+
+nixWrapperContent() {
+  cat << 'EOF'
+#!/usr/bin/env bash
+# Generic wrapper for running commands inside nix develop.
+# Symlink to this file with the name of the command you want to wrap.
+# Example: ln -s nix-wrapper node
+
+set -eu
+
+# Check if flake.nix exists in current directory or any ancestor
+has_flake() {
+  local dir="$PWD"
+  while [[ "$dir" != "/" ]]; do
+    [[ -f "$dir/flake.nix" ]] && return 0
+    dir=$(dirname "$dir")
+  done
+  return 1
+}
+
+main() {
+  local asCalled folder prog
+  asCalled=$(basename "$0")
+  folder=$(cd "$(dirname "$0")"; pwd)
+
+  # Find the real program, excluding our bin/ directory
+  # May be empty for commands that only exist inside nix (node, npm)
+  prog=$(type -Pa "$asCalled" | grep -v "^$folder/" | head -1)
+
+  # IN_NIX_SHELL is set automatically by nix develop (even with -c)
+  # If already in nix develop, or no flake.nix found, run prog directly
+  # Otherwise use nix develop to get the right environment
+  if [[ ${IN_NIX_SHELL:-} == impure ]] || ! has_flake; then
+    exec "$prog" "$@"
+  else
+    # Use prog if found, otherwise asCalled (nix will provide it)
+    exec nix develop -c "${prog:-$asCalled}" "$@"
+  fi
+}
+
+main "$@"
+EOF
+}
+
+envrcContent() {
+  cat << 'EOF'
+export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
+export PATH=$PROJECT_ROOT/bin:$PATH
+EOF
+}
+
+flakeNixContent() {
+  local pkg_list=""
+  local pkg
+  for pkg in "${Packages[@]}"; do
+    pkg_list+=$'\n'"            $pkg"
+  done
+
+  cat << FLAKE
+{
+  description = "Development environment";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+        };
+      in {
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [$pkg_list
+          ];
+        };
+      }
+    );
+}
+FLAKE
+}
+
+## boilerplate
+
+Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo .)")"; pwd)
+source ~/projects/task.bash/task.bash
+unset -v Here
+
+main "$@"
