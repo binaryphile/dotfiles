@@ -96,6 +96,8 @@ Each app gets a directory under `bash/apps/<app>/` with optional files:
 
 Each context can override `home.nix`, `gitconfig`, `tmux.conf`, and other configs. Top-level files like `gitconfig` and `home.nix` are symlinks to their context version.
 
+Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config like `btop.conf`. This keeps platform config shared while allowing per-machine overrides. `update-env` conditionally links optional files like `btop.conf` only when the active context provides them.
+
 ### Packages — UC-1, UC-2, UC-3
 
 Declared in `home.nix`. See the file for the current list. By category:
