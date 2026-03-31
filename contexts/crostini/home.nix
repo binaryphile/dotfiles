@@ -52,7 +52,6 @@
     abcde
     asciinema
     asciinema-agg
-    kcov
     wl-clipboard
 
     # go

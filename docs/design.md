@@ -98,7 +98,19 @@ Each context can override `home.nix`, `gitconfig`, `tmux.conf`, and other config
 
 ### Packages — UC-1, UC-2, UC-3
 
-Declared in `home.nix`. See the file for the current list.
+Declared in `home.nix`. See the file for the current list. By category:
+
+**Dev tools (UC-1):** git, neovim, tmux, direnv, stgit, gh, claude-code, jira-cli-go, scc, pandoc, nodePackages.prettier, diff-so-fancy, silver-searcher (ag), highlight, asciinema, asciinema-agg
+
+**System/CLI (UC-3):** btop, htop, ncdu, jq, tree, rsync, coreutils, dig, zip, mnemonicode
+
+**Wayland (UC-2):** wl-clipboard, cliphist, libnotify
+
+**Apps (UC-2):** Firefox (via `programs.firefox`), Obsidian
+
+**VPN (UC-1):** openconnect, gp-saml-gui, vpn-slice
+
+**File management (UC-3):** ranger
 
 ### Firefox — UC-2
 
@@ -132,6 +144,12 @@ Notes:
 - `vpn-slice` replaces vpnc-script — only specified hosts route through VPN
 - NixOS requires `environment.etc.hosts.mode = "0644"` for vpn-slice to write `/etc/hosts`
 - Passwordless sudo for openconnect via NixOS sudoers rule
+
+### direnv — UC-1
+
+Automatically loads project-specific environments when entering a directory with `.envrc`. Works with Nix devShells via `use flake` in `.envrc`.
+
+Installed as a package in `home.nix`. Shell integration via `bash/apps/direnv/init.bash` (hooks into bash prompt).
 
 ### DNS Diagnostics — UC-1
 

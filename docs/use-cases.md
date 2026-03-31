@@ -36,22 +36,24 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   1. Ted connects to VPN (if accessing work resources)
   2. Ted opens a terminal
   3. Ted clones or navigates to a project
-  4. Ted edits code
-  5. Ted builds and tests
-  6. Ted commits and pushes
+  4. direnv loads the project's dev environment automatically
+  5. Ted edits code
+  6. Ted builds and tests
+  7. Ted commits and pushes
 - **Extensions:**
   - 1a. VPN not connected → authenticate and connect (UC-5)
   - 1b. VPN tools not installed → add to home.nix (UC-5)
   - 3a. Git not available → add to home.nix (UC-5)
   - 4a. Editor not installed → add to home.nix (UC-5)
-  - 5a. Toolchain missing → add a dev environment to that project
+  - 4a. No .envrc → project doesn't use direnv; manual `nix develop` or system tools
+  - 6a. Toolchain missing → add a dev environment to that project
   - 6a. Can't reach work git server → check VPN connection
   - 6b. Hostname won't resolve → use dig to diagnose DNS
   - 6c. Need to create PR or manage repo → use gh CLI
 - **Postconditions:**
   - **Success:** Ted can clone, edit, build, test, and push on any host
   - **Failure:** Key tools missing; Ted must install before proceeding
-- **Technology:** neovim, Claude Code, Nix devShells, dig (DNS diagnostics)
+- **Technology:** neovim, Claude Code, direnv, Nix devShells, git, stgit, gh, tmux, jira-cli-go, dig, scc, pandoc, prettier
 
 ---
 
@@ -78,7 +80,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** All expected apps declaratively installed and working
   - **Failure:** App needs manual install or has unresolved issues
-- **Technology:** Firefox (declarative config via `programs.firefox` policies: DuckDuckGo default, uBlock Origin, Privacy Badger, Vimium auto-installed), Chromium, Signal, Obsidian, mpv, GlobalProtect
+- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, btop, highlight, wl-clipboard, cliphist, libnotify, asciinema
 
 ---
 
@@ -105,7 +107,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** Ted finds, organizes, and transfers files without friction
   - **Failure:** Basic `ls`/`cp`/`mv` work but search is tedious
-- **Technology:** ranger, fd, ripgrep, fzf, zip, p7zip
+- **Technology:** ranger, silver-searcher (ag), tree, ncdu, zip, p7zip, rsync
 
 ---
 
