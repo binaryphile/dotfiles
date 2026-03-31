@@ -38,7 +38,6 @@
     libnotify
     asciinema
     asciinema-agg
-    kcov
     wl-clipboard
   ];
 
