@@ -26,6 +26,7 @@
     ranger
     rsync
     scc
+    signal-desktop
     silver-searcher
     stgit
     tmux
