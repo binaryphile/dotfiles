@@ -20,7 +20,7 @@ END
 ## commands
 
 cmd.setup() (
-  [[ -e ~/fa-token.txt ]] || mk.Fatal 'missing fontawesome token file: ~/fa-token.txt'
+  [[ -e $FontAwesomeKeyFile ]] || mk.Fatal "missing fontawesome token file: $FontAwesomeKeyFile"
   mk.Each mk.Cue <<'  END'
     git clone git@stash.digi.com:idigi/urma-next ~/urma-next
     cd ~/urma-next/urma-next/scripts
@@ -29,6 +29,10 @@ cmd.setup() (
   export FONTAWESOME_PACKAGE_TOKEN=$(<~/fa-token.txt)
   mk.Cue ./urma install
 )
+
+## globals
+
+FontAwesomeKeyFile=~/secrets/fontawesome.key
 
 ## boilerplate
 
