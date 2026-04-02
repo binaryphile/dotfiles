@@ -44,6 +44,45 @@
 
   home.file.".claude/settings.json".source = "${dotfiles}/claude/settings.json";
   home.sessionVariables = { };
+
+  # Calendar: vdirsyncer syncs ICS from OWA, khal reads it
+  # ICS URL stored in ~/secrets/calendar-ics.url (not committed)
+  accounts.calendar = {
+    basePath = ".calendars";
+    accounts.work = {
+      primary = true;
+      remote = {
+        type = "http";
+      };
+      local = {
+        type = "filesystem";
+        fileExt = ".ics";
+      };
+      vdirsyncer = {
+        enable = true;
+        collections = null;
+        urlCommand = [ "cat" "${config.home.homeDirectory}/secrets/calendar-ics.url" ];
+      };
+      khal = {
+        enable = true;
+        type = "calendar";
+      };
+    };
+  };
+
+  programs.vdirsyncer.enable = true;
+  services.vdirsyncer.enable = true;
+
+  programs.khal = {
+    enable = true;
+    locale = {
+      local_timezone = "America/New_York";
+      default_timezone = "America/New_York";
+      timeformat = "%H:%M";
+      dateformat = "%Y-%m-%d";
+    };
+  };
+
   programs.firefox = {
     enable = true;
     policies = {
@@ -68,6 +107,29 @@
         };
       };
     };
+  };
+
+  # Calendar reminders: notify-send at 5min and 1min before events
+  systemd.user.services.khal-notify = {
+    Unit.Description = "Calendar event reminder notifications";
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${dotfiles}/scripts/khal-notify";
+      Environment = [
+        "PATH=${pkgs.khal}/bin:${pkgs.libnotify}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin"
+        "DISPLAY=:0"
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+      ];
+    };
+  };
+
+  systemd.user.timers.khal-notify = {
+    Unit.Description = "Calendar event reminder timer";
+    Timer = {
+      OnCalendar = "*:0/5";
+      Persistent = true;
+    };
+    Install.WantedBy = [ "timers.target" ];
   };
 
   programs.home-manager.enable = true;
