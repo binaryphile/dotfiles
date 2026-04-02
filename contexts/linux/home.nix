@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, dotfiles, ... }:
 
 {
   home.packages = with pkgs; [
@@ -42,7 +42,7 @@
     wl-clipboard
   ];
 
-  home.file = { };
+  home.file.".claude/settings.json".source = "${dotfiles}/claude/settings.json";
   home.sessionVariables = { };
   programs.firefox = {
     enable = true;
