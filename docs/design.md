@@ -137,7 +137,9 @@ The script:
 2. Extracts auth cookie
 3. Connects via openconnect with vpn-slice for split-tunnel routing
 
-Split tunnel routes only `stash.digi.com` and `dm1.idigi.com` through VPN. All other traffic stays on normal internet.
+Split tunnel routes `stash.digi.com`, `dm1.idigi.com`, and `dm1.devdevicecloud.com` through VPN. All other traffic stays on normal internet. `dm1.devdevicecloud.com` resolves to public AWS IPs — vpn-slice routes them via the VPN gateway's whitelisted IP.
+
+The `-s` argument uses the full nix profile path (`/etc/profiles/per-user/ted/bin/vpn-slice`) because openconnect runs as root via sudo, and root's PATH doesn't include ted's profile. Without the full path, root finds the system vpn-slice (without dnspython) and `/etc/hosts` entries don't get written.
 
 Notes:
 - Portal mode, not gateway (server returns portal-style cookie)
@@ -160,6 +162,18 @@ Installed as a package in `home.nix`. Shell integration via `bash/apps/direnv/in
 ### GitHub CLI — UC-1
 
 `gh` for PR management, repo operations, and issue tracking from the terminal.
+
+### Calendar — UC-1
+
+Work calendar synced from OWA via published ICS URL. Three components:
+
+**vdirsyncer** syncs the ICS URL to `~/.calendars/work/` every 5 minutes (systemd timer). The ICS URL is a secret stored in `~/secrets/calendar-ics.url` — vdirsyncer reads it at runtime via `url.fetch = ["command", "cat", ...]` so the URL never appears in committed config.
+
+**khal** reads the local calendar and expands recurring events, handling rescheduled instances (`RECURRENCE-ID`), cancellations (`EXDATE`), and timezone conversion. CLI: `khal list today`.
+
+**khal-notify** (`scripts/khal-notify`) runs every 5 minutes via systemd timer (on the hour: :00, :05, :10, ...), checks for events starting in 30, 10, or 5 minutes, and sends desktop notifications via `notify-send` (displayed by mako on Sway). The 5-minute notification uses critical urgency. A statefile (`~/.local/state/khal-notify/sent`) prevents duplicate notifications, cleaned daily.
+
+Config lives in `contexts/linux/home.nix` using home-manager's `accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, and `services.vdirsyncer` modules plus custom systemd units for khal-notify.
 
 ### Relationship to nixos-config
 

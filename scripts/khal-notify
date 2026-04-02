@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# khal-notify — desktop notifications for upcoming calendar events
+#
+# Runs every minute via systemd timer. Checks khal for events starting
+# in 30, 10, or 5 minutes and sends notify-send. Tracks sent
+# notifications in a statefile to avoid duplicates.
+
+set -euo pipefail
+
+StateFile=${XDG_STATE_HOME:-$HOME/.local/state}/khal-notify/sent
+mkdir -p "$(dirname "$StateFile")"
+touch "$StateFile"
+
+# Clean statefile daily
+TodayDate=$(date +%Y-%m-%d)
+DateMarker="# $TodayDate"
+if ! grep -qxF "$DateMarker" "$StateFile"; then
+  echo "$DateMarker" > "$StateFile"
+fi
+
+Now=$(date +%s)
+
+# khal list today with machine-friendly format
+# Output: "HH:MM HH:MM Title"
+while IFS= read -r line; do
+  # Skip header lines (dates, empty)
+  [[ $line =~ ^[0-9]{2}:[0-9]{2} ]] || continue
+
+  # Skip cancelled events
+  [[ $line == *"Canceled:"* || $line == *"Cancelled:"* ]] && continue
+
+  StartTime=${line%% *}
+  Title=${line#* * }
+
+  # Convert start time to epoch
+  StartEpoch=$(date -d "today $StartTime" +%s 2>/dev/null) || continue
+
+  MinutesTill=$(( (StartEpoch - Now) / 60 ))
+
+  for Ahead in 30 10 5; do
+    Key="${StartTime}-${Title}-${Ahead}"
+
+    # Already sent?
+    grep -qxF "$Key" "$StateFile" && continue
+
+    if (( MinutesTill >= (Ahead - 1) && MinutesTill <= Ahead )); then
+      if (( Ahead == 5 )); then
+        Urgency=critical
+      else
+        Urgency=normal
+      fi
+
+      notify-send -u "$Urgency" -t 30000 "Meeting in $Ahead min" "$StartTime — $Title"
+      echo "$Key" >> "$StateFile"
+    fi
+  done
+done < <(khal list today --format "{start-time} {end-time} {title}" 2>/dev/null)
