@@ -31,7 +31,7 @@ connect() {
     --usergroup=portal:prelogin-cookie \
     --authgroup="US East" \
     --passwd-on-stdin \
-    -s 'vpn-slice stash.digi.com dm1.idigi.com dm1.devdevicecloud.com' \
+    -s '/etc/profiles/per-user/ted/bin/vpn-slice stash.digi.com dm1.idigi.com dm1.devdevicecloud.com' \
     access.digi.com
 }
 
