@@ -2,7 +2,7 @@
 
 {
   home.packages = with pkgs; [
-    btop
+    bottom
     claude-code
     coreutils
     diff-so-fancy
@@ -32,6 +32,7 @@
     tmux
     tree
     vpn-slice
+    zenith
     zip
 
     # not available on mac
