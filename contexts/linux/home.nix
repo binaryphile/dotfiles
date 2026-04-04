@@ -117,7 +117,7 @@
       Type = "oneshot";
       ExecStart = "${dotfiles}/scripts/khal-notify";
       Environment = [
-        "PATH=${pkgs.khal}/bin:${pkgs.libnotify}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin"
+        "PATH=${pkgs.bash}/bin:${pkgs.khal}/bin:${pkgs.libnotify}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin"
         "DISPLAY=:0"
         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
       ];
