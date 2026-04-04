@@ -32,7 +32,6 @@
     tmux
     tree
     vpn-slice
-    zenith
     zip
 
     # not available on mac
