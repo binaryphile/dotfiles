@@ -61,7 +61,7 @@
       vdirsyncer = {
         enable = true;
         collections = null;
-        urlCommand = [ "cat" "${config.home.homeDirectory}/secrets/calendar-ics.url" ];
+        urlCommand = [ "${pkgs.coreutils}/bin/cat" "${config.home.homeDirectory}/secrets/calendar-ics.url" ];
       };
       khal = {
         enable = true;
