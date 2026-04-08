@@ -24,6 +24,9 @@ Now=$(date +%s)
 # khal list today with machine-friendly format
 # Output: "HH:MM HH:MM Title"
 while IFS= read -r line; do
+  # Stop at "Tomorrow" or any non-today date header
+  [[ $line == Tomorrow* ]] && break
+
   # Skip header lines (dates, empty)
   [[ $line =~ ^[0-9]{2}:[0-9]{2} ]] || continue
 
