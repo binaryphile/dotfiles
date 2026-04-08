@@ -53,7 +53,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** Ted can clone, edit, build, test, and push on any host
   - **Failure:** Key tools missing; Ted must install before proceeding
-- **Technology:** neovim, Claude Code, direnv, Nix devShells, git, stgit, gh, tmux, jira-cli-go, dig, scc, pandoc, prettier
+- **Technology:** neovim, Claude Code, direnv, Nix devShells, git, stgit, gh, tmux, jira-cli-go, dig, scc, pandoc
 
 ---
 
@@ -80,7 +80,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** All expected apps declaratively installed and working
   - **Failure:** App needs manual install or has unresolved issues
-- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, btop, highlight, wl-clipboard, cliphist, libnotify, asciinema
+- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, signal-desktop, btop, highlight, wl-clipboard, cliphist, libnotify, asciinema
 
 ---
 
@@ -107,7 +107,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** Ted finds, organizes, and transfers files without friction
   - **Failure:** Basic `ls`/`cp`/`mv` work but search is tedious
-- **Technology:** ranger, silver-searcher (ag), tree, ncdu, zip, p7zip, rsync
+- **Technology:** ranger, silver-searcher (ag), tree, ncdu, zip, rsync
 
 ---
 
@@ -199,11 +199,11 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 
 ## Status
 
-| Use Case | Status | Blocker? |
-|----------|--------|----------|
-| UC-1 Software Development | Working | VPN working for work repos |
-| UC-2 Application Access | Working | gp-saml-gui + openconnect replaces globalprotect-openconnect |
+| Use Case | Status | Notes |
+|----------|--------|-------|
+| UC-1 Software Development | Working | VPN via gp-saml-gui + openconnect, calendar via khal + vdirsyncer |
+| UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | NixOS platform detection added |
+| UC-4 Environment Deployment | Working | NixOS, Crostini, Debian, macOS platform detection |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |

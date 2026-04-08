@@ -1,38 +1,15 @@
 { config, pkgs, dotfiles, ... }:
 
 {
+  imports = [ ../../shared.nix ];
+
   home.packages = with pkgs; [
     bottom
-    claude-code
-    coreutils
-    diff-so-fancy
     dig
-    direnv
-
-    gh
-    git
     gp-saml-gui
-    highlight
-    htop
-    jira-cli-go
-    jq
-    mnemonicode
-    ncdu
-    neovim
     nodePackages.prettier
     openconnect
-    obsidian
-    pandoc
-    ranger
-    rsync
-    scc
-    signal-desktop
-    silver-searcher
-    stgit
-    tmux
-    tree
     vpn-slice
-    zip
 
     # not available on mac
     cliphist
@@ -42,8 +19,14 @@
     wl-clipboard
   ];
 
-  home.file.".claude/settings.json".source = "${dotfiles}/claude/settings.json";
-  home.sessionVariables = { };
+  home.file.".claude/settings.json" = {
+    source = "${dotfiles}/claude/settings.json";
+    force = true;
+  };
+  home.file.".claude/CLAUDE.md" = {
+    source = "${dotfiles}/claude/CLAUDE.md";
+    force = true;
+  };
 
   # Calendar: vdirsyncer syncs ICS from OWA, khal reads it
   # ICS URL stored in ~/secrets/calendar-ics.url (not committed)
@@ -83,32 +66,6 @@
     };
   };
 
-  programs.firefox = {
-    enable = true;
-    policies = {
-      SearchEngines = {
-        Default = "DuckDuckGo";
-      };
-      ExtensionSettings = {
-        "uBlock0@raymondhill.net" = {
-          installation_mode = "force_installed";
-          install_url = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi";
-          private_browsing = true;
-        };
-        "jid1-MnnxcxisBPnSXQ@jetpack" = {
-          installation_mode = "force_installed";
-          install_url = "https://addons.mozilla.org/firefox/downloads/latest/privacy-badger17/latest.xpi";
-          private_browsing = true;
-        };
-        "{d7742d87-e61d-4b78-b8a1-b469842139fa}" = {
-          installation_mode = "force_installed";
-          install_url = "https://addons.mozilla.org/firefox/downloads/latest/vimium-ff/latest.xpi";
-          private_browsing = true;
-        };
-      };
-    };
-  };
-
   # Calendar reminders: notify-send at 5min and 1min before events
   systemd.user.services.khal-notify = {
     Unit.Description = "Calendar event reminder notifications";
@@ -131,6 +88,4 @@
     };
     Install.WantedBy = [ "timers.target" ];
   };
-
-  programs.home-manager.enable = true;
 }
