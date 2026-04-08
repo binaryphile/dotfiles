@@ -23,6 +23,33 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 
 ## Shell Initialization
 
+### UC-I0: Predictable Shell Init
+
+- **Actor:** Ted
+- **Goal:** Understand and control shell initialization without learning an opaque sourcing taxonomy
+- **Scope:** All hosts
+- **Level:** User goal
+- **Trigger:** Ted needs to know what runs when a shell starts, or needs to change startup behavior
+- **Preconditions:** None
+- **Stakeholders:**
+  - Ted — predictable behavior, no hidden rules, debuggable without guessing which file ran
+- **Main Success Scenario:**
+  1. Ted opens `init.bash` — one file
+  2. Mode detection is explicit: `ShellIsLogin`, `ShellIsInteractive`, `Reload`
+  3. Every sourcing decision is a readable conditional in the code
+  4. Ted knows exactly what runs for any shell mode without consulting external documentation
+- **Extensions:**
+  - 1a. Ted needs to change what runs on login → edit the `ShellIsLogin` conditional in init.bash
+  - 1b. Ted needs to add interactive-only behavior → edit the `ShellIsInteractive` conditional
+  - 1c. Ted needs to debug unexpected behavior → read init.bash top to bottom; no hidden sourcing rules to discover
+- **Postconditions:**
+  - **Success:** Shell initialization is fully comprehensible from one file. No need to understand the interaction of `.profile` vs `.bash_profile` vs `.bashrc`, login vs non-login, interactive vs non-interactive, local vs remote, bash vs sh
+  - **Failure:** N/A — the model is inherently simpler than what it replaces
+- **Design rationale:** The conventional three-file model (`.profile`, `.bash_profile`, `.bashrc`) hides complexity behind an opaque sourcing taxonomy that even experienced engineers cannot reliably state. `init.bash` replaces it with explicit control: one file, readable conditionals, no hidden file-selection rules.
+- **Technology:** init.bash symlinked as .bashrc, .bash_profile, .profile
+
+---
+
 ### UC-I1: Shell Startup
 
 - **Actor:** Ted
@@ -394,6 +421,7 @@ P = primary support, S = secondary/indirect support
 
 | Init UC | UC-1 Dev | UC-2 Apps | UC-3 Files | UC-4 Deploy | UC-5 Config | UC-6 Session |
 |---------|:--------:|:---------:|:----------:|:-----------:|:-----------:|:------------:|
+| I0 Predictable Init | P | | | P | P | |
 | I1 Shell Startup | P | | | P | | P |
 | I2 Live Reload | S | | | | P | |
 | I3 Context Init | | | | P | S | |
@@ -416,6 +444,7 @@ P = primary support, S = secondary/indirect support
 
 | Use Case | Status |
 |----------|--------|
+| UC-I0 Predictable Init | Working |
 | UC-I1 Shell Startup | Working |
 | UC-I2 Live Reload | Working |
 | UC-I3 Context Init | Working |

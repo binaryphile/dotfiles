@@ -67,11 +67,19 @@ On NixOS, `~/nixos-config/flake.nix` imports `home.nix` via flake input. Dotfile
 
 ### Bash Init — UC-1
 
-Custom. Does not use `programs.bash`. However, other `programs.*` modules and `home.sessionVariables`/`home.sessionPath` are used freely — principle 3 only prohibits HM managing bash startup files.
+#### Why a single entry point
+
+The conventional bash init model splits startup across `.profile`, `.bash_profile`, and `.bashrc`. Which file runs depends on an interaction of login vs non-login, interactive vs non-interactive, bash vs sh, local vs remote — a sourcing taxonomy complex enough that even experienced engineers cannot reliably state the full rules. The result is shell behavior that is difficult to predict, debug, or control.
+
+`init.bash` replaces all three files with a single entry point. Mode detection is explicit (`ShellIsLogin`, `ShellIsInteractive`, `Reload`) and every sourcing decision is visible in the code. No hidden file-selection rules, no "bash checks for .bash_profile first but falls back to .profile unless..." — the user reads one file and knows exactly what runs when.
+
+This design does not use `programs.bash` (home-manager's bash module). However, other `programs.*` modules and `home.sessionVariables`/`home.sessionPath` are used freely — principle 3 only prohibits HM managing bash startup files.
+
+#### How it works
 
 `bash/apps/home-manager/env.bash` is a symlink to `~/.nix-profile/etc/profile.d/hm-session-vars.sh`. This means `home.sessionVariables` and `home.sessionPath` flow into the custom init automatically during login.
 
-`bash/init.bash` is symlinked to `.bashrc`, `.bash_profile`, `.profile`. Single entry point for all shell modes. Supports `source ~/.bashrc reload` for live reloading.
+`bash/init.bash` is symlinked to `.bashrc`, `.bash_profile`, `.profile`. Supports `source ~/.bashrc reload` for live reloading.
 
 Init flow:
 1. Resolve repo root via symlink
