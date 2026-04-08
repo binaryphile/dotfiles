@@ -17,7 +17,7 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 - `contexts/` — platform overrides (crostini, linux, macos). Each has its own `home.nix` that imports `shared.nix` and adds platform-specific packages.
 - `context` — symlink at repo root pointing to active platform.
 - Top-level `home.nix`, `gitconfig`, `tmux.conf` — symlinks to the active context's versions.
-- `bash/apps/<app>/` — per-app modules with `env.bash`, `init.bash`, `cmds.bash`, `detect.bash`, `deps`.
+- `bash/apps/<app>/` — per-app modules with `init.bash` (hooks) and `cmds.bash` (aliases/functions).
 - `bash/settings/` — base, login, interactive, env, cmds.
 - `claude/` — Claude Code config (`settings.json`, `CLAUDE.md`), deployed via `home.file`.
 - `scripts/` — vpn-connect, khal-notify, and other utilities.
@@ -26,7 +26,7 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 ## Making changes
 
 - **Packages:** shared packages go in `shared.nix`. Platform-specific packages go in the relevant `contexts/*/home.nix`. If a `programs.<name>` module exists, prefer that.
-- **Env vars / PATH:** use `home.sessionVariables` or `home.sessionPath` — they flow into the custom init via `bash/apps/home-manager/env.bash` (symlink to `hm-session-vars.sh`).
+- **Env vars / PATH:** use `home.sessionVariables` or `home.sessionPath` in `shared.nix` — they flow into the shell via `hm-session-vars.sh`, sourced directly by `init.bash`.
 - **Shell integration / aliases / functions:** add a module under `bash/apps/`.
 - **Shared packages are in `shared.nix`** — no need to sync across contexts manually. Platform-specific packages go in individual context files.
 - **Validate nix changes** with `nix-instantiate --parse` before committing. Use `home-manager build` for deeper validation (evaluates options and builds derivations).

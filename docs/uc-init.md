@@ -71,12 +71,11 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Extensions:**
   - 1a. Non-interactive shell (e.g., script) → only env vars and base settings apply; no prompt, aliases, or interactive config
   - 1b. SSH session → same as terminal (init.bash is .bash_profile)
-  - 4a. Tool not installed → app module skipped (detect.bash or IsCmd fails)
+  - 4a. Tool not installed → its integration skipped, shell still starts
 - **Postconditions:**
   - **Success:** Consistent environment regardless of host — PATH, editor, prompt, agent, direnv, all workflow commands available
-  - **Failure:** Partial init; broken app module or missing dependency
-- **Implementation:** init.bash → initutil.bash → env.bash → context/init.bash → apps.bash → base.bash → cmds.bash → interactive.bash → login.bash. IFS/globbing controlled during init (UC-I15). Cleanup removes helper functions/vars after init.
-- **Technology:** init.bash, lib/initutil.bash, lib/apps.bash, settings/*
+  - **Failure:** Partial init; broken component doesn't prevent shell startup
+- **Technology:** init.bash
 
 ---
 
@@ -90,17 +89,16 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Stakeholders:**
   - Ted — fast iteration when editing dotfiles
 - **Main Success Scenario:**
-  1. init.bash detects `$1 == reload`, sets Reload=1
-  2. Re-sources env.bash (Reload triggers same path as login)
-  3. Re-sources all app modules (env.bash re-sourced per app)
-  4. Re-sources interactive and login settings
-  5. Prints "reloaded"
+  1. Ted runs `source ~/.bashrc reload`
+  2. All shell config is re-sourced: hooks, aliases, functions, settings
+  3. Shell prints "reloaded"
+  4. Changes are active immediately
 - **Extensions:**
-  - 2a. hm-session-vars guard (`__HM_SESS_VARS_SOURCED`) blocks re-sourcing → nix-managed env vars from previous generation persist until new terminal
+  - 2a. Nix-managed session vars may not refresh (guard prevents re-sourcing) → open new terminal for nix var changes
 - **Postconditions:**
   - **Success:** Config changes take effect immediately
-  - **Failure:** Guard prevents nix var updates; open new terminal instead
-- **Technology:** init.bash (Reload flag), ShellIsLogin override
+  - **Failure:** Nix var changes require new terminal
+- **Technology:** init.bash
 
 ---
 
@@ -112,14 +110,14 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Level:** Subfunction
 - **Trigger:** Shell startup (UC-I1)
 - **Main Success Scenario:**
-  1. init.bash calls TestAndSource on context/init.bash
-  2. Context-specific setup runs (if file exists)
+  1. Shell startup detects active platform context
+  2. Platform-specific shell setup runs if configured
 - **Extensions:**
-  - 1a. No context/init.bash → no-op
+  - 1a. No platform-specific setup configured → no-op
 - **Postconditions:**
   - **Success:** Platform-specific behavior active
-  - **Failure:** N/A — missing file is a valid no-op
-- **Technology:** context symlink, TestAndSource
+  - **Failure:** N/A — no platform config is a valid state
+- **Technology:** context symlink, context/init.bash
 
 ---
 
@@ -135,21 +133,19 @@ Modifies init config: adds app modules, changes settings, updates integrations.
   - Maintainer — integration is discoverable and follows a consistent pattern
   - Ted — new tool works on next shell startup without manual sourcing
 - **Main Success Scenario:**
-  1. Maintainer creates `bash/apps/<tool>/`
-  2. Adds files as needed: `env.bash` (vars), `detect.bash` (gate), `init.bash` (setup), `cmds.bash` (aliases/functions), `deps` (ordering)
-  3. On next shell startup, module is discovered and activated
-  4. If the tool is on PATH (or detect.bash passes), the module's files are sourced in the correct shell mode
-  5. If deps declares prerequisites, they load first
+  1. Maintainer decides the concern: hook (startup behavior) or commands (aliases/functions)
+  2. For hooks: adds sourcing to init.bash in the correct position
+  3. For commands: creates `bash/apps/<tool>/cmds.bash`
+  4. Installs the package via nix
+  5. On next shell startup, the integration is active
 - **Extensions:**
-  - 2a. Tool not on PATH and no detect.bash → module is silently skipped
-  - 2b. Dependency declared but not available → dependency skipped, module still loads
-  - 3a. Module only needs env vars → only env.bash needed
-  - 3b. Module only needs aliases → only cmds.bash needed
+  - 2a. Hook is order-sensitive → maintainer places it after dependencies in init.bash
+  - 3a. Tool needs both hooks and commands → adds hook line AND creates cmds.bash
+  - 4a. Tool has a `programs.*` module → use that for declarative config
 - **Postconditions:**
-  - **Success:** Tool integration loads automatically, in correct order, on every shell startup
-  - **Failure:** detect.bash rejects; module skipped with no side effects
-- **Implementation:** apps.bash discovers dirs via ListDir, filters with IsApp (detect.bash or IsCmd), sorts with OrderByDependencies (reads deps files), sources env.bash on login, init.bash and cmds.bash always. Loaded array tracks state.
-- **Technology:** lib/apps.bash, lib/initutil.bash (IsApp, OrderByDependencies, Filter, ListDir)
+  - **Success:** Tool integration loads automatically on every shell startup
+  - **Failure:** Missing hook file or cmds.bash → silently skipped, shell still starts
+- **Technology:** init.bash (hooks), bash/apps/*/cmds.bash (commands)
 
 ---
 
@@ -163,18 +159,18 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Level:** Subfunction
 - **Trigger:** Login shell or reload
 - **Main Success Scenario:**
-  1. TestContainsAndPrepend adds .local/bin, .local/lib, /usr/local/bin to PATH (idempotent)
-  2. TestCmdAndExport sets EDITOR to nvim (fallback vim) and PAGER to less
-  3. TestAndExport sets CFGDIR (~/.config), SECRETS (~/secrets), XDG_CONFIG_HOME ($CFGDIR)
-  4. home-manager/env.bash (symlink to hm-session-vars.sh) sources nix-generated session vars
-  5. ENV_SET=1 exported to mark login complete
+  1. Login shell starts
+  2. PATH includes .local/bin, .local/lib, /usr/local/bin
+  3. EDITOR set to nvim, PAGER to less
+  4. CFGDIR, SECRETS, XDG_CONFIG_HOME set to expected values
+  5. Nix-managed session variables available
 - **Extensions:**
-  - 2a. Neither nvim nor vim on PATH → EDITOR unset
-  - 4a. hm-session-vars guard already set → re-source skipped
+  - 5a. Nix session vars don't refresh on reload → open new terminal for nix changes
+  - 5b. home-manager not yet applied → env vars missing until `home-manager switch`
 - **Postconditions:**
   - **Success:** PATH, EDITOR, PAGER, config directories all set correctly
-  - **Failure:** Missing editor; EDITOR unset
-- **Technology:** settings/env.bash, bash/apps/home-manager/env.bash (symlink to hm-session-vars.sh)
+  - **Failure:** home-manager not applied; env vars missing
+- **Technology:** shared.nix (home.sessionVariables, home.sessionPath), init.bash
 
 ---
 
@@ -186,13 +182,12 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Level:** Subfunction
 - **Trigger:** Interactive shell startup
 - **Main Success Scenario:**
-  1. Vi mode enabled (set -o vi)
-  2. INPUTRC set to dotfiles/bash/inputrc
-  3. History configured: append mode, erasedups, ignore patterns (l, ls, ll, ltr, ps, bg, fg, history), timestamps
-  4. PROMPT_COMMAND appends eternal history logger (PID + user + command → ~/.bash_eternal_history)
-  5. EXIT trap runs historymerge (dedup via sort + uniq, preserves order)
-  6. Login → TestAndTouch ~/.hushlogin (suppress login messages)
-  7. umask 022 set
+  1. Vi editing mode active
+  2. History preserves commands across sessions with timestamps
+  3. Eternal history log maintained (~/.bash_eternal_history)
+  4. Duplicate history entries removed on shell exit
+  5. Login messages suppressed
+  6. umask set to 022
 - **Postconditions:**
   - **Success:** Vi editing, persistent cross-session history, clean login
   - **Failure:** Partial config; most settings independent
@@ -217,8 +212,7 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Postconditions:**
   - **Success:** Ted sees what the shortcut actually does — transparency and learning
   - **Failure:** N/A — worst case is no reveal output
-- **Implementation:** `Alias` wrapper (initutil.bash) prepends `reveal $name;` to every alias. Workflow functions call `reveal "$FUNCNAME"` manually. reveal is type-aware: extracts alias definitions, shows function invocations, handles builtins and files.
-- **Technology:** settings/cmds.bash (reveal), lib/initutil.bash (Alias)
+- **Technology:** settings/cmds.bash, lib/initutil.bash
 
 ---
 
@@ -230,18 +224,18 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Goal:** Context-aware shell prompt
 - **Scope:** All hosts
 - **Level:** Subfunction
-- **Trigger:** Shell startup (UC-I4 app loading)
+- **Trigger:** Interactive shell startup
 - **Main Success Scenario:**
-  1. detect.bash checks ShellIsInteractive AND vendored liquidprompt file exists
-  2. init.bash sources ~/dotfiles/liquidprompt/liquidprompt
-  3. Prompt is active, sets up PROMPT_COMMAND
+  1. Shell starts in interactive mode
+  2. Liquidprompt activates
+  3. Prompt shows git status, hostname, working directory, etc.
 - **Extensions:**
-  - 1a. Non-interactive shell → detect fails, module skipped
-  - 1b. Vendored file missing → detect fails, module skipped
+  - 1a. Non-interactive shell → prompt not loaded
+  - 1b. Liquidprompt not available → default bash prompt
 - **Postconditions:**
   - **Success:** Informative prompt showing git status, hostname, etc.
   - **Failure:** Default bash prompt
-- **Technology:** bash/apps/liquidprompt/, vendored liquidprompt/
+- **Technology:** liquidprompt/
 
 ---
 
@@ -252,26 +246,24 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Scope:** All hosts
 - **Level:** Subfunction
 - **Trigger:** Ted enters a directory with `.envrc`
-- **Preconditions:** direnv installed (via `programs.direnv`); liquidprompt loaded (declared in `deps`)
+- **Preconditions:** direnv installed; prompt loaded before direnv hook
 - **Stakeholders:**
   - Ted — no manual `nix develop` or environment sourcing
   - Projects — `.envrc` with `use flake` is all that's needed
 - **Main Success Scenario:**
-  1. Shell starts; liquidprompt loads first (dependency ordering)
-  2. direnv hook appends `_direnv_hook` to PROMPT_COMMAND (after liquidprompt)
-  3. Ted enters a project directory with `.envrc`
-  4. `_direnv_hook` fires on prompt, direnv evaluates `.envrc`
-  5. nix-direnv caches the flake evaluation for fast subsequent loads
-  6. Project tools are on PATH; project env vars are set
+  1. Ted enters a project directory with `.envrc`
+  2. direnv evaluates `.envrc` automatically
+  3. nix-direnv caches the flake evaluation for fast subsequent loads
+  4. Project tools are on PATH; project env vars are set
 - **Extensions:**
-  - 2a. PROMPT_COMMAND already contains `_direnv_hook` → not re-added (idempotent)
-  - 3a. No `.envrc` → hook runs but does nothing
-  - 4a. `.envrc` not allowed → direnv prompts to `direnv allow`
-  - 5a. Cache stale (flake.lock changed) → nix-direnv re-evaluates and re-caches
+  - 1a. No `.envrc` → nothing happens
+  - 2a. `.envrc` not allowed → direnv prompts to `direnv allow`
+  - 3a. Cache stale (flake.lock changed) → nix-direnv re-evaluates and re-caches
+  - 2b. `.envrc` evaluation error → direnv shows error, shell continues
 - **Postconditions:**
   - **Success:** Project environment loaded transparently
-  - **Failure:** `.envrc` evaluation error; direnv shows error, shell continues
-- **Technology:** bash/apps/direnv/init.bash (custom hook), bash/apps/direnv/deps, programs.direnv (nix-direnv)
+  - **Failure:** direnv shows error; shell continues normally
+- **Technology:** programs.direnv (nix-direnv), bash/apps/direnv/init.bash
 
 ---
 
@@ -281,18 +273,18 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Goal:** SSH key available without repeated passphrase entry
 - **Scope:** All hosts
 - **Level:** Subfunction
-- **Trigger:** Login shell (env.bash sourcing)
+- **Trigger:** Login shell startup
 - **Main Success Scenario:**
-  1. keychain/env.bash runs `eval "$(keychain --eval --agents ssh id_ed25519)"`
-  2. Keychain starts or reuses ssh-agent, loads id_ed25519
-  3. SSH_AUTH_SOCK and SSH_AGENT_PID exported
+  1. SSH agent starts or is reused
+  2. id_ed25519 key loaded
+  3. SSH operations work without passphrase prompts
 - **Extensions:**
-  - 1a. keychain not on PATH → IsApp fails (IsCmd keychain), module skipped
-  - 1b. id_ed25519 not found → keychain prompts or errors
+  - 1a. keychain not installed → agent not started, SSH prompts for passphrase
+  - 2a. id_ed25519 not found → keychain prompts or errors
 - **Postconditions:**
   - **Success:** SSH operations work without passphrase prompts
   - **Failure:** No agent; SSH prompts for passphrase each time
-- **Technology:** bash/apps/keychain/, keychain package (shared.nix)
+- **Technology:** keychain (shared.nix), bash/apps/keychain/init.bash
 
 ---
 
