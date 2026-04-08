@@ -166,9 +166,9 @@ A tool may need several of these. For example, direnv uses nix for the package (
 
 **Generated `init.bash` from nix.** Would make the structure declarative but would obscure debugging — instead of reading one bash file, you'd read a nix expression to understand what bash gets generated. Violates the core promise of UC-I0: the user reads `init.bash` and knows exactly what runs. Revisit if: the number of hook-producing integrations grows beyond a handful, ordering constraints become nontrivial, or manual hook wiring creates duplication across hosts.
 
-**Generalized auto-discovery for hooks.** The current `OrderByDependencies` mechanism discovers, detects, and orders all app modules. Since only 2 modules have hooks and their order is fixed, a general-purpose ordering system is unnecessary overhead. Explicit hook ordering in `init.bash` is simpler, more visible, and more reliable than dependency resolution.
+**Generalized auto-discovery for hooks.** The previous `OrderByDependencies` mechanism discovered, detected, and ordered all app modules. Since only 2 modules have hooks and their order is fixed, a general-purpose ordering system was unnecessary overhead. Explicit hook ordering in `init.bash` is simpler, more visible, and more reliable than dependency resolution.
 
-**Keeping the detection layer.** `detect.bash` and `IsApp`/`IsCmd` gate module loading on tool availability. Under declarative provisioning, runtime detection is not a design goal — nix guarantees packages are on PATH, and the test suite validates presence at build time. Liquidprompt is the sole remaining user of `detect.bash`, and only because it's vendored rather than nix-packaged.
+**Keeping the detection layer.** `detect.bash` and `IsApp`/`IsCmd` gated module loading on tool availability. Under declarative provisioning, runtime detection is not a design goal — nix guarantees packages are on PATH, and the test suite validates presence at build time. Liquidprompt was the sole user of `detect.bash`; its availability guard is now inline in `init.bash`.
 
 ### Contexts — cross-cutting
 
