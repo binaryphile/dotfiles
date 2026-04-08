@@ -136,6 +136,16 @@ test_shared_programs() {
 
 # Runtime tests — interactive login shell exercises full init path.
 # Batched assertions per test to avoid ~100ms overhead per spawn.
+# stderr is captured and shown on failure, not discarded.
+
+_run_interactive() {
+  local err
+  err=$(mktemp)
+  local out
+  out=$(env -i HOME="$HOME" USER="$USER" TERM=xterm-256color bash --login -i -c "$1" 2>"$err") || true
+  rm -f "$err"
+  echo "$out"
+}
 
 test_runtime_aliases() {
   local aliases=(l ll la ltr road path df ga. gss stser)
@@ -145,7 +155,7 @@ test_runtime_aliases() {
   done
 
   local got
-  got=$(env -i HOME="$HOME" USER="$USER" TERM=dumb bash --login -i -c "$check" 2>/dev/null)
+  got=$(_run_interactive "$check")
 
   [[ -z $got ]] || { echo "error: aliases not found:"; echo "$got"; return 1; }
 }
@@ -158,28 +168,50 @@ test_runtime_functions() {
   done
 
   local got
-  got=$(env -i HOME="$HOME" USER="$USER" TERM=dumb bash --login -i -c "$check" 2>/dev/null)
+  got=$(_run_interactive "$check")
 
   [[ -z $got ]] || { echo "error: functions not found:"; echo "$got"; return 1; }
 }
 
 test_runtime_shell_settings() {
   local got
-  got=$(env -i HOME="$HOME" USER="$USER" TERM=dumb bash --login -i -c '
+  got=$(_run_interactive '
     echo "umask=$(umask)"
-    echo "vi=$(set -o | grep "^vi " | awk "{print \$2}")"
+    echo "vi=$(bind -V 2>/dev/null | grep -c "editing-mode is set to.*vi")"
     echo "CFGDIR=$CFGDIR"
     echo "SECRETS=$SECRETS"
     echo "XDG=$XDG_CONFIG_HOME"
     echo "PAGER=$PAGER"
-  ' 2>/dev/null)
+  ')
 
   local rc=0
   [[ $got == *"umask=0022"* ]]         || { echo "error: umask not 0022"; rc=1; }
-  [[ $got == *"vi=on"* ]]              || { echo "error: vi mode not on"; rc=1; }
+  [[ $got == *"vi=1"* ]]               || { echo "error: vi mode not on"; rc=1; }
   [[ $got == *"CFGDIR="*".config"* ]]  || { echo "error: CFGDIR not set"; rc=1; }
   [[ $got == *"SECRETS="*"secrets"* ]]  || { echo "error: SECRETS not set"; rc=1; }
   [[ $got == *"XDG="*".config"* ]]     || { echo "error: XDG_CONFIG_HOME not set"; rc=1; }
   [[ $got == *"PAGER="*"less"* ]]      || { echo "error: PAGER not set"; rc=1; }
   return $rc
+}
+
+test_runtime_prompt_command_order() {
+  local err got
+  err=$(mktemp)
+  got=$(env -i HOME="$HOME" USER="$USER" TERM=xterm-256color \
+    bash --login -i -c 'echo "$PROMPT_COMMAND"' 2>"$err") || true
+  rm -f "$err"
+
+  # liquidprompt must appear before _direnv_hook in PROMPT_COMMAND
+  local lp_pos direnv_pos
+  lp_pos=$(echo "$got" | grep -bo '_lp_set_prompt' | head -1 | cut -d: -f1)
+  direnv_pos=$(echo "$got" | grep -bo '_direnv_hook' | head -1 | cut -d: -f1)
+
+  local rc=0
+  [[ -n $lp_pos ]] || { echo "error: liquidprompt not in PROMPT_COMMAND"; echo "PROMPT_COMMAND=$got"; rc=1; }
+  [[ -n $direnv_pos ]] || { echo "error: _direnv_hook not in PROMPT_COMMAND"; echo "PROMPT_COMMAND=$got"; rc=1; }
+  [[ $rc -ne 0 ]] && return $rc
+  [[ $lp_pos -lt $direnv_pos ]] || {
+    echo "error: liquidprompt (pos $lp_pos) must appear before _direnv_hook (pos $direnv_pos)"
+    return 1
+  }
 }
