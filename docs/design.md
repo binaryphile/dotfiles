@@ -202,7 +202,7 @@ Work calendar synced from OWA via published ICS URL. Three components:
 
 **khal** reads the local calendar and expands recurring events, handling rescheduled instances (`RECURRENCE-ID`), cancellations (`EXDATE`), and timezone conversion. CLI: `khal list today`.
 
-**khal-notify** (`scripts/khal-notify`) runs every 5 minutes via systemd timer (on the hour: :00, :05, :10, ...), checks for events starting in 60, 30, 10, 5, or 1 minutes and sends desktop notifications via `notify-send` (displayed by mako on Sway, or via ChromeOS notifications on Crostini). The 5-minute and 1-minute notifications use critical urgency. A statefile (`~/.local/state/khal-notify/sent`) prevents duplicate notifications, cleaned daily.
+**khal-notify** (`scripts/khal-notify`) runs every minute via systemd timer, checks for events starting in 60, 30, 10, 5, or 1 minutes and sends desktop notifications via `notify-send` (displayed by mako on Sway, or via ChromeOS notifications on Crostini). The 5-minute and 1-minute notifications use critical urgency. A statefile (`~/.local/state/khal-notify/sent`) prevents duplicate notifications, cleaned daily.
 
 Config lives in both `contexts/linux/home.nix` and `contexts/crostini/home.nix` using home-manager's `accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, and `services.vdirsyncer` modules plus custom systemd units for khal-notify. On NixOS, the khal-notify ExecStart uses the `${dotfiles}` flake input path; on Crostini (standalone home-manager), it uses `${config.home.homeDirectory}/dotfiles/scripts/khal-notify`.
 
