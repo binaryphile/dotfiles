@@ -127,35 +127,25 @@ _run_login_shell() {
   echo "$out"
 }
 
-test_runtime_aliases() {
+# Single shell invocation for all runtime checks (keychain is ~250ms per spawn).
+test_runtime() {
   local aliases=(l ll la ltr road path df ga. gss stser)
-  local check=""
-  for a in "${aliases[@]}"; do
-    check+="alias $a >/dev/null 2>&1 || echo \"missing: $a\"; "
-  done
-
-  local got
-  got=$(_run_login_shell "$check")
-
-  [[ -z $got ]] || { echo "error: aliases not found:"; echo "$got"; return 1; }
-}
-
-test_runtime_functions() {
   local functions=(reveal become miracle runas psaux europe wolf shannon randword salt)
+
   local check=""
-  for f in "${functions[@]}"; do
-    check+="declare -F $f >/dev/null || echo \"missing: $f\"; "
+
+  # Alias checks
+  for a in "${aliases[@]}"; do
+    check+="alias $a >/dev/null 2>&1 || echo \"ALIAS_MISSING:$a\"; "
   done
 
-  local got
-  got=$(_run_login_shell "$check")
+  # Function checks
+  for f in "${functions[@]}"; do
+    check+="declare -F $f >/dev/null || echo \"FUNC_MISSING:$f\"; "
+  done
 
-  [[ -z $got ]] || { echo "error: functions not found:"; echo "$got"; return 1; }
-}
-
-test_runtime_shell_settings() {
-  local got
-  got=$(_run_login_shell '
+  # Shell settings + PROMPT_COMMAND
+  check+='
     echo "umask=$(umask)"
     echo "vi=$(bind -V 2>/dev/null | grep -c "editing-mode is set to.*vi")"
     echo "EDITOR=$EDITOR"
@@ -164,9 +154,24 @@ test_runtime_shell_settings() {
     echo "XDG=$XDG_CONFIG_HOME"
     echo "PAGER=$PAGER"
     echo "PATH=$PATH"
-  ')
+    echo "PROMPT_COMMAND=$PROMPT_COMMAND"
+  '
+
+  local got
+  got=$(_run_login_shell "$check")
 
   local rc=0
+
+  # Aliases
+  local missing
+  missing=$(echo "$got" | grep 'ALIAS_MISSING' | sed 's/ALIAS_MISSING:/  /')
+  [[ -z $missing ]] || { echo "error: aliases not found:"; echo "$missing"; rc=1; }
+
+  # Functions
+  missing=$(echo "$got" | grep 'FUNC_MISSING' | sed 's/FUNC_MISSING:/  /')
+  [[ -z $missing ]] || { echo "error: functions not found:"; echo "$missing"; rc=1; }
+
+  # Settings
   [[ $got == *"umask=0022"* ]]         || { echo "error: umask not 0022"; rc=1; }
   [[ $got == *"vi=1"* ]]               || { echo "error: vi mode not on"; rc=1; }
   [[ $got == *"EDITOR="*"nvim"* ]]     || { echo "error: EDITOR not set to nvim"; rc=1; }
@@ -175,24 +180,22 @@ test_runtime_shell_settings() {
   [[ $got == *"XDG="*".config"* ]]     || { echo "error: XDG_CONFIG_HOME not set"; rc=1; }
   [[ $got == *"PAGER="*"less"* ]]      || { echo "error: PAGER not set"; rc=1; }
   [[ $got == *"PATH="*".local/bin"* ]] || { echo "error: .local/bin not in PATH"; rc=1; }
-  return $rc
-}
 
-test_runtime_prompt_command_order() {
-  local got
-  got=$(_run_login_shell 'echo "$PROMPT_COMMAND"')
-
-  # liquidprompt must appear before _direnv_hook in PROMPT_COMMAND
+  # PROMPT_COMMAND ordering: liquidprompt before direnv
+  local pc
+  pc=$(echo "$got" | grep 'PROMPT_COMMAND=')
   local lp_pos direnv_pos
-  lp_pos=$(echo "$got" | grep -bo '_lp_set_prompt' | head -1 | cut -d: -f1)
-  direnv_pos=$(echo "$got" | grep -bo '_direnv_hook' | head -1 | cut -d: -f1)
+  lp_pos=$(echo "$pc" | grep -bo '_lp_set_prompt' | head -1 | cut -d: -f1)
+  direnv_pos=$(echo "$pc" | grep -bo '_direnv_hook' | head -1 | cut -d: -f1)
 
-  local rc=0
-  [[ -n $lp_pos ]] || { echo "error: liquidprompt not in PROMPT_COMMAND"; echo "PROMPT_COMMAND=$got"; rc=1; }
-  [[ -n $direnv_pos ]] || { echo "error: _direnv_hook not in PROMPT_COMMAND"; echo "PROMPT_COMMAND=$got"; rc=1; }
-  [[ $rc -ne 0 ]] && return $rc
-  [[ $lp_pos -lt $direnv_pos ]] || {
-    echo "error: liquidprompt (pos $lp_pos) must appear before _direnv_hook (pos $direnv_pos)"
-    return 1
-  }
+  [[ -n $lp_pos ]] || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
+  [[ -n $direnv_pos ]] || { echo "error: _direnv_hook not in PROMPT_COMMAND"; rc=1; }
+  if [[ -n $lp_pos && -n $direnv_pos ]]; then
+    [[ $lp_pos -lt $direnv_pos ]] || {
+      echo "error: liquidprompt (pos $lp_pos) must appear before _direnv_hook (pos $direnv_pos)"
+      rc=1
+    }
+  fi
+
+  return $rc
 }
