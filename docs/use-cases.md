@@ -6,6 +6,8 @@ This repo is Ted's shared user environment. It works on all hosts — NixOS and 
 
 Ted moves between Chromebooks freely. They're disposable. Goal: run one command, be productive.
 
+See [uc-init.md](uc-init.md) for use cases covering the bash init system's features.
+
 ## Actors
 
 ### Ted

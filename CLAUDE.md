@@ -28,6 +28,7 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 - **Shell integration / aliases / functions:** add a module under `bash/apps/`.
 - **Shared packages are in `shared.nix`** — no need to sync across contexts manually. Platform-specific packages go in individual context files.
 - **Validate nix changes** with `nix-instantiate --parse` before committing. Use `home-manager build` for deeper validation (evaluates options and builds derivations).
+- **Run `tesht`** before committing — tests specify the expected configured environment (aliases, functions, env vars, shell settings). Red means the config doesn't match the spec.
 - **Calendar config** lives in both `contexts/linux/home.nix` and `contexts/crostini/home.nix`. Changes should be synced between them.
 - **NixOS note:** `~/nixos-config/flake.nix` imports `contexts/linux/home.nix` via a local path flake input pointing to `~/dotfiles`. Changes take effect on `sudo nixos-rebuild switch` without pushing first. System-level config belongs in nixos-config, not here. **Important:** after changing dotfiles, run `nix flake update dotfiles` in `~/nixos-config` before `nixos-rebuild switch` — the flake lock caches a hash of the dotfiles directory and won't see changes until updated.
 
@@ -35,4 +36,5 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 
 - `docs/use-cases.md` — what this repo does and for whom.
 - `docs/design.md` — how components work, deployment phases, bash init flow.
-- Keep both updated when making changes.
+- `docs/uc-init.md` — use cases for every init.bash feature employed in the config.
+- Keep all updated when making changes.
