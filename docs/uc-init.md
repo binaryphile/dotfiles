@@ -349,6 +349,9 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - road $domain — dig +noall +answer shortcut for DNS lookup
 - new cmd [$app] — open cmds.bash (or app-specific cmds.bash) in EDITOR
 
+- **Postconditions:**
+  - **Success:** Operation completes with reveal showing what ran
+  - **Failure:** N/A — aliases are additive to normal shell
 - **Technology:** settings/cmds.bash
 
 ---
@@ -364,6 +367,9 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - shannon $file — reformat markdown file in-place via pandoc (GFM, 92 columns, ATX headings, smart quotes on macOS)
 - randword — generate a memorable word via openssl random bytes + mnencode, retry if word collides with an existing function name
 
+- **Postconditions:**
+  - **Success:** Text processed as expected
+  - **Failure:** Missing tool (pandoc, mnencode, openssl) → command not found
 - **Technology:** bash/apps/pandoc/cmds.bash, bash/apps/mnencode/cmds.bash
 
 ---
