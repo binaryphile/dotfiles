@@ -11,7 +11,7 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 3. **Single-file bash init.** One entry point replaces `.bashrc`, `.bash_profile`, `.profile`. Explicit mode detection, no hidden sourcing rules. See [Why a single entry point](#why-a-single-entry-point).
 4. **Idempotent deployment.** `update-env` works on fresh or existing machines. Converges to desired state.
 5. **Nix for packages, dotfiles for config.** `home.nix` says what to install. Dotfiles say how to configure.
-6. **Nix owns declarative config. Bash owns shell-evaluated behavior.** Decision test: can this be expressed as static data or generated config without bash evaluating shell state? If yes → nix. If no → bash. See [Architectural boundary](#architectural-boundary).
+6. **Nix owns declarative config. Bash owns shell-evaluated behavior.** Decision test: can this be expressed as static data or generated config without bash evaluating shell state? If yes → nix. If no → bash. See [Nix/bash boundary](#nixbash-boundary).
 
 ## What this repo owns
 
@@ -119,7 +119,7 @@ See [uc-init.md](uc-init.md) for full use case documentation of the init system.
 
 The current architecture uses a generalized app module framework (detection, ordering, multi-phase sourcing) that was designed for 20+ modules. With nix absorbing the declarative layer, 8 modules remain and most use only `cmds.bash`. The target architecture simplifies the framework to match actual usage. Until the refactor lands, new integrations should follow the current app module pattern but categorize their behavior by the target-state decision matrix below.
 
-### Architectural boundary
+### Nix/bash boundary
 
 Principle 6 governs where new configuration belongs. The boundary has shifted over time as nix absorbed more responsibility.
 
@@ -153,8 +153,6 @@ A tool may need several of these. For example, direnv uses nix for the package (
 
 ### Target architecture
 
-The app module framework was designed when bash managed 20+ tools including packages, env vars, detection, and ordering. With nix absorbing the declarative layer, 8 modules remain and most use only `cmds.bash`. The target architecture aligns the framework to its actual remaining role.
-
 **Design goals:**
 - Predictable startup behavior from a single readable file
 - Minimal order-sensitive code
@@ -183,13 +181,13 @@ The app module framework was designed when bash managed 20+ tools including pack
 
 ### Rejected alternatives
 
-**`programs.bash` (home-manager bash module).** Generates `.bash_profile`, `.profile`, and `.bashrc` — re-implementing the three-file sourcing model that `init.bash` was designed to replace. Would require cramming the app module system into `initExtra` as opaque nix strings. Cannot support the `Alias`/reveal mechanism (`shellAliases` produces plain aliases). See [Why a single entry point](#why-a-single-entry-point).
+**`programs.bash` as the primary shell-init framework.** Generates `.bash_profile`, `.profile`, and `.bashrc` — re-implementing the three-file sourcing model that `init.bash` was designed to replace. Would require cramming the app module system into `initExtra` as opaque nix strings. Cannot support the `Alias`/reveal mechanism (`shellAliases` produces plain aliases). Other `programs.*` modules (direnv, bat, firefox, etc.) are used freely — this rejection is specific to HM managing bash startup files. See [Why a single entry point](#why-a-single-entry-point).
 
-**Generated `init.bash` from nix.** Would make the structure declarative but would obscure debugging — instead of reading one bash file, you'd read a nix expression to understand what bash gets generated. Violates the core promise of UC-I0: the user reads `init.bash` and knows exactly what runs. May be worth revisiting if the init system grows significantly more complex, but current complexity doesn't justify it.
+**Generated `init.bash` from nix.** Would make the structure declarative but would obscure debugging — instead of reading one bash file, you'd read a nix expression to understand what bash gets generated. Violates the core promise of UC-I0: the user reads `init.bash` and knows exactly what runs. Revisit if: the number of hook-producing integrations grows beyond a handful, ordering constraints become nontrivial, or manual hook wiring creates duplication across hosts.
 
 **Generalized auto-discovery for hooks.** The current `OrderByDependencies` mechanism discovers, detects, and orders all app modules. Since only 2 modules have hooks and their order is fixed, a general-purpose ordering system is unnecessary overhead. Explicit hook ordering in `init.bash` is simpler, more visible, and more reliable than dependency resolution.
 
-**Keeping the detection layer.** `detect.bash` and `IsApp`/`IsCmd` gate module loading on tool availability. For nix-managed packages (all current tools), detection is redundant — they're always on PATH. The test suite validates presence at build time, making runtime detection a legacy concern. Liquidprompt is the sole remaining user of `detect.bash`, and only because it's vendored rather than nix-packaged.
+**Keeping the detection layer.** `detect.bash` and `IsApp`/`IsCmd` gate module loading on tool availability. Under declarative provisioning, runtime detection is not a design goal — nix guarantees packages are on PATH, and the test suite validates presence at build time. Liquidprompt is the sole remaining user of `detect.bash`, and only because it's vendored rather than nix-packaged.
 
 ### Contexts — cross-cutting
 
