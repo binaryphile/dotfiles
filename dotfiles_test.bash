@@ -2,7 +2,7 @@
 
 Root=$PWD
 
-# --- Static tests: check config files and structure ---
+# --- Pre-flight checks: config structure is valid ---
 
 test_nix_parse() {
   local -A case1=([name]='shared'   [file]="$Root/shared.nix")
@@ -47,73 +47,9 @@ test_symlinks() {
   tesht.Run ${!case@}
 }
 
-test_app_module_files() {
-  local -A case1=([name]='direnv'        [app]='direnv')
-  local -A case2=([name]='git'           [app]='git')
-  local -A case3=([name]='keychain'      [app]='keychain')
-  local -A case4=([name]='mnencode'      [app]='mnencode')
-  local -A case5=([name]='pandoc'        [app]='pandoc')
-  local -A case6=([name]='stg'          [app]='stg')
-
-  subtest() {
-    local casename=$1
-    eval "$(tesht.Inherit $casename)"
-
-    local allowed='cmds.bash deps detect.bash env.bash init.bash interactive.bash'
-    local files rc=0
-    files=$(ls "$Root/bash/apps/$app" 2>/dev/null)
-
-    local base
-    for base in $files; do
-      [[ " $allowed " == *" $base "* ]] || {
-        echo "error: unexpected file '$base' in bash/apps/$app/"
-        rc=1
-      }
-    done
-    return $rc
-  }
-
-  tesht.Run ${!case@}
-}
-
-test_shared_packages() {
-  local shared=(
-    claude-code coreutils diff-so-fancy git highlight htop
-    jira-cli-go jq keychain mnemonicode ncdu neovim obsidian pandoc
-    ranger rsync scc signal-desktop silver-searcher stgit tmux tree zip
-  )
-
-  local contents rc=0
-  contents=$(cat "$Root/shared.nix")
-
-  local pkg
-  for pkg in "${shared[@]}"; do
-    [[ $contents == *"$pkg"* ]] || {
-      echo "error: package '$pkg' missing from shared.nix"
-      rc=1
-    }
-  done
-  return $rc
-}
-
-test_shared_programs() {
-  local programs=('programs.direnv' 'programs.bat' 'programs.firefox' 'programs.home-manager')
-
-  local contents rc=0
-  contents=$(cat "$Root/shared.nix")
-
-  local prog
-  for prog in "${programs[@]}"; do
-    [[ $contents == *"$prog"* ]] || {
-      echo "error: '$prog' missing from shared.nix"
-      rc=1
-    }
-  done
-  return $rc
-}
-
-# --- Runtime tests: interactive login shell exercises full init path ---
-# stderr captured to temp file, shown on failure.
+# --- Behavioral tests: what can the user do after shell startup? ---
+# These test the contract, not the mechanism. They should not break
+# when the init system's implementation changes.
 
 _run_login_shell() {
   local err
@@ -125,87 +61,91 @@ _run_login_shell() {
   echo "$out"
 }
 
-# Single shell invocation for all runtime checks (keychain is ~250ms per spawn).
-test_runtime() {
-  local aliases=(l ll la ltr road path df ga. gss stser)
-  local functions=(reveal become miracle runas psaux europe wolf shannon randword salt)
+# Single shell invocation for all behavioral checks.
+# Batched to avoid ~550ms keychain overhead per spawn.
+# Reload test needs its own shell (it re-sources init.bash).
+test_behavior() {
+  local got
+  got=$(_run_login_shell '
+    cd '"$Root"'
 
-  local check=""
+    # --- Environment ---
+    command -v "$EDITOR" >/dev/null 2>&1 && echo "EDITOR_EXEC=yes" || echo "EDITOR_EXEC=no"
+    command -v "$PAGER" >/dev/null 2>&1 && echo "PAGER_EXEC=yes" || echo "PAGER_EXEC=no"
+    [[ -d $CFGDIR ]] && echo "CFGDIR_DIR=yes" || echo "CFGDIR_DIR=no"
+    [[ -d $SECRETS ]] && echo "SECRETS_DIR=yes" || echo "SECRETS_DIR=no"
+    echo "$PATH" | tr ":" "\n" | grep -q "/.local/bin$" && echo "PATH_LOCAL=yes" || echo "PATH_LOCAL=no"
+    echo "UMASK=$(umask)"
+    bind -V 2>/dev/null | grep -q "editing-mode is set to.*vi" && echo "VI=yes" || echo "VI=no"
 
-  # Alias checks
-  for a in "${aliases[@]}"; do
-    check+="alias $a >/dev/null 2>&1 || echo \"ALIAS_MISSING:$a\"; "
-  done
+    # --- Git workflow ---
+    gss 2>&1 | head -1
+    echo "GSS_RC=$?"
+    git config user.name >/dev/null 2>&1 && echo "GIT_NAME=yes" || echo "GIT_NAME=no"
+    git config user.email >/dev/null 2>&1 && echo "GIT_EMAIL=yes" || echo "GIT_EMAIL=no"
 
-  # Function checks
-  for f in "${functions[@]}"; do
-    check+="declare -F $f >/dev/null || echo \"FUNC_MISSING:$f\"; "
-  done
-
-  # Liquidprompt runtime: exercises /proc/loadavg parsing (IFS-sensitive)
-  check+='
+    # --- Prompt ---
     if declare -F _lp_load_color >/dev/null; then
       _lp_load_color >/dev/null 2>&1 && echo "LP_LOAD=ok" || echo "LP_LOAD=error"
     else
       echo "LP_LOAD=missing"
     fi
-  '
+    pc="$PROMPT_COMMAND"
+    lp=$(echo "$pc" | grep -bo "_lp_set_prompt" | head -1 | cut -d: -f1)
+    dv=$(echo "$pc" | grep -bo "_direnv_hook" | head -1 | cut -d: -f1)
+    [[ -n $lp ]] && echo "LP_PRESENT=yes" || echo "LP_PRESENT=no"
+    [[ -n $dv ]] && echo "DV_PRESENT=yes" || echo "DV_PRESENT=no"
+    [[ -n $lp && -n $dv && $lp -lt $dv ]] && echo "HOOK_ORDER=correct" || echo "HOOK_ORDER=wrong"
 
-  # Shell settings + PROMPT_COMMAND
-  check+='
-    echo "umask=$(umask)"
-    echo "vi=$(bind -V 2>/dev/null | grep -c "editing-mode is set to.*vi")"
-    echo "EDITOR=$EDITOR"
-    echo "CFGDIR=$CFGDIR"
-    echo "SECRETS=$SECRETS"
-    echo "XDG=$XDG_CONFIG_HOME"
-    echo "PAGER=$PAGER"
-    echo "PATH=$PATH"
-    echo "PROMPT_COMMAND=$PROMPT_COMMAND"
-  '
+    # --- Reveal ---
+    gss_stderr=$({ gss 1>/dev/null; } 2>&1)
+    [[ $gss_stderr == *"git status"* ]] && echo "REVEAL=yes" || echo "REVEAL=no"
 
-  local got
-  got=$(_run_login_shell "$check")
+    # --- SSH agent ---
+    ssh-add -l >/dev/null 2>&1 && echo "AGENT=yes" || echo "AGENT=no"
+  ')
 
   local rc=0
 
-  # Aliases
-  local missing
-  missing=$(echo "$got" | grep 'ALIAS_MISSING' | sed 's/ALIAS_MISSING:/  /')
-  [[ -z $missing ]] || { echo "error: aliases not found:"; echo "$missing"; rc=1; }
+  # Environment
+  [[ $got == *"EDITOR_EXEC=yes"* ]]  || { echo "error: EDITOR is not executable"; rc=1; }
+  [[ $got == *"PAGER_EXEC=yes"* ]]   || { echo "error: PAGER is not executable"; rc=1; }
+  [[ $got == *"CFGDIR_DIR=yes"* ]]   || { echo "error: CFGDIR directory does not exist"; rc=1; }
+  [[ $got == *"SECRETS_DIR=yes"* ]]   || { echo "error: SECRETS directory does not exist"; rc=1; }
+  [[ $got == *"PATH_LOCAL=yes"* ]]    || { echo "error: .local/bin not in PATH"; rc=1; }
+  [[ $got == *"UMASK=0022"* ]]        || { echo "error: umask not 0022"; rc=1; }
+  [[ $got == *"VI=yes"* ]]            || { echo "error: vi mode not active"; rc=1; }
 
-  # Functions
-  missing=$(echo "$got" | grep 'FUNC_MISSING' | sed 's/FUNC_MISSING:/  /')
-  [[ -z $missing ]] || { echo "error: functions not found:"; echo "$missing"; rc=1; }
+  # Git workflow
+  [[ $got == *"GSS_RC=0"* ]]          || { echo "error: gss (git status -s) failed"; rc=1; }
+  [[ $got == *"GIT_NAME=yes"* ]]      || { echo "error: git user.name not configured"; rc=1; }
+  [[ $got == *"GIT_EMAIL=yes"* ]]     || { echo "error: git user.email not configured"; rc=1; }
 
-  # Liquidprompt runtime (IFS regression guard)
-  [[ $got == *"LP_LOAD=ok"* ]] || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
+  # Prompt
+  [[ $got == *"LP_LOAD=ok"* ]]        || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
+  [[ $got == *"LP_PRESENT=yes"* ]]    || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
+  [[ $got == *"DV_PRESENT=yes"* ]]    || { echo "error: direnv not in PROMPT_COMMAND"; rc=1; }
+  [[ $got == *"HOOK_ORDER=correct"* ]]|| { echo "error: liquidprompt must appear before direnv"; rc=1; }
 
-  # Settings
-  [[ $got == *"umask=0022"* ]]         || { echo "error: umask not 0022"; rc=1; }
-  [[ $got == *"vi=1"* ]]               || { echo "error: vi mode not on"; rc=1; }
-  [[ $got == *"EDITOR="*"nvim"* ]]     || { echo "error: EDITOR not set to nvim"; rc=1; }
-  [[ $got == *"CFGDIR="*".config"* ]]  || { echo "error: CFGDIR not set"; rc=1; }
-  [[ $got == *"SECRETS="*"secrets"* ]]  || { echo "error: SECRETS not set"; rc=1; }
-  [[ $got == *"XDG="*".config"* ]]     || { echo "error: XDG_CONFIG_HOME not set"; rc=1; }
-  [[ $got == *"PAGER="*"less"* ]]      || { echo "error: PAGER not set"; rc=1; }
-  [[ $got == *"PATH="*".local/bin"* ]] || { echo "error: .local/bin not in PATH"; rc=1; }
+  # Reveal
+  [[ $got == *"REVEAL=yes"* ]]        || { echo "error: reveal did not show underlying command"; rc=1; }
 
-  # PROMPT_COMMAND ordering: liquidprompt before direnv
-  local pc
-  pc=$(echo "$got" | grep 'PROMPT_COMMAND=')
-  local lp_pos direnv_pos
-  lp_pos=$(echo "$pc" | grep -bo '_lp_set_prompt' | head -1 | cut -d: -f1)
-  direnv_pos=$(echo "$pc" | grep -bo '_direnv_hook' | head -1 | cut -d: -f1)
+  # SSH agent
+  [[ $got == *"AGENT=yes"* ]]         || { echo "error: SSH agent not running or no keys loaded"; rc=1; }
 
-  [[ -n $lp_pos ]] || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
-  [[ -n $direnv_pos ]] || { echo "error: _direnv_hook not in PROMPT_COMMAND"; rc=1; }
-  if [[ -n $lp_pos && -n $direnv_pos ]]; then
-    [[ $lp_pos -lt $direnv_pos ]] || {
-      echo "error: liquidprompt (pos $lp_pos) must appear before _direnv_hook (pos $direnv_pos)"
-      rc=1
-    }
-  fi
+  return $rc
+}
 
+test_reload() {
+  local got
+  got=$(_run_login_shell '
+    output=$(source ~/.bashrc reload 2>&1)
+    [[ $output == *"reloaded"* ]] && echo "RELOAD=yes" || echo "RELOAD=no"
+    alias ga. >/dev/null 2>&1 && echo "ALIAS_AFTER=yes" || echo "ALIAS_AFTER=no"
+  ')
+
+  local rc=0
+  [[ $got == *"RELOAD=yes"* ]]      || { echo "error: reload did not print 'reloaded'"; rc=1; }
+  [[ $got == *"ALIAS_AFTER=yes"* ]] || { echo "error: aliases broken after reload"; rc=1; }
   return $rc
 }
