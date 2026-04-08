@@ -2,6 +2,8 @@
 
 Root=$PWD
 
+# --- Static tests: check config files and structure ---
+
 test_nix_parse() {
   local -A case1=([name]='shared'   [file]="$Root/shared.nix")
   local -A case2=([name]='crostini' [file]="$Root/contexts/crostini/home.nix")
@@ -76,28 +78,6 @@ test_app_module_files() {
   tesht.Run ${!case@}
 }
 
-test_session_variables() {
-  local got
-  got=$(env -i HOME="$HOME" USER="$USER" TERM=xterm bash -l -c '
-    echo "EDITOR=$EDITOR"
-  ' 2>/dev/null)
-
-  [[ $got == *"EDITOR="*"nvim"* ]] || {
-    echo "error: EDITOR not set to nvim"
-    return 1
-  }
-}
-
-test_session_path() {
-  local got
-  got=$(env -i HOME="$HOME" USER="$USER" TERM=xterm bash -l -c 'echo "$PATH"' 2>/dev/null)
-
-  [[ $got == *".local/bin"* ]] || {
-    echo "error: .local/bin not in PATH"
-    return 1
-  }
-}
-
 test_shared_packages() {
   local shared=(
     claude-code coreutils diff-so-fancy git highlight htop
@@ -134,15 +114,15 @@ test_shared_programs() {
   return $rc
 }
 
-# Runtime tests — interactive login shell exercises full init path.
-# Batched assertions per test to avoid ~100ms overhead per spawn.
-# stderr is captured and shown on failure, not discarded.
+# --- Runtime tests: interactive login shell exercises full init path ---
+# stderr captured to temp file, shown on failure.
 
-_run_interactive() {
+_run_login_shell() {
   local err
   err=$(mktemp)
   local out
-  out=$(env -i HOME="$HOME" USER="$USER" TERM=xterm-256color bash --login -i -c "$1" 2>"$err") || true
+  out=$(env -i HOME="$HOME" USER="$USER" TERM=xterm-256color \
+    bash --login -i -c "$1" 2>"$err") || true
   rm -f "$err"
   echo "$out"
 }
@@ -155,7 +135,7 @@ test_runtime_aliases() {
   done
 
   local got
-  got=$(_run_interactive "$check")
+  got=$(_run_login_shell "$check")
 
   [[ -z $got ]] || { echo "error: aliases not found:"; echo "$got"; return 1; }
 }
@@ -168,38 +148,39 @@ test_runtime_functions() {
   done
 
   local got
-  got=$(_run_interactive "$check")
+  got=$(_run_login_shell "$check")
 
   [[ -z $got ]] || { echo "error: functions not found:"; echo "$got"; return 1; }
 }
 
 test_runtime_shell_settings() {
   local got
-  got=$(_run_interactive '
+  got=$(_run_login_shell '
     echo "umask=$(umask)"
     echo "vi=$(bind -V 2>/dev/null | grep -c "editing-mode is set to.*vi")"
+    echo "EDITOR=$EDITOR"
     echo "CFGDIR=$CFGDIR"
     echo "SECRETS=$SECRETS"
     echo "XDG=$XDG_CONFIG_HOME"
     echo "PAGER=$PAGER"
+    echo "PATH=$PATH"
   ')
 
   local rc=0
   [[ $got == *"umask=0022"* ]]         || { echo "error: umask not 0022"; rc=1; }
   [[ $got == *"vi=1"* ]]               || { echo "error: vi mode not on"; rc=1; }
+  [[ $got == *"EDITOR="*"nvim"* ]]     || { echo "error: EDITOR not set to nvim"; rc=1; }
   [[ $got == *"CFGDIR="*".config"* ]]  || { echo "error: CFGDIR not set"; rc=1; }
   [[ $got == *"SECRETS="*"secrets"* ]]  || { echo "error: SECRETS not set"; rc=1; }
   [[ $got == *"XDG="*".config"* ]]     || { echo "error: XDG_CONFIG_HOME not set"; rc=1; }
   [[ $got == *"PAGER="*"less"* ]]      || { echo "error: PAGER not set"; rc=1; }
+  [[ $got == *"PATH="*".local/bin"* ]] || { echo "error: .local/bin not in PATH"; rc=1; }
   return $rc
 }
 
 test_runtime_prompt_command_order() {
-  local err got
-  err=$(mktemp)
-  got=$(env -i HOME="$HOME" USER="$USER" TERM=xterm-256color \
-    bash --login -i -c 'echo "$PROMPT_COMMAND"' 2>"$err") || true
-  rm -f "$err"
+  local got
+  got=$(_run_login_shell 'echo "$PROMPT_COMMAND"')
 
   # liquidprompt must appear before _direnv_hook in PROMPT_COMMAND
   local lp_pos direnv_pos
