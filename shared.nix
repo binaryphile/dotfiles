@@ -29,7 +29,18 @@
     zip
   ];
 
-  home.sessionVariables = { };
+  home.sessionVariables = {
+    EDITOR = "nvim";
+    PAGER = "less";
+    CFGDIR = "$HOME/.config";
+    SECRETS = "$HOME/secrets";
+    XDG_CONFIG_HOME = "$HOME/.config";
+  };
+  home.sessionPath = [
+    "$HOME/.local/bin"
+    "$HOME/.local/lib"
+    "/usr/local/bin"
+  ];
 
   programs.direnv = {
     enable = true;
