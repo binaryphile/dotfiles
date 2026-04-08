@@ -142,6 +142,15 @@ test_runtime() {
     check+="declare -F $f >/dev/null || echo \"FUNC_MISSING:$f\"; "
   done
 
+  # Liquidprompt runtime: exercises /proc/loadavg parsing (IFS-sensitive)
+  check+='
+    if declare -F _lp_load_color >/dev/null; then
+      _lp_load_color >/dev/null 2>&1 && echo "LP_LOAD=ok" || echo "LP_LOAD=error"
+    else
+      echo "LP_LOAD=missing"
+    fi
+  '
+
   # Shell settings + PROMPT_COMMAND
   check+='
     echo "umask=$(umask)"
@@ -168,6 +177,9 @@ test_runtime() {
   # Functions
   missing=$(echo "$got" | grep 'FUNC_MISSING' | sed 's/FUNC_MISSING:/  /')
   [[ -z $missing ]] || { echo "error: functions not found:"; echo "$missing"; rc=1; }
+
+  # Liquidprompt runtime (IFS regression guard)
+  [[ $got == *"LP_LOAD=ok"* ]] || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
 
   # Settings
   [[ $got == *"umask=0022"* ]]         || { echo "error: umask not 0022"; rc=1; }
