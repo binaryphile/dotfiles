@@ -22,6 +22,10 @@ Globbing off
 TestAndSource $Root/context/init.bash
 
 # Hooks: explicit order (order-sensitive)
+# Hooks expect normal IFS and globbing
+SplitSpace on
+Globbing on
+
 { ShellIsLogin || (( Reload )); } && {
   TestAndSource $Root/apps/keychain/init.bash
 }
@@ -29,6 +33,9 @@ ShellIsInteractive && {
   [[ -r $Root/../liquidprompt/liquidprompt ]] && source $Root/../liquidprompt/liquidprompt
   TestAndSource $Root/apps/direnv/init.bash
 }
+
+SplitSpace off
+Globbing off
 
 source $Root/settings/base.bash
 source $Root/settings/cmds.bash
