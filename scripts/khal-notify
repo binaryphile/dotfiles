@@ -38,20 +38,26 @@ while IFS= read -r line; do
 
   MinutesTill=$(( (StartEpoch - Now) / 60 ))
 
-  for Ahead in 30 10 5; do
+  for Ahead in 60 30 10 5 1; do
     Key="${StartTime}-${Title}-${Ahead}"
 
     # Already sent?
     grep -qxF "$Key" "$StateFile" && continue
 
     if (( MinutesTill >= (Ahead - 1) && MinutesTill <= Ahead )); then
-      if (( Ahead == 5 )); then
+      if (( Ahead <= 5 )); then
         Urgency=critical
       else
         Urgency=normal
       fi
 
-      notify-send -u "$Urgency" -t 30000 "Meeting in $Ahead min" "$StartTime — $Title"
+      if (( Ahead == 60 )); then
+        Label="1 hour"
+      else
+        Label="$Ahead min"
+      fi
+
+      notify-send -u "$Urgency" -t 30000 "Meeting in $Label" "$StartTime — $Title"
       echo "$Key" >> "$StateFile"
     fi
   done
