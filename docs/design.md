@@ -76,44 +76,48 @@ The conventional bash init model splits startup across `.profile`, `.bash_profil
 
 This design does not use `programs.bash` (home-manager's bash module). However, other `programs.*` modules and `home.sessionVariables`/`home.sessionPath` are used freely — principle 3 only prohibits HM managing bash startup files.
 
-#### How it works
-
-`bash/apps/home-manager/env.bash` is a symlink to `~/.nix-profile/etc/profile.d/hm-session-vars.sh`. This means `home.sessionVariables` and `home.sessionPath` flow into the custom init automatically during login.
+#### Current architecture
 
 `bash/init.bash` is symlinked to `.bashrc`, `.bash_profile`, `.profile`. Supports `source ~/.bashrc reload` for live reloading.
+
+`bash/apps/home-manager/env.bash` is a symlink to `~/.nix-profile/etc/profile.d/hm-session-vars.sh`. This means `home.sessionVariables` and `home.sessionPath` flow into the custom init automatically during login.
 
 Init flow:
 1. Resolve repo root via symlink
 2. Source `lib/initutil.bash` (shell detection, sourcing helpers, `SplitSpace`/`Globbing` controls)
 3. Login or reload → source `settings/env.bash`
 4. Source `context/init.bash` (platform-specific, if present)
-5. Source `lib/apps.bash` (loads all app modules)
+5. Source `lib/apps.bash` (loads all app modules via detect → filter → order pipeline)
 6. Source `settings/base.bash`, `settings/cmds.bash`
 7. Interactive → source `settings/interactive.bash`
 8. Interactive login or reload → source `settings/login.bash`
 
 Each app gets a directory under `bash/apps/<app>/` with optional files:
-- `env.bash` — variables (all shells)
-- `detect.bash` — availability check
+- `env.bash` — variables (all shells) — *transitional: target is elimination via `home.sessionVariables`*
+- `detect.bash` — availability check — *transitional: redundant for nix-managed packages*
 - `init.bash` — setup (interactive)
 - `cmds.bash` — aliases and functions (interactive)
-- `deps` — dependencies on other app modules
+- `deps` — dependencies on other app modules — *transitional: target is explicit ordering in init.bash*
 
 Current app modules:
-- `direnv` — custom PROMPT_COMMAND hook (appends, not prepends — ordering matters because `deps` declares liquidprompt first)
+- `direnv` — PROMPT_COMMAND hook (uses `deps` for liquidprompt ordering — target: explicit hook in init.bash)
 - `git` — 44 shell aliases + workflow functions (europe, wolf, venice, etc.)
-- `home-manager` — symlink to `hm-session-vars.sh` (bridges `home.sessionVariables` into custom init)
-- `keychain` — SSH agent via keychain eval (id_ed25519)
-- `liquidprompt` — sources vendored prompt theme
+- `home-manager` — symlink bridge to `hm-session-vars.sh` (target: direct sourcing from init.bash)
+- `keychain` — SSH agent via keychain eval (target: reclassify as hook in init.bash)
+- `liquidprompt` — vendored prompt (uses `detect.bash` — target: nix-packaged, unconditional)
 - `mnencode` — randword function
 - `pandoc` — shannon (markdown reformatter) function
 - `stg` — 30+ stgit aliases + workflow functions
 
 `bash/lib/`:
 - `initutil.bash` — shell detection, sourcing helpers, IFS/globbing controls
-- `apps.bash` — app module loader
+- `apps.bash` — app module loader (detect → filter → order → source)
 
 See [uc-init.md](uc-init.md) for full use case documentation of the init system.
+
+#### Transition
+
+The current architecture uses a generalized app module framework (detection, ordering, multi-phase sourcing) that was designed for 20+ modules. With nix absorbing the declarative layer, 8 modules remain and most use only `cmds.bash`. The target architecture simplifies the framework to match actual usage. Until the refactor lands, new integrations should follow the current app module pattern but categorize their behavior by the target-state decision matrix below.
 
 ### Architectural boundary
 
@@ -134,12 +138,18 @@ Principle 6 governs where new configuration belongs. The boundary has shifted ov
 - Interactive aliases and workflow functions (`cmds.bash`)
 - IFS/globbing safety and namespace cleanup
 
-**When adding a new tool**, choose:
-- Nix package only → add to `shared.nix` or context `home.nix`
-- Nix package + declarative config → use `programs.<name>` if a module exists
-- Shell hooks or PROMPT_COMMAND integration → add hook line to `init.bash`, keep package in nix
-- Interactive aliases/functions → create `bash/apps/<tool>/cmds.bash`
-- Pure environment variable → add to `home.sessionVariables`
+**When adding a new tool**, these concerns can be combined:
+
+| Concern | Where it goes |
+|---------|--------------|
+| Package installation | `shared.nix` (all hosts) or context `home.nix` (platform-specific) |
+| Declarative program config | `programs.<name>` if a home-manager module exists |
+| Environment variable | `home.sessionVariables` |
+| PATH addition | `home.sessionPath` |
+| Shell startup hook (PROMPT_COMMAND, eval) | Hook in `init.bash` (target) or `bash/apps/<tool>/init.bash` (current) |
+| Interactive aliases/functions | `bash/apps/<tool>/cmds.bash` |
+
+A tool may need several of these. For example, direnv uses nix for the package (`programs.direnv`), bash for the PROMPT_COMMAND hook (`bash/apps/direnv/init.bash`), and could have aliases in a `cmds.bash` file.
 
 ### Target architecture
 
@@ -167,7 +177,7 @@ The app module framework was designed when bash managed 20+ tools including pack
 - `env.bash` phase (nix handles environment setup via hm-session-vars.sh)
 - ~85 lines of support functions from `initutil.bash` that only serve the above
 
-**Failure isolation:** Hook sourcing and command sourcing are separate loops. A syntax error in a `cmds.bash` file does not prevent hooks from running. A broken hook does not prevent other hooks or commands from loading. `TestAndSource` silently skips missing files. Failures are localized and diagnosable — the shell starts, and errors appear in context.
+**Failure isolation:** In the target architecture, hook sourcing and command sourcing are separate passes — a syntax error in a `cmds.bash` file does not prevent hooks from running. In both current and target architectures, `TestAndSource` silently skips missing files, and `source` failures in one module do not abort the shell. The shell starts even with broken modules; errors appear in context.
 
 **Liquidprompt caveat:** Until liquidprompt is nix-packaged (evtctl task #47), its vendored file check remains as an inline guard in init.bash. Once nix-managed, the guard becomes unconditional.
 
@@ -180,40 +190,6 @@ The app module framework was designed when bash managed 20+ tools including pack
 **Generalized auto-discovery for hooks.** The current `OrderByDependencies` mechanism discovers, detects, and orders all app modules. Since only 2 modules have hooks and their order is fixed, a general-purpose ordering system is unnecessary overhead. Explicit hook ordering in `init.bash` is simpler, more visible, and more reliable than dependency resolution.
 
 **Keeping the detection layer.** `detect.bash` and `IsApp`/`IsCmd` gate module loading on tool availability. For nix-managed packages (all current tools), detection is redundant — they're always on PATH. The test suite validates presence at build time, making runtime detection a legacy concern. Liquidprompt is the sole remaining user of `detect.bash`, and only because it's vendored rather than nix-packaged.
-
-### Cross-host consistency
-
-`shared.nix` guarantees identical packages and `programs.*` config across all hosts. Context-specific packages (VPN tools on linux, chromium on crostini) are clearly separated in context `home.nix` files.
-
-The bash init system is host-agnostic — same `init.bash`, same app modules, same settings. Platform adaptation goes through `context/init.bash` (currently unused but available). The `hm-session-vars.sh` sourcing path checks both standalone (`~/.nix-profile/...`) and NixOS (`/etc/profiles/per-user/$USER/...`) locations.
-
-**Confidence bound:** Structurally verified by shared.nix and context separation. Runtime-verified on Crostini. NixOS runtime behavior is inferred from code, not tested from this host.
-
-### Recovery
-
-Home-manager maintains generations. `home-manager generations` lists available rollbacks. `home-manager activate <path>` restores a previous generation.
-
-If `init.bash` changes break shell startup, recovery is: open a terminal, the broken init runs but the shell still starts (failure isolation), fix the file, `source ~/.bashrc reload`.
-
-If nix changes break `home-manager switch`, the previous generation's packages and config remain on PATH until explicitly changed.
-
-### Performance
-
-Shell startup: ~500ms. Dominant contributor: keychain eval (~250ms, 50%). Non-interactive login without keychain/liquidprompt: ~57ms. Liquidprompt: ~1ms.
-
-The startup budget is acceptable for interactive terminal use. If it becomes a concern, keychain could move to a lazy/deferred pattern (start agent on first SSH use rather than every login). This is an optional optimization, not a current priority.
-
-The `Alias`/reveal wrapper adds no measurable overhead to command invocation.
-
-### Configuration validation
-
-The tesht test suite serves as the living specification of the configured environment. Tests define what aliases, functions, env vars, and shell settings must exist. Changes to the configuration start with a test assertion (red), then implementation (green).
-
-Two test layers:
-- **Static tests** (non-interactive): nix file parsing, symlinks, package declarations, module structure
-- **Runtime tests** (interactive login shell): aliases exist, functions exist, vi mode on, umask correct, PROMPT_COMMAND ordering
-
-Tests do not duplicate nix's guarantees. Nix handles package presence, derivation correctness, and generated file content. Tests handle the bash-layer contract: after startup, the expected runtime state exists.
 
 ### Contexts — cross-cutting
 
@@ -325,6 +301,42 @@ dotfiles = {
 ```
 
 NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` symlink chain doesn't resolve in the nix store) and layers Sway on top. Package changes happen here. The local path input means changes take effect on `nixos-rebuild switch` without pushing to GitHub first.
+
+## Operational Properties
+
+### Cross-host consistency
+
+`shared.nix` guarantees identical packages and `programs.*` config across all hosts. Context-specific packages (VPN tools on linux, chromium on crostini) are clearly separated in context `home.nix` files.
+
+The bash init system is host-agnostic — same `init.bash`, same app modules, same settings. Platform adaptation goes through `context/init.bash` (currently unused but available). The `hm-session-vars.sh` sourcing path checks both standalone (`~/.nix-profile/...`) and NixOS (`/etc/profiles/per-user/$USER/...`) locations.
+
+**Confidence bound:** Structurally verified by `shared.nix` and context separation. Runtime-verified on Crostini. NixOS runtime behavior is inferred from code, not tested from this host.
+
+### Recovery
+
+Home-manager maintains generations. `home-manager generations` lists available rollbacks. `home-manager activate <path>` restores a previous generation.
+
+If `init.bash` changes break shell startup, recovery is: open a terminal, the broken init runs but the shell still starts (failure isolation), fix the file, `source ~/.bashrc reload`.
+
+If nix changes break `home-manager switch`, the previous generation's packages and config remain on PATH until explicitly changed.
+
+### Performance
+
+Shell startup: ~500ms. Dominant contributor: keychain eval (~250ms, 50%). Non-interactive login without keychain/liquidprompt: ~57ms. Liquidprompt: ~1ms.
+
+The startup budget is acceptable for interactive terminal use. If it becomes a concern, keychain could move to a lazy/deferred pattern (start agent on first SSH use rather than every login). This is an optional optimization, not a current priority.
+
+The `Alias`/reveal wrapper adds no measurable overhead to command invocation.
+
+## Configuration Validation
+
+The `tesht` test suite serves as the living specification of the configured environment. Tests define what aliases, functions, env vars, and shell settings must exist. Changes to the configuration start with a test assertion (red), then implementation (green).
+
+Two test layers:
+- **Static tests** (non-interactive): nix file parsing, symlinks, package declarations, module structure
+- **Runtime tests** (interactive login shell): aliases exist, functions exist, vi mode on, umask correct, PROMPT_COMMAND ordering
+
+Tests do not duplicate nix's guarantees. Nix handles package presence, derivation correctness, and generated file content. Tests handle the bash-layer contract: after startup, the expected runtime state exists.
 
 ## Resolved Questions
 
