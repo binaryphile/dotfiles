@@ -9,4 +9,3 @@ TestAndExport CFGDIR ~/.config
 TestAndExport SECRETS ~/secrets
 TestAndExport XDG_CONFIG_HOME $CFGDIR
 
-export LC_SSH_USER=$USER

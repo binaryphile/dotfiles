@@ -133,3 +133,53 @@ test_shared_programs() {
   done
   return $rc
 }
+
+# Runtime tests — interactive login shell exercises full init path.
+# Batched assertions per test to avoid ~100ms overhead per spawn.
+
+test_runtime_aliases() {
+  local aliases=(l ll la ltr road path df ga. gss stser)
+  local check=""
+  for a in "${aliases[@]}"; do
+    check+="alias $a >/dev/null 2>&1 || echo \"missing: $a\"; "
+  done
+
+  local got
+  got=$(env -i HOME="$HOME" USER="$USER" TERM=dumb bash --login -i -c "$check" 2>/dev/null)
+
+  [[ -z $got ]] || { echo "error: aliases not found:"; echo "$got"; return 1; }
+}
+
+test_runtime_functions() {
+  local functions=(reveal become miracle runas psaux europe wolf shannon randword salt)
+  local check=""
+  for f in "${functions[@]}"; do
+    check+="declare -F $f >/dev/null || echo \"missing: $f\"; "
+  done
+
+  local got
+  got=$(env -i HOME="$HOME" USER="$USER" TERM=dumb bash --login -i -c "$check" 2>/dev/null)
+
+  [[ -z $got ]] || { echo "error: functions not found:"; echo "$got"; return 1; }
+}
+
+test_runtime_shell_settings() {
+  local got
+  got=$(env -i HOME="$HOME" USER="$USER" TERM=dumb bash --login -i -c '
+    echo "umask=$(umask)"
+    echo "vi=$(set -o | grep "^vi " | awk "{print \$2}")"
+    echo "CFGDIR=$CFGDIR"
+    echo "SECRETS=$SECRETS"
+    echo "XDG=$XDG_CONFIG_HOME"
+    echo "PAGER=$PAGER"
+  ' 2>/dev/null)
+
+  local rc=0
+  [[ $got == *"umask=0022"* ]]         || { echo "error: umask not 0022"; rc=1; }
+  [[ $got == *"vi=on"* ]]              || { echo "error: vi mode not on"; rc=1; }
+  [[ $got == *"CFGDIR="*".config"* ]]  || { echo "error: CFGDIR not set"; rc=1; }
+  [[ $got == *"SECRETS="*"secrets"* ]]  || { echo "error: SECRETS not set"; rc=1; }
+  [[ $got == *"XDG="*".config"* ]]     || { echo "error: XDG_CONFIG_HOME not set"; rc=1; }
+  [[ $got == *"PAGER="*"less"* ]]      || { echo "error: PAGER not set"; rc=1; }
+  return $rc
+}

@@ -60,10 +60,6 @@ IsFile () {
   [[ -r $1 ]]
 }
 
-IsFunc () {
-  [[ $(type -t $1) == function ]]
-}
-
 IsPathCmd () {
   type -p $1 &>/dev/null
 }
@@ -155,11 +151,6 @@ TEST_LIST_CONTAINS () { (
   IFS=:
   Contains "$1" "$2"
 ) }
-
-TestContainsAndAppend () {
-  TEST_LIST_CONTAINS ${!1} $2 && return
-  declare -g $1=${!1}:$2
-}
 
 TestContainsAndPrepend () {
   TEST_LIST_CONTAINS ${!1} $2 && return

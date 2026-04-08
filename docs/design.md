@@ -103,8 +103,8 @@ Current app modules:
 `bash/lib/`:
 - `initutil.bash` — shell detection, sourcing helpers, IFS/globbing controls
 - `apps.bash` — app module loader
-- `truth.bash` — boolean utilities
-- `validate.bash`, `validate-apps.bash` — config validation
+
+See [uc-init.md](uc-init.md) for full use case documentation of the init system.
 
 ### Contexts — cross-cutting
 

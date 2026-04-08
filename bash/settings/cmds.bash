@@ -32,8 +32,6 @@ reveal () {
   fi
 }
 
-Alias validate-bash="source $HOME/dotfiles/bash/lib/validate.bash"
-
 alias l="ls -hF $([[ $OSTYPE == darwin* ]] && echo -G || echo --color=auto)"
 Alias ll='l -l'
 Alias la='l -la'
