@@ -419,7 +419,7 @@ P = primary support, S = secondary/indirect support
 | UC-I7 Reveal | Working |
 | UC-I8 Prompt | Working — due for liquidprompt update |
 | UC-I9 Direnv | Working |
-| UC-I10 SSH Agent | Working — keychain needs to be installed |
+| UC-I10 SSH Agent | Working |
 | UC-I11 Git | Working |
 | UC-I12 StGit | Working |
 | UC-I13 Shell Cmds | Working |
