@@ -8,9 +8,10 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 
 1. **One environment, all hosts.** Same config on NixOS and Crostini. Platform differences handled by `contexts/`.
 2. **Symlinks over copies.** Configs live here. Home directory gets symlinks.
-3. **Custom bash init.** Not home-manager's `programs.bash`. Each app manages its own env, init, and commands.
+3. **Single-file bash init.** One entry point replaces `.bashrc`, `.bash_profile`, `.profile`. Explicit mode detection, no hidden sourcing rules. See [Why a single entry point](#why-a-single-entry-point).
 4. **Idempotent deployment.** `update-env` works on fresh or existing machines. Converges to desired state.
 5. **Nix for packages, dotfiles for config.** `home.nix` says what to install. Dotfiles say how to configure.
+6. **Nix owns declarative config. Bash owns shell-evaluated behavior.** Decision test: can this be expressed as static data or generated config without bash evaluating shell state? If yes → nix. If no → bash. See [Architectural boundary](#architectural-boundary).
 
 ## What this repo owns
 
@@ -114,6 +115,106 @@ Current app modules:
 
 See [uc-init.md](uc-init.md) for full use case documentation of the init system.
 
+### Architectural boundary
+
+Principle 6 governs where new configuration belongs. The boundary has shifted over time as nix absorbed more responsibility.
+
+**Nix owns** (declarative, shell-independent):
+- Packages (`home.packages`, `shared.nix`)
+- Program config (`programs.direnv`, `programs.bat`, `programs.firefox`, `programs.khal`, `programs.vdirsyncer`)
+- Session variables and PATH (`home.sessionVariables`, `home.sessionPath`)
+- File deployment (`home.file`)
+- Services (`systemd.user.services`, `systemd.user.timers`)
+
+**Bash owns** (shell-evaluated, session-dependent):
+- Shell mode detection and sourcing order (`init.bash`)
+- PROMPT_COMMAND hooks (liquidprompt, direnv, eternal history)
+- Eval-based integrations that start processes (`keychain`)
+- The `Alias`/`reveal` mechanism (wraps every alias with transparency)
+- Interactive aliases and workflow functions (`cmds.bash`)
+- IFS/globbing safety and namespace cleanup
+
+**When adding a new tool**, choose:
+- Nix package only → add to `shared.nix` or context `home.nix`
+- Nix package + declarative config → use `programs.<name>` if a module exists
+- Shell hooks or PROMPT_COMMAND integration → add hook line to `init.bash`, keep package in nix
+- Interactive aliases/functions → create `bash/apps/<tool>/cmds.bash`
+- Pure environment variable → add to `home.sessionVariables`
+
+### Target architecture
+
+The app module framework was designed when bash managed 20+ tools including packages, env vars, detection, and ordering. With nix absorbing the declarative layer, 8 modules remain and most use only `cmds.bash`. The target architecture aligns the framework to its actual remaining role.
+
+**Design goals:**
+- Predictable startup behavior from a single readable file
+- Minimal order-sensitive code
+- Declarative config in nix; shell-specific behavior isolated to bash
+- A broken command script should not destabilize hook initialization
+- Adding a new tool should require at most one decision (nix, hook, or commands) and one file
+
+**Hooks** (order-sensitive, rare) are sourced explicitly in `init.bash` in a defined order. Currently: liquidprompt → direnv → keychain. Order matters because direnv's PROMPT_COMMAND hook must append after liquidprompt's. Adding a hook means adding a line to `init.bash` — explicit, visible, no discovery mechanism needed.
+
+**Commands** (order-independent, common) are auto-discovered from `bash/apps/*/cmds.bash`. Currently: git, stg, mnencode, pandoc. Order doesn't matter — aliases and functions are independent. Adding commands means dropping a `cmds.bash` file in a new directory.
+
+**Session variables** are sourced directly from `hm-session-vars.sh` in `init.bash` (login only), replacing the current indirect path through the home-manager app module symlink. Both `~/.nix-profile/...` and `/etc/profiles/per-user/$USER/...` paths are checked for NixOS/standalone portability.
+
+**`settings/env.bash`** target is elimination. PATH additions move to `home.sessionPath`. CFGDIR, SECRETS, XDG_CONFIG_HOME move to `home.sessionVariables`. EDITOR and PAGER become simple nix assignments — nix guarantees nvim and less are available. A minimal bootstrap fallback may be retained for recovery shells where home-manager hasn't been applied.
+
+**What this eliminates:**
+- `bash/lib/apps.bash` loader (detection pipeline, dependency ordering)
+- `detect.bash` files (nix packages are always on PATH; the test suite validates presence at build time)
+- `deps` files (one relationship exists — liquidprompt → direnv — handled by explicit ordering in init.bash)
+- `env.bash` phase (nix handles environment setup via hm-session-vars.sh)
+- ~85 lines of support functions from `initutil.bash` that only serve the above
+
+**Failure isolation:** Hook sourcing and command sourcing are separate loops. A syntax error in a `cmds.bash` file does not prevent hooks from running. A broken hook does not prevent other hooks or commands from loading. `TestAndSource` silently skips missing files. Failures are localized and diagnosable — the shell starts, and errors appear in context.
+
+**Liquidprompt caveat:** Until liquidprompt is nix-packaged (evtctl task #47), its vendored file check remains as an inline guard in init.bash. Once nix-managed, the guard becomes unconditional.
+
+### Rejected alternatives
+
+**`programs.bash` (home-manager bash module).** Generates `.bash_profile`, `.profile`, and `.bashrc` — re-implementing the three-file sourcing model that `init.bash` was designed to replace. Would require cramming the app module system into `initExtra` as opaque nix strings. Cannot support the `Alias`/reveal mechanism (`shellAliases` produces plain aliases). See [Why a single entry point](#why-a-single-entry-point).
+
+**Generated `init.bash` from nix.** Would make the structure declarative but would obscure debugging — instead of reading one bash file, you'd read a nix expression to understand what bash gets generated. Violates the core promise of UC-I0: the user reads `init.bash` and knows exactly what runs. May be worth revisiting if the init system grows significantly more complex, but current complexity doesn't justify it.
+
+**Generalized auto-discovery for hooks.** The current `OrderByDependencies` mechanism discovers, detects, and orders all app modules. Since only 2 modules have hooks and their order is fixed, a general-purpose ordering system is unnecessary overhead. Explicit hook ordering in `init.bash` is simpler, more visible, and more reliable than dependency resolution.
+
+**Keeping the detection layer.** `detect.bash` and `IsApp`/`IsCmd` gate module loading on tool availability. For nix-managed packages (all current tools), detection is redundant — they're always on PATH. The test suite validates presence at build time, making runtime detection a legacy concern. Liquidprompt is the sole remaining user of `detect.bash`, and only because it's vendored rather than nix-packaged.
+
+### Cross-host consistency
+
+`shared.nix` guarantees identical packages and `programs.*` config across all hosts. Context-specific packages (VPN tools on linux, chromium on crostini) are clearly separated in context `home.nix` files.
+
+The bash init system is host-agnostic — same `init.bash`, same app modules, same settings. Platform adaptation goes through `context/init.bash` (currently unused but available). The `hm-session-vars.sh` sourcing path checks both standalone (`~/.nix-profile/...`) and NixOS (`/etc/profiles/per-user/$USER/...`) locations.
+
+**Confidence bound:** Structurally verified by shared.nix and context separation. Runtime-verified on Crostini. NixOS runtime behavior is inferred from code, not tested from this host.
+
+### Recovery
+
+Home-manager maintains generations. `home-manager generations` lists available rollbacks. `home-manager activate <path>` restores a previous generation.
+
+If `init.bash` changes break shell startup, recovery is: open a terminal, the broken init runs but the shell still starts (failure isolation), fix the file, `source ~/.bashrc reload`.
+
+If nix changes break `home-manager switch`, the previous generation's packages and config remain on PATH until explicitly changed.
+
+### Performance
+
+Shell startup: ~500ms. Dominant contributor: keychain eval (~250ms, 50%). Non-interactive login without keychain/liquidprompt: ~57ms. Liquidprompt: ~1ms.
+
+The startup budget is acceptable for interactive terminal use. If it becomes a concern, keychain could move to a lazy/deferred pattern (start agent on first SSH use rather than every login). This is an optional optimization, not a current priority.
+
+The `Alias`/reveal wrapper adds no measurable overhead to command invocation.
+
+### Configuration validation
+
+The tesht test suite serves as the living specification of the configured environment. Tests define what aliases, functions, env vars, and shell settings must exist. Changes to the configuration start with a test assertion (red), then implementation (green).
+
+Two test layers:
+- **Static tests** (non-interactive): nix file parsing, symlinks, package declarations, module structure
+- **Runtime tests** (interactive login shell): aliases exist, functions exist, vi mode on, umask correct, PROMPT_COMMAND ordering
+
+Tests do not duplicate nix's guarantees. Nix handles package presence, derivation correctness, and generated file content. Tests handle the bash-layer contract: after startup, the expected runtime state exists.
+
 ### Contexts — cross-cutting
 
 `contexts/` holds platform overrides. A `context` symlink at repo root points to the active platform.
@@ -151,7 +252,7 @@ Some tools use `programs.*` instead of `home.packages` for declarative config:
 
 ### Session environment managed by nix
 
-`home.sessionVariables` and `home.sessionPath` in `home.nix` can replace bash app modules for pure environment setup. Currently empty — available for future use.
+`home.sessionVariables` and `home.sessionPath` in `home.nix` replace bash app modules for pure environment setup. These flow into the shell via `hm-session-vars.sh`, sourced by the home-manager app module (symlink). Target: `settings/env.bash` PATH additions and variable declarations move here, with `hm-session-vars.sh` sourced directly from `init.bash`.
 
 ### Firefox — UC-2
 
