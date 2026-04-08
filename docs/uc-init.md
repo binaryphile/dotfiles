@@ -1,6 +1,6 @@
 # Use Cases — Bash Init System
 
-Companion to [use-cases.md](use-cases.md). Documents the init.bash features that support UC-1 through UC-6.
+Companion to [use-cases.md](use-cases.md). Documents the init.bash features that support UC-1 through UC-6. See [design.md](design.md) for the nix/bash boundary, target architecture, and rejected alternatives.
 
 ## Actors
 

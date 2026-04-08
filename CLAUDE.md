@@ -7,7 +7,8 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 1. One environment, all hosts. Platform differences handled by `contexts/`.
 2. Symlinks over copies.
 3. Single-file bash init — one entry point (`init.bash`) replaces `.bashrc`, `.bash_profile`, and `.profile`. The conventional three-file model hides complexity behind an opaque sourcing taxonomy; init.bash makes every mode decision explicit and readable. Does not use `programs.bash`, but `home.sessionVariables`, `home.sessionPath`, and `programs.*` modules are used freely.
-4. Nix for packages, dotfiles for config. `home.nix` says what to install. Dotfiles say how to configure. Pure env vars and PATH go in `home.sessionVariables`/`home.sessionPath`; interactive shell logic stays in bash.
+4. Nix for packages, dotfiles for config. `home.nix` says what to install. Dotfiles say how to configure.
+5. Nix owns declarative, shell-independent config. Bash owns shell-evaluated, session-dependent behavior. Decision test: can it be expressed as static data without bash evaluating shell state? If yes → nix. If no → bash. See `docs/design.md` Nix/bash boundary.
 
 ## Structure
 
