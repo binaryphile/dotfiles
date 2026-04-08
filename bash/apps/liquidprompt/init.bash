@@ -1,1 +1,0 @@
-TestAndSource ~/dotfiles/liquidprompt/liquidprompt

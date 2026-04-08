@@ -50,12 +50,10 @@ test_symlinks() {
 test_app_module_files() {
   local -A case1=([name]='direnv'        [app]='direnv')
   local -A case2=([name]='git'           [app]='git')
-  local -A case3=([name]='home-manager'  [app]='home-manager')
-  local -A case4=([name]='keychain'      [app]='keychain')
-  local -A case5=([name]='liquidprompt'  [app]='liquidprompt')
-  local -A case6=([name]='mnencode'      [app]='mnencode')
-  local -A case7=([name]='pandoc'        [app]='pandoc')
-  local -A case8=([name]='stg'          [app]='stg')
+  local -A case3=([name]='keychain'      [app]='keychain')
+  local -A case4=([name]='mnencode'      [app]='mnencode')
+  local -A case5=([name]='pandoc'        [app]='pandoc')
+  local -A case6=([name]='stg'          [app]='stg')
 
   subtest() {
     local casename=$1
