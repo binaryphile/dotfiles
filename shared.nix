@@ -1,25 +1,5 @@
 { config, pkgs, ... }:
 
-let
-  # Yuezk's Rust rewrite of GlobalProtect-openconnect, via upstream flake.
-  # Avoids nixpkgs' old C++/Qt 1.4.9 build that drags in qtwebengine.
-  # Pinned to a tag so home-manager switch does not re-fetch every time.
-  gpoc = (builtins.getFlake "github:yuezk/GlobalProtect-openconnect/v2.4.4").packages.${pkgs.system}.default;
-
-  vpn-connect = pkgs.stdenv.mkDerivation {
-    name = "vpn-connect";
-    src = ./scripts/vpn-connect;
-    dontUnpack = true;
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    installPhase = ''
-      install -Dm755 $src $out/bin/vpn-connect
-      substituteInPlace $out/bin/vpn-connect \
-        --replace-fail '@vpn-slice@' '${pkgs.vpn-slice}/bin/vpn-slice'
-      wrapProgram $out/bin/vpn-connect \
-        --prefix PATH : ${pkgs.lib.makeBinPath [ gpoc ]}
-    '';
-  };
-in
 {
   home.packages = with pkgs; [
     bottom
@@ -51,7 +31,7 @@ in
     tree
     vpn-slice
     zip
-  ] ++ [ gpoc vpn-connect ];
+  ];
 
   home.sessionVariables = {
     EDITOR = "nvim";

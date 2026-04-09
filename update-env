@@ -66,18 +66,13 @@ main() {
   section dotfiles
   task.GitClone git@github.com:binaryphile/dotfiles ~/dotfiles main
   try task.GitUpdate ~/dotfiles
+  # Bootstrap-only symlinks. The rest are managed by home-manager via
+  # contexts/linux-base.nix once nix and home-manager are installed.
   each task.Ln <<'  END'
     contexts/"$platform"                          ~/dotfiles/context
     ~/dotfiles/bash/init.bash                     ~/.bash_profile
     ~/dotfiles/bash/init.bash                     ~/.bashrc
     ~/dotfiles/bash/init.bash                     ~/.profile
-    ~/dotfiles/gitconfig                          ~/.gitconfig
-    ~/dotfiles/gitignore_global                   ~/.gitignore_global
-    ~/dotfiles/liquidprompt/liquid.theme          ~/.config/liquidprompt/liquid.theme
-    ~/dotfiles/liquidprompt/liquidpromptrc        ~/.config/liquidpromptrc
-    ~/dotfiles/ssh/authorized_keys                 ~/.ssh/authorized_keys
-    ~/dotfiles/ssh/config                         ~/.ssh/config
-    ~/dotfiles/tmux.conf                          ~/.tmux.conf
   END
   [[ -e ~/dotfiles/context/btop.conf ]] &&
     task.Ln ~/dotfiles/context/btop.conf ~/.config/btop/btop.conf
@@ -230,13 +225,6 @@ main() {
 
   section obsidian
   try bitbucketCloneAndLinkTask tlilley-daily-notes main
-
-  section ranger
-  glob ~/dotfiles/ranger/* |
-    keepIf isFile |
-    map path '$path ~/.config/ranger/$(basename $path)' |
-    each task.Ln
-
 
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 7: SSH Key Generation (section unique_credential)     │

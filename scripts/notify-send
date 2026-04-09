@@ -30,7 +30,9 @@ while (( $# )); do
   esac
 done
 
-# Push to ntfy if topic configured and we have a summary.
+# Push to ntfy if topic configured and we have a summary. Backgrounded
+# in a subshell so callers don't block on network — the local notify-send
+# above has already fired, and ntfy delivery is best-effort.
 NtfyTopicFile=$HOME/secrets/ntfy-topic
 if [[ -r $NtfyTopicFile ]] && (( ${#Positional[@]} > 0 )); then
   Topic=$(cat "$NtfyTopicFile")
@@ -38,10 +40,11 @@ if [[ -r $NtfyTopicFile ]] && (( ${#Positional[@]} > 0 )); then
   Body=${Positional[1]:-}
   Priority=high
   [[ $Urgency == critical ]] || Priority=default
-  curl -fsSL \
-    -H "Title: $Title" \
-    -H "Priority: $Priority" \
-    -H "Tags: bell" \
-    -d "$Body" \
-    "https://ntfy.sh/$Topic" > /dev/null 2>&1 || true
+  ( curl -fsSL \
+      -H "Title: $Title" \
+      -H "Priority: $Priority" \
+      -H "Tags: bell" \
+      -d "$Body" \
+      "https://ntfy.sh/$Topic" > /dev/null 2>&1 || true ) &
+  disown
 fi
