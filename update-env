@@ -248,9 +248,43 @@ main() {
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ FINALIZATION                                                │
   #  │   ├─> Display task summary                                  │
-  #  │   └─> Run deferred git updates (if mk was just installed)   │
+  #  │   ├─> Run deferred git updates (if mk was just installed)   │
+  #  │   └─> Print platform-specific manual setup reminders        │
   #  └─────────────────────────────────────────────────────────────┘
   task.Summarize
+  postInstallMessages
+}
+
+# postInstallMessages prints manual setup steps that can't be automated.
+# Called after task.Summarize so the messages aren't lost in task output.
+postInstallMessages() {
+  case $(platform) in crostini )
+    cat <<'  EOF'
+
+==============================================================================
+CROSTINI: configure ChromeOS Chrome to use the corporate VPN proxy (UC-8)
+
+For VPN-only URLs (stash.digi.com, gitlab.drm.ninja, etc.) to work in
+ChromeOS host Chrome — instead of just in-container browsers — point
+Chrome at the in-container PAC server:
+
+  1. ChromeOS Settings -> Network
+  2. Click your active connection (Wi-Fi or Ethernet)
+  3. Expand "Proxy"
+  4. Connection type: "Automatic proxy configuration"
+  5. URL: http://127.0.0.1:8120/proxy.pac
+  6. Save
+
+This is per-network and persists across reboots. Repeat for each network
+you connect to. Verify with chrome://net-internals/#proxy after setup.
+
+Non-VPN URLs return DIRECT in the PAC and bypass the proxy entirely;
+only the configured VPN host list traverses the container.
+
+See docs/use-cases.md UC-8 and docs/vpn.md for the full story.
+==============================================================================
+  EOF
+  ;; esac
 }
 
 ## task definitions

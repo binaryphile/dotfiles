@@ -127,13 +127,15 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Main Success Scenario:**
   1. Ted runs `update-env`
   2. Ted is productive immediately
+  3. update-env prints any platform-specific manual steps that cannot be automated (e.g., ChromeOS proxy setup for UC-8 on Crostini)
 - **Extensions:**
   - 1a. NixOS host → `update-env` skips apt and nix/home-manager phases (system-managed)
   - 1b. New machine → create a machine-specific context with per-machine config (e.g., btop network interface)
   - 2a. A phase fails → script reports which; diagnose
   - 2b. Package fails to build → nixpkgs compatibility issue
+  - 3a. Manual step missed → re-run update-env to see the reminders again, or check use-cases.md
 - **Postconditions:**
-  - **Success:** Git, neovim, tmux, shell, SSH keys, dev tools, packages, and dotfile symlinks all in place
+  - **Success:** Git, neovim, tmux, shell, SSH keys, dev tools, packages, and dotfile symlinks all in place; user has been told about any remaining manual steps
   - **Failure:** Partial deployment; re-run after fixing
 
 ---
@@ -247,7 +249,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   3. The in-container proxy forwards via tun0 over the VPN
   4. Page loads in host Chrome
 - **Extensions:**
-  - 1a. Host Chrome PAC not configured → set ChromeOS Network → Proxy → Automatic configuration to `http://127.0.0.1:8120/proxy.pac`
+  - 1a. Host Chrome PAC not configured → set ChromeOS Network → Proxy → Automatic configuration to `http://127.0.0.1:8120/proxy.pac`. `update-env` prints these instructions on Crostini after each run as a reminder (UC-4 step 3).
   - 2a. Host doesn't match → URL is not in the VPN host list → Chrome connects directly (correct, expected)
   - 2b. Host should match but PAC list is stale → edit `contexts/crostini/home.nix` to add the host, re-activate
   - 3a. Proxy unreachable → check `systemctl --user status tinyproxy proxy-pac-server`

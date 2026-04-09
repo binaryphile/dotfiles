@@ -72,6 +72,8 @@ Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debia
 
 **Why split symlinks between update-env and home-manager:** bootstrap symlinks (`.bash*`, nixpkgs config, home-manager config) must exist before nix runs, so they can't be HM-managed. Everything else benefits from HM's atomic generations and rollback. The migration uses `home.file."<target>".source = config.lib.file.mkOutOfStoreSymlink "...";` to preserve edit-in-place semantics — symlinks point at the live source files in `~/dotfiles/`, not into the nix store, so editing the source is immediately visible without `home-manager switch`.
 
+**Post-install messages** (`postInstallMessages` function in `update-env`) print after `task.Summarize` to surface manual steps that cannot be automated. Currently used on Crostini to remind about the ChromeOS Chrome PAC URL configuration for UC-8. Gated by `case $(platform) in crostini ) ... ;; esac` so other platforms don't see Crostini-specific reminders. The function is intentionally simple — a `cat <<EOF` per platform, no templating — because the messages are short, infrequent, and easier to read in the script source than parameterized.
+
 **Private repos** (e.g., jeeves) are cloned manually, not by update-env:
 ```bash
 git clone git@bitbucket.org:accelecon/jeeves ~/projects/jeeves
