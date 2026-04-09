@@ -255,13 +255,17 @@ main() {
   postInstallMessages
 }
 
-# postInstallMessages prints manual setup steps that can't be automated.
-# Called after task.Summarize so the messages aren't lost in task output.
+# postInstallMessages writes platform-specific manual setup instructions
+# to a file under ~/.local/share/dotfiles/ if not already present, then
+# prints a one-line reminder pointing at the file. Delete the file to
+# regenerate it on the next run (e.g., after the instructions change).
 postInstallMessages() {
+  local dir=$HOME/.local/share/dotfiles
+  mkdir -p "$dir"
   case $(platform) in crostini )
-    cat <<'  EOF'
-
-==============================================================================
+    local file=$dir/crostini-proxy-setup.txt
+    if [[ ! -e $file ]]; then
+      cat >"$file" <<'      EOF'
 CROSTINI: configure ChromeOS Chrome to use the corporate VPN proxy (UC-8)
 
 For VPN-only URLs (stash.digi.com, gitlab.drm.ninja, etc.) to work in
@@ -281,9 +285,12 @@ you connect to. Verify with chrome://net-internals/#proxy after setup.
 Non-VPN URLs return DIRECT in the PAC and bypass the proxy entirely;
 only the configured VPN host list traverses the container.
 
-See docs/use-cases.md UC-8 and docs/vpn.md for the full story.
-==============================================================================
-  EOF
+See ~/dotfiles/docs/use-cases.md UC-8 and ~/dotfiles/docs/vpn.md for the
+full story. Delete this file to have update-env regenerate it.
+      EOF
+    fi
+    echo
+    echo "Crostini ChromeOS proxy setup: see $file"
   ;; esac
 }
 
