@@ -61,12 +61,11 @@ _run_login_shell() {
   echo "$out"
 }
 
-# Collect all runtime facts in one shell (keychain is ~250ms per spawn).
-# Facts cached to a file because tesht runs each test in a subshell.
-_runtime_facts_file="/tmp/dotfiles-test-facts.$$"
-_collect_runtime_facts() {
-  [[ -s $_runtime_facts_file ]] && return
-  _run_login_shell '
+# Collect all runtime facts in one shell, cached to file.
+# tesht evals the source inside subshells — variables set in one subshell
+# don't propagate to others. A file persists across them.
+RuntimeFactsFile=/tmp/dotfiles-test-facts
+[[ -s $RuntimeFactsFile ]] || _run_login_shell '
     cd '"$Root"'
 
     # Environment
@@ -113,13 +112,11 @@ _collect_runtime_facts() {
     [[ $DIRENV_TEST_VAR == behavioral_test ]] && echo "DIRENV_ACTIVATE=yes" || echo "DIRENV_ACTIVATE=no"
     popd >/dev/null
     rm -rf "$tmpdir"
-  ' > "$_runtime_facts_file"
-}
+  ' > "$RuntimeFactsFile"
 
 test_shell_environment() {
-  _collect_runtime_facts
   local got rc=0
-  got=$(< "$_runtime_facts_file")
+  got=$(< "$RuntimeFactsFile")
 
   [[ $got == *"EDITOR_EXEC=yes"* ]] || { echo "error: EDITOR is not executable"; rc=1; }
   [[ $got == *"PAGER_EXEC=yes"* ]]  || { echo "error: PAGER is not executable"; rc=1; }
@@ -132,9 +129,8 @@ test_shell_environment() {
 }
 
 test_git_workflow() {
-  _collect_runtime_facts
   local got rc=0
-  got=$(< "$_runtime_facts_file")
+  got=$(< "$RuntimeFactsFile")
 
   [[ $got == *"GSS_RC=0"* ]]     || { echo "error: gss (git status -s) failed"; rc=1; }
   [[ $got == *"GIT_NAME=yes"* ]] || { echo "error: git user.name not configured"; rc=1; }
@@ -148,9 +144,8 @@ test_git_workflow() {
 # against the IFS/sourcing-order class of bugs that behavioral
 # tests alone cannot catch in a non-TTY environment.
 test_prompt_integration() {
-  _collect_runtime_facts
   local got rc=0
-  got=$(< "$_runtime_facts_file")
+  got=$(< "$RuntimeFactsFile")
 
   [[ $got == *"LP_LOAD=ok"* ]]         || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
   [[ $got == *"LP_PRESENT=yes"* ]]     || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
@@ -160,17 +155,15 @@ test_prompt_integration() {
 }
 
 test_ssh_agent() {
-  _collect_runtime_facts
   local got
-  got=$(< "$_runtime_facts_file")
+  got=$(< "$RuntimeFactsFile")
 
   [[ $got == *"AGENT=yes"* ]] || { echo "error: SSH agent not running or no keys loaded"; return 1; }
 }
 
 test_direnv_activation() {
-  _collect_runtime_facts
   local got
-  got=$(< "$_runtime_facts_file")
+  got=$(< "$RuntimeFactsFile")
 
   [[ $got == *"DIRENV_ACTIVATE=yes"* ]] || { echo "error: direnv did not activate .envrc"; return 1; }
 }
