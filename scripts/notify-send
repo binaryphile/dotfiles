@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# notify-send — wrapper that bridges desktop notifications to ntfy.sh
+#
+# Calls the real notify-send for local notification, then also POSTs to
+# ntfy.sh if ~/secrets/ntfy-topic exists. Phone gets a push notification
+# in addition to the local popup.
+#
+# @notify-send@ is substituted at build time with libnotify's store path
+# so the wrapper does not recurse into itself when invoked via PATH.
+
+set -uo pipefail
+
+# Forward to real notify-send first (always, regardless of ntfy config).
+@notify-send@ "$@"
+
+# Parse args for ntfy: extract --urgency and the trailing positional
+# summary/body. notify-send signature: notify-send [OPTIONS] SUMMARY [BODY].
+Urgency=normal
+Positional=()
+while (( $# )); do
+  case $1 in
+    -u|--urgency) Urgency=$2; shift 2 ;;
+    --urgency=*)  Urgency=${1#--urgency=}; shift ;;
+    -t|-a|-i|-c|-h|-r|-A|--expire-time|--app-name|--icon|--category|--hint|--replace-id|--action)
+      shift 2 ;;
+    --*=*)        shift ;;
+    -*)           shift ;;
+    *)            Positional+=("$1"); shift ;;
+  esac
+done
+
+# Push to ntfy if topic configured and we have a summary.
+NtfyTopicFile=$HOME/secrets/ntfy-topic
+if [[ -r $NtfyTopicFile ]] && (( ${#Positional[@]} > 0 )); then
+  Topic=$(cat "$NtfyTopicFile")
+  Title=${Positional[0]}
+  Body=${Positional[1]:-}
+  Priority=high
+  [[ $Urgency == critical ]] || Priority=default
+  curl -fsSL \
+    -H "Title: $Title" \
+    -H "Priority: $Priority" \
+    -H "Tags: bell" \
+    -d "$Body" \
+    "https://ntfy.sh/$Topic" > /dev/null 2>&1 || true
+fi

@@ -3,3 +3,5 @@ vendor/
 scripts/playbooks/macos
 kcov/
 assets/
+result
+result-*

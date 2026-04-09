@@ -2,7 +2,9 @@
 
 # vpn-connect - connect to Digi work VPN with split tunnel
 #
-# Auto-reconnects on session expiry. Ctrl-C exits cleanly.
+# SAML auth happens in your default browser via gpauth, then gpclient
+# (from globalprotect-openconnect) runs the tunnel with vpn-slice for
+# split-horizon DNS. Auto-reconnects on session expiry. Ctrl-C exits cleanly.
 
 Interrupted=false
 
@@ -16,33 +18,23 @@ onInterrupt() {
   Interrupted=true
 }
 
-authenticate() {
-  local output
-  output=$(gp-saml-gui --portal --clientos=Windows access.digi.com 2>&1) || fatal "SAML authentication failed"
-  eval "$(echo "$output" | grep -E '^(HOST|USER|COOKIE|OS)=')"
-  [[ -n ${COOKIE:-} ]] || fatal "no cookie received from SAML auth"
-}
-
 connect() {
-  echo $COOKIE | sudo openconnect --protocol=gp \
-    '--useragent=PAN GlobalProtect' \
-    --user=$USER \
-    --os=$OS \
-    --usergroup=portal:prelogin-cookie \
-    --authgroup="US East" \
-    --passwd-on-stdin \
-    -s '/etc/profiles/per-user/ted/bin/vpn-slice stash.digi.com dm1.devdevicecloud.com nexus.digi.com gitlab.drm.ninja 3.16.193.243' \
-    access.digi.com
+  gpauth access.digi.com --browser xdg-open |
+    sudo gpclient connect access.digi.com \
+      --cookie-on-stdin \
+      --user "$USER" \
+      --os Windows \
+      --gateway 'US East' \
+      --script '@vpn-slice@ stash.digi.com dm1.devdevicecloud.com nexus.digi.com gitlab.drm.ninja 3.16.193.243'
 }
 
 main() {
   trap onInterrupt INT
 
   while true; do
-    authenticate
     connect && rc=$? || rc=$?
     $Interrupted && break
-    echo "VPN disconnected (exit $rc). Re-authenticating..." >&2
+    echo "VPN disconnected (exit $rc). Reconnecting..." >&2
     sleep 2
   done
 }
