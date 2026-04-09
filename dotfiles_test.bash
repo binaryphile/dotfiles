@@ -2,7 +2,7 @@
 
 Root=$PWD
 
-# --- Pre-flight checks: config structure is valid ---
+# --- Pre-flight: config structure is valid ---
 
 test_nix_parse() {
   local -A case1=([name]='shared'   [file]="$Root/shared.nix")
@@ -47,9 +47,9 @@ test_symlinks() {
   tesht.Run ${!case@}
 }
 
-# --- Behavioral tests: what can the user do after shell startup? ---
-# These test the contract, not the mechanism. They should not break
-# when the init system's implementation changes.
+# --- Behavioral tests ---
+# One shell spawn collects all facts. Grouped assertions verify by concern.
+# Tests validate observable outcomes, not implementation mechanism.
 
 _run_login_shell() {
   local err
@@ -61,15 +61,15 @@ _run_login_shell() {
   echo "$out"
 }
 
-# Single shell invocation for all behavioral checks.
-# Batched to avoid ~550ms keychain overhead per spawn.
-# Reload test needs its own shell (it re-sources init.bash).
-test_behavior() {
-  local got
-  got=$(_run_login_shell '
+# Collect all runtime facts in one shell (keychain is ~250ms per spawn).
+# Facts cached to a file because tesht runs each test in a subshell.
+_runtime_facts_file="/tmp/dotfiles-test-facts.$$"
+_collect_runtime_facts() {
+  [[ -s $_runtime_facts_file ]] && return
+  _run_login_shell '
     cd '"$Root"'
 
-    # --- Environment ---
+    # Environment
     command -v "$EDITOR" >/dev/null 2>&1 && echo "EDITOR_EXEC=yes" || echo "EDITOR_EXEC=no"
     command -v "$PAGER" >/dev/null 2>&1 && echo "PAGER_EXEC=yes" || echo "PAGER_EXEC=no"
     [[ -d $CFGDIR ]] && echo "CFGDIR_DIR=yes" || echo "CFGDIR_DIR=no"
@@ -78,13 +78,17 @@ test_behavior() {
     echo "UMASK=$(umask)"
     bind -V 2>/dev/null | grep -q "editing-mode is set to.*vi" && echo "VI=yes" || echo "VI=no"
 
-    # --- Git workflow ---
-    gss 2>&1 | head -1
-    echo "GSS_RC=$?"
+    # Git workflow
+    gss_out=$(gss 2>&1)
+    echo "GSS_RC=${PIPESTATUS[0]}"
     git config user.name >/dev/null 2>&1 && echo "GIT_NAME=yes" || echo "GIT_NAME=no"
     git config user.email >/dev/null 2>&1 && echo "GIT_EMAIL=yes" || echo "GIT_EMAIL=no"
 
-    # --- Prompt ---
+    # Reveal
+    gss_stderr=$({ gss 1>/dev/null; } 2>&1)
+    [[ $gss_stderr == *"git status"* ]] && echo "REVEAL=yes" || echo "REVEAL=no"
+
+    # Prompt (regression guard: _lp_load_color is IFS-sensitive)
     if declare -F _lp_load_color >/dev/null; then
       _lp_load_color >/dev/null 2>&1 && echo "LP_LOAD=ok" || echo "LP_LOAD=error"
     else
@@ -97,45 +101,81 @@ test_behavior() {
     [[ -n $dv ]] && echo "DV_PRESENT=yes" || echo "DV_PRESENT=no"
     [[ -n $lp && -n $dv && $lp -lt $dv ]] && echo "HOOK_ORDER=correct" || echo "HOOK_ORDER=wrong"
 
-    # --- Reveal ---
-    gss_stderr=$({ gss 1>/dev/null; } 2>&1)
-    [[ $gss_stderr == *"git status"* ]] && echo "REVEAL=yes" || echo "REVEAL=no"
-
-    # --- SSH agent ---
+    # SSH agent
     ssh-add -l >/dev/null 2>&1 && echo "AGENT=yes" || echo "AGENT=no"
-  ')
 
-  local rc=0
+    # Direnv activation
+    tmpdir=$(mktemp -d)
+    echo "export DIRENV_TEST_VAR=behavioral_test" > "$tmpdir/.envrc"
+    direnv allow "$tmpdir" >/dev/null 2>&1
+    pushd "$tmpdir" >/dev/null
+    eval "$(direnv export bash 2>/dev/null)"
+    [[ $DIRENV_TEST_VAR == behavioral_test ]] && echo "DIRENV_ACTIVATE=yes" || echo "DIRENV_ACTIVATE=no"
+    popd >/dev/null
+    rm -rf "$tmpdir"
+  ' > "$_runtime_facts_file"
+}
 
-  # Environment
-  [[ $got == *"EDITOR_EXEC=yes"* ]]  || { echo "error: EDITOR is not executable"; rc=1; }
-  [[ $got == *"PAGER_EXEC=yes"* ]]   || { echo "error: PAGER is not executable"; rc=1; }
-  [[ $got == *"CFGDIR_DIR=yes"* ]]   || { echo "error: CFGDIR directory does not exist"; rc=1; }
-  [[ $got == *"SECRETS_DIR=yes"* ]]   || { echo "error: SECRETS directory does not exist"; rc=1; }
-  [[ $got == *"PATH_LOCAL=yes"* ]]    || { echo "error: .local/bin not in PATH"; rc=1; }
-  [[ $got == *"UMASK=0022"* ]]        || { echo "error: umask not 0022"; rc=1; }
-  [[ $got == *"VI=yes"* ]]            || { echo "error: vi mode not active"; rc=1; }
+test_shell_environment() {
+  _collect_runtime_facts
+  local got rc=0
+  got=$(< "$_runtime_facts_file")
 
-  # Git workflow
-  [[ $got == *"GSS_RC=0"* ]]          || { echo "error: gss (git status -s) failed"; rc=1; }
-  [[ $got == *"GIT_NAME=yes"* ]]      || { echo "error: git user.name not configured"; rc=1; }
-  [[ $got == *"GIT_EMAIL=yes"* ]]     || { echo "error: git user.email not configured"; rc=1; }
-
-  # Prompt
-  [[ $got == *"LP_LOAD=ok"* ]]        || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
-  [[ $got == *"LP_PRESENT=yes"* ]]    || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
-  [[ $got == *"DV_PRESENT=yes"* ]]    || { echo "error: direnv not in PROMPT_COMMAND"; rc=1; }
-  [[ $got == *"HOOK_ORDER=correct"* ]]|| { echo "error: liquidprompt must appear before direnv"; rc=1; }
-
-  # Reveal
-  [[ $got == *"REVEAL=yes"* ]]        || { echo "error: reveal did not show underlying command"; rc=1; }
-
-  # SSH agent
-  [[ $got == *"AGENT=yes"* ]]         || { echo "error: SSH agent not running or no keys loaded"; rc=1; }
-
+  [[ $got == *"EDITOR_EXEC=yes"* ]] || { echo "error: EDITOR is not executable"; rc=1; }
+  [[ $got == *"PAGER_EXEC=yes"* ]]  || { echo "error: PAGER is not executable"; rc=1; }
+  [[ $got == *"CFGDIR_DIR=yes"* ]]  || { echo "error: CFGDIR directory does not exist"; rc=1; }
+  [[ $got == *"SECRETS_DIR=yes"* ]]  || { echo "error: SECRETS directory does not exist"; rc=1; }
+  [[ $got == *"PATH_LOCAL=yes"* ]]   || { echo "error: .local/bin not in PATH"; rc=1; }
+  [[ $got == *"UMASK=0022"* ]]       || { echo "error: umask not 0022"; rc=1; }
+  [[ $got == *"VI=yes"* ]]           || { echo "error: vi mode not active"; rc=1; }
   return $rc
 }
 
+test_git_workflow() {
+  _collect_runtime_facts
+  local got rc=0
+  got=$(< "$_runtime_facts_file")
+
+  [[ $got == *"GSS_RC=0"* ]]     || { echo "error: gss (git status -s) failed"; rc=1; }
+  [[ $got == *"GIT_NAME=yes"* ]] || { echo "error: git user.name not configured"; rc=1; }
+  [[ $got == *"GIT_EMAIL=yes"* ]]|| { echo "error: git user.email not configured"; rc=1; }
+  [[ $got == *"REVEAL=yes"* ]]   || { echo "error: reveal did not show underlying command"; rc=1; }
+  return $rc
+}
+
+# Regression guards for known integration issues.
+# _lp_load_color and hook ordering are internal, but they guard
+# against the IFS/sourcing-order class of bugs that behavioral
+# tests alone cannot catch in a non-TTY environment.
+test_prompt_integration() {
+  _collect_runtime_facts
+  local got rc=0
+  got=$(< "$_runtime_facts_file")
+
+  [[ $got == *"LP_LOAD=ok"* ]]         || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
+  [[ $got == *"LP_PRESENT=yes"* ]]     || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
+  [[ $got == *"DV_PRESENT=yes"* ]]     || { echo "error: direnv not in PROMPT_COMMAND"; rc=1; }
+  [[ $got == *"HOOK_ORDER=correct"* ]] || { echo "error: liquidprompt must appear before direnv"; rc=1; }
+  return $rc
+}
+
+test_ssh_agent() {
+  _collect_runtime_facts
+  local got
+  got=$(< "$_runtime_facts_file")
+
+  [[ $got == *"AGENT=yes"* ]] || { echo "error: SSH agent not running or no keys loaded"; return 1; }
+}
+
+test_direnv_activation() {
+  _collect_runtime_facts
+  local got
+  got=$(< "$_runtime_facts_file")
+
+  [[ $got == *"DIRENV_ACTIVATE=yes"* ]] || { echo "error: direnv did not activate .envrc"; return 1; }
+}
+
+# Reload needs its own shell (re-sources init.bash).
 test_reload() {
   local got
   got=$(_run_login_shell '
