@@ -15,11 +15,15 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 
 ## What this repo owns
 
-- `home.nix` — package list, session variables
+- `shared.nix` — cross-platform packages, programs, session variables; imported everywhere
+- `contexts/linux-base.nix` — Linux+Crostini shared layer: notify-send wrapper, vpn-connect, gpoc, calendar/khal-notify, dotfile symlinks
+- `contexts/<platform>/home.nix` — platform-specific packages and overrides
 - Bash — custom app-based init system
-- Git — identity, aliases, global ignore
-- Tmux, SSH, Ranger, Liquidprompt — platform-aware via `contexts/`
+- Git — identity, aliases, global ignore (now home-manager-managed via `home.file`)
+- Tmux, SSH, Ranger, Liquidprompt — platform-aware via `contexts/`, deployed via home-manager
 - Claude Code — settings managed via `home.file`
+- VPN access — gpoc Rust rewrite, vpn-slice, plus crostini-only browser proxy stack
+- Phone notifications — `notify-send` wrapper bridging to ntfy.sh
 - Neovim — separate `dot_vim` repo
 
 ## Structure
@@ -27,19 +31,26 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 ```
 shared.nix                      # Shared packages, programs, config (imported by all contexts)
 home.nix                        # Symlink to active context's home.nix
+flake.nix, flake.lock           # Dev-shell flake (mk, kcov, scc, jq, editor)
+update-env                      # Idempotent deployment script (installs nix, bootstraps shell)
 claude/                         # Claude Code config: settings.json + CLAUDE.md (managed by home.file)
 bash/
   init.bash                     # Entry point → .bashrc, .bash_profile, .profile
   apps/                         # Per-app modules (env, init, cmds, deps)
   settings/                     # Base, login, interactive, env, cmds
   lib/                          # Init system internals
-contexts/                       # Platform overrides (crostini, linux, macos)
+contexts/
+  linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, vpn-connect, gpoc, dotfile symlinks
+  linux/home.nix                # NixOS-specific (imports linux-base.nix)
+  crostini/home.nix             # Crostini-specific (imports linux-base.nix); also tinyproxy + PAC for UC-8
+  macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git
 tmux.conf                       # Context-dependent symlink
 ssh/                            # Client config
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
-scripts/                        # Setup utilities
+scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify)
+docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 ```
 
 ## Component Design
@@ -50,14 +61,16 @@ scripts/                        # Setup utilities
 
 0. Git repo updates (conditional, subsequent runs)
 1. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
-2. Clone this repo, symlink dotfiles
+2. Clone this repo, install **bootstrap-only** symlinks (`.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `~/dotfiles/context` → active context). The rest of the dotfile symlinks (gitconfig, tmux.conf, ssh, ranger, liquidprompt, etc.) are managed declaratively by home-manager via `linux-base.nix` once nix and HM are installed.
 3. Install Nix + home-manager (crostini/debian/linux/macos only — skipped on NixOS, system-managed there)
 4. Platform-specific setup (crostini only)
 5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht)
-6. VPN script, Neovim plugins, file manager config
+6. Neovim plugins
 7. SSH key generation (crostini/linux only)
 
 Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debian → linux.
+
+**Why split symlinks between update-env and home-manager:** bootstrap symlinks (`.bash*`, nixpkgs config, home-manager config) must exist before nix runs, so they can't be HM-managed. Everything else benefits from HM's atomic generations and rollback. The migration uses `home.file."<target>".source = config.lib.file.mkOutOfStoreSymlink "...";` to preserve edit-in-place semantics — symlinks point at the live source files in `~/dotfiles/`, not into the nix store, so editing the source is immediately visible without `home-manager switch`.
 
 **Private repos** (e.g., jeeves) are cloned manually, not by update-env:
 ```bash
@@ -172,9 +185,16 @@ A tool may need several of these. For example, direnv uses nix for the package (
 
 ### Contexts — cross-cutting
 
-`contexts/` holds platform overrides. A `context` symlink at repo root points to the active platform.
+`contexts/` holds platform overrides plus a shared Linux+Crostini intermediate layer. A `context` symlink at repo root points to the active platform.
 
-Each context can override `home.nix`, `gitconfig`, `tmux.conf`, and other configs. Top-level files like `gitconfig` and `home.nix` are symlinks to their context version.
+Each platform context can override `home.nix`, `gitconfig`, `tmux.conf`, and other configs. Top-level files like `gitconfig` and `home.nix` are symlinks to their context version.
+
+The home-manager import chain:
+- `contexts/macos/home.nix` → `shared.nix`
+- `contexts/linux/home.nix` → `linux-base.nix` → `shared.nix`
+- `contexts/crostini/home.nix` → `linux-base.nix` → `shared.nix`
+
+`linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), gpoc/vpn-connect (depends on systemd, openconnect, the URL scheme handler stack), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `linux/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
 
 Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config like `btop.conf`. This keeps platform config shared while allowing per-machine overrides. `update-env` conditionally links optional files like `btop.conf` only when the active context provides them.
 
@@ -190,9 +210,11 @@ Declared in `home.nix`. See the file for the current list. By category:
 
 **Apps (UC-2):** Firefox (via `programs.firefox`), Obsidian, signal-desktop
 
-**VPN (UC-1):** openconnect, gp-saml-gui, vpn-slice
+**VPN (UC-7):** gpoc (yuezk Rust rewrite, via upstream flake), vpn-slice. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
 
-**Calendar (UC-1):** khal, vdirsyncer (linux and crostini — systemd integration)
+**Notifications (UC-9):** notify-send wrapper that bridges desktop notifications to ntfy.sh phone push. Drops in transparently as `notify-send` for any caller.
+
+**Calendar (UC-1):** khal, vdirsyncer (linux and crostini — systemd integration via `linux-base.nix`)
 
 **File management (UC-3):** ranger
 
@@ -219,30 +241,75 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 - Uses policies instead of per-profile config — policies apply to all profiles regardless of profile path, which varies per machine
 - Works on both NixOS (home-manager as NixOS module) and Debian/Crostini (standalone home-manager) — policies are baked into the wrapped Firefox package at build time
 
-### VPN — UC-1
+### VPN — UC-7
 
-GlobalProtect VPN with Okta SAML SSO. Two packages:
-- `openconnect` — CLI VPN client with `--protocol=gp` for GlobalProtect
-- `gp-saml-gui` — opens browser for Okta login, extracts auth cookie for openconnect
+GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). The Nix package comes from yuezk's upstream flake (`builtins.getFlake "github:yuezk/GlobalProtect-openconnect"`); nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine and was never made to work on Crostini.
 
-Usage: `vpn-connect` (symlinked from `dotfiles/scripts/vpn-connect` to `~/.local/bin/`)
+Components:
+- `gpauth` — performs SAML auth via the user's default browser, captures the cookie
+- `gpclient connect` — drives openconnect (linked in via FFI) to bring up the GP tunnel
+- `vpn-slice` — passed as `--script` to gpclient/openconnect for split-horizon DNS
 
-The script:
-1. Opens gp-saml-gui WebKit window for Okta SAML login
-2. Extracts auth cookie
-3. Connects via openconnect with vpn-slice for split-tunnel routing
+Entry point: `vpn-connect` — a Nix-managed wrapper script defined in `contexts/linux-base.nix` via `mkScriptBin`. The derivation substitutes `@vpn-slice@` and `@gpclient@` with absolute store paths because those binaries are invoked under `sudo`, which strips PATH. `gpoc` is also added to the wrapper's runtime PATH for the unsudo'd `gpauth` invocation.
 
-Split tunnel routes `stash.digi.com`, `dm1.idigi.com`, and `dm1.devdevicecloud.com` through VPN. All other traffic stays on normal internet. `dm1.devdevicecloud.com` resolves to public AWS IPs — vpn-slice routes them via the VPN gateway's whitelisted IP.
+The script reconnects in a loop on disconnect; Ctrl-C exits cleanly.
 
-The `-s` argument uses the full nix profile path (`/etc/profiles/per-user/ted/bin/vpn-slice`) because openconnect runs as root via sudo, and root's PATH doesn't include ted's profile. Without the full path, root finds the system vpn-slice (without dnspython) and `/etc/hosts` entries don't get written.
+#### SAML callback flow
+
+The callback path is non-obvious and the source of past failures. Full step-by-step description lives in [docs/vpn.md](vpn.md). Summary:
+
+1. `gpauth` opens a one-shot HTTP server to serve the SAML form HTML
+2. `gpauth` opens a separate raw TCP listener on another port and writes that port to `/tmp/gpcallback.port`
+3. Browser does SAML, the IdP returns a `globalprotectcallback://<base64>` URL
+4. The OS dispatches that URL scheme to `gpclient launch-gui %u` via the registered `.desktop` handler
+5. `gpclient launch-gui` reads the port file, opens a TCP socket to localhost, writes the auth data
+6. `gpauth` accepts, reads the cookie, prints to stdout (piped to `gpclient connect --cookie-on-stdin`)
+
+The URL scheme handler is registered via home-manager's `xdg.desktopEntries.gpgui` plus `xdg.mimeApps`, both in `contexts/linux-base.nix`.
+
+#### Crostini garcon discovery gotcha
+
+home-manager's `xdg.desktopEntries` installs to `~/.nix-profile/share/applications/`. **Garcon (the ChromeOS↔container bridge) only scans `~/.local/share/applications/`** for desktop files when propagating MIME registrations to the host, not arbitrary `XDG_DATA_DIRS` entries. Without an extra symlink into the standard XDG dir, host ChromeOS Chrome never learns about the `globalprotectcallback://` handler, the SAML callback URL is silently dropped, and `gpauth` hangs forever on `accept()`.
+
+The fix: a `home.file.".local/share/applications/gpgui.desktop".source` symlink (via `mkOutOfStoreSymlink`) into `~/.nix-profile/share/applications/gpgui.desktop`, defined in `linux-base.nix`. This is harmless on non-Crostini Linux desktops where `~/.nix-profile/share/applications/` is already in `XDG_DATA_DIRS`.
+
+Split-tunnel hosts: see the `vpn-slice` argument in `scripts/vpn-connect`. These are mirrored in `contexts/crostini/home.nix`'s PAC file for UC-8.
 
 Notes:
-- Portal mode, not gateway (server returns portal-style cookie)
-- `--authgroup="US East"` pre-selects gateway, avoids interactive prompt that conflicts with stdin pipe
-- Uses built-in WebKit window (not `--external`, which doesn't render properly in Firefox)
-- `vpn-slice` replaces vpnc-script — only specified hosts route through VPN
-- NixOS requires `environment.etc.hosts.mode = "0644"` for vpn-slice to write `/etc/hosts`
-- Passwordless sudo for openconnect via NixOS sudoers rule
+- `--gateway "US East"` pre-selects the gateway, avoids interactive prompt
+- `--browser xdg-open` so the browser choice respects ChromeOS's Sommelier routing on Crostini and `xdg-mime` defaults elsewhere
+- yuezk's flake is unpinned; v2.4.4 tag fails to build, main works. Pin to a specific commit when upstream stabilizes
+
+### Browser VPN access — UC-8
+
+ChromeOS host Chrome lives outside the Crostini container and cannot reach `tun0` directly. To let Ted click VPN-only URLs from host Chrome (instead of falling back to terminal tools or in-container Firefox), `contexts/crostini/home.nix` declares two systemd user services and a PAC file:
+
+- **`tinyproxy`** (forward HTTP proxy) listens on the container's `127.0.0.1:8118`. Garcon's container→host localhost forwarding makes that port reachable from ChromeOS Chrome. tinyproxy itself has no special VPN knowledge — it just forwards requests, which traverse the container's tun0 because that's the container's network namespace.
+- **`darkhttpd`** (single-binary static file server) serves a PAC file from `~/.local/share/proxy-pac/proxy.pac` on `127.0.0.1:8120`. Used as a "PAC URL" host so Chrome can fetch the script.
+- **`proxy.pac`** is generated by `pkgs.writeText` from a host list inside `contexts/crostini/home.nix`. Hosts matching the list (or any subdomain of them) return `PROXY 127.0.0.1:8118`; everything else returns `DIRECT`.
+
+Ted manually points ChromeOS Network → Proxy → Automatic configuration at `http://127.0.0.1:8120/proxy.pac`. After that, Chrome consults the PAC per-request:
+- Non-VPN URL → `DIRECT` → Chrome connects without involving the container, no overhead
+- VPN URL → `PROXY 127.0.0.1:8118` → Chrome sends to tinyproxy → tinyproxy forwards via tun0
+
+This is **crostini-specific** because no other host needs it: regular Linux/NixOS desktops route VPN traffic locally and reach VPN hosts directly. Lives in `contexts/crostini/home.nix` (not `linux-base.nix`) so other Linux machines don't pick up the config.
+
+The PAC host list must be kept in sync with `vpn-connect`'s `vpn-slice` host list. Currently maintained manually in two places. A future improvement could read both from a single source-of-truth file.
+
+### Phone notification bridge — UC-9
+
+`scripts/notify-send` is a wrapper script that:
+1. Forwards all arguments to the real libnotify `notify-send` (synchronously) for the local desktop popup
+2. Parses `--urgency`, the trailing positional summary, and the optional body
+3. If `~/secrets/ntfy-topic` exists and is readable, POSTs the notification to `https://ntfy.sh/<topic>` in a backgrounded subshell with `disown` so the calling tool doesn't block on the network
+
+The wrapper is built via `mkScriptBin` in `linux-base.nix`. The `@notify-send@` placeholder is substituted at build time with the absolute store path to libnotify's `notify-send`, so the wrapper does not recurse into itself when invoked through PATH. `curl` and `coreutils` are added to the wrapper's runtime PATH.
+
+Critical-urgency notifications get `Priority: high` on ntfy (loud notification on the phone); others get `Priority: default`. All messages get `Tags: bell` for the icon.
+
+Tools that already call `notify-send` get phone push for free with no source changes — `khal-notify` is the current consumer; future tools just call `notify-send` and inherit the bridge.
+
+The wrapper shadows libnotify's `notify-send` because it's installed via a derivation named `notify-send` whose `bin/notify-send` ends up in the user's nix profile alongside libnotify's. Nix profile coalescing prefers the wrapper because it's installed via `home.packages` in `linux-base.nix` while libnotify is only present as a transitive dep of the wrapper itself (not directly in `home.packages`).
 
 ### direnv — UC-1
 
@@ -266,9 +333,9 @@ Work calendar synced from OWA via published ICS URL. Three components:
 
 **khal** reads the local calendar and expands recurring events, handling rescheduled instances (`RECURRENCE-ID`), cancellations (`EXDATE`), and timezone conversion. CLI: `khal list today`.
 
-**khal-notify** (`scripts/khal-notify`) runs every minute via systemd timer, checks for events starting in 60, 30, 10, 5, or 1 minutes and sends desktop notifications via `notify-send` (displayed by mako on Sway, or via ChromeOS notifications on Crostini). The 5-minute and 1-minute notifications use critical urgency. A statefile (`~/.local/state/khal-notify/sent`) prevents duplicate notifications, cleaned daily.
+**khal-notify** (`scripts/khal-notify`) runs every minute via systemd timer, checks for events starting in 60, 30, 10, 5, or 1 minutes and sends desktop notifications via `notify-send`. Phone push happens transparently because the `notify-send` binary on PATH is the wrapper from UC-9 — khal-notify itself has no ntfy code. The 5-minute and 1-minute notifications use critical urgency. A statefile (`~/.local/state/khal-notify/sent`) prevents duplicate notifications, cleaned daily.
 
-Config lives in both `contexts/linux/home.nix` and `contexts/crostini/home.nix` using home-manager's `accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, and `services.vdirsyncer` modules plus custom systemd units for khal-notify. On NixOS, the khal-notify ExecStart uses the `${dotfiles}` flake input path; on Crostini (standalone home-manager), it uses `${config.home.homeDirectory}/dotfiles/scripts/khal-notify`.
+Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `services.vdirsyncer`) plus the custom khal-notify systemd unit live in `contexts/linux-base.nix`, imported by both `contexts/linux/home.nix` and `contexts/crostini/home.nix`. The khal-notify ExecStart uses `${config.home.homeDirectory}/dotfiles/scripts/khal-notify`, which works identically on both standalone home-manager (Crostini) and the NixOS home-manager module (linux). The systemd unit's `DBUS_SESSION_BUS_ADDRESS` uses systemd's `%U` specifier for the user UID instead of hardcoding `1000`.
 
 ### Relationship to nixos-config
 

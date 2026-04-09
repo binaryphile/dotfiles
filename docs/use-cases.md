@@ -43,13 +43,13 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   6. Ted builds and tests
   7. Ted commits and pushes
 - **Extensions:**
-  - 1a. VPN not connected → authenticate and connect (UC-5)
+  - 1a. VPN not connected → connect via UC-7
   - 1b. VPN tools not installed → add to home.nix (UC-5)
   - 3a. Git not available → add to home.nix (UC-5)
   - 4a. Editor not installed → add to home.nix (UC-5)
   - 4a. No .envrc → project doesn't use direnv; manual `nix develop` or system tools
   - 6a. Toolchain missing → add a dev environment to that project
-  - 6a. Can't reach work git server → check VPN connection
+  - 6a. Can't reach work git server → check VPN connection (UC-7)
   - 6b. Hostname won't resolve → use dig to diagnose DNS
   - 6c. Need to create PR or manage repo → use gh CLI
 - **Postconditions:**
@@ -82,7 +82,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** All expected apps declaratively installed and working
   - **Failure:** App needs manual install or has unresolved issues
-- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, signal-desktop, btop, highlight, wl-clipboard, cliphist, libnotify, asciinema
+- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, signal-desktop, btop, highlight, wl-clipboard, cliphist, asciinema. notify-send is wrapped to also push to ntfy.sh (UC-9).
 
 ---
 
@@ -199,13 +199,104 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 
 ---
 
+### UC-7: Connect to Corporate VPN
+
+- **Actor:** Ted
+- **Goal:** Reach work resources (git, build artifacts, internal services) from any host
+- **Scope:** Linux + Crostini hosts
+- **Level:** User goal
+- **Trigger:** Ted needs to access a host that lives behind the corporate VPN
+- **Preconditions:** Network connected; VPN credentials valid; SAML SSO active in the default browser
+- **Stakeholders:**
+  - Ted — wants tunnel up with a single command, no manual cookie copying
+  - UC-1 — depends on this for any task that touches a corporate repo or service
+  - UC-8 — depends on this; VPN must be up before host-browser proxy access works
+- **Main Success Scenario:**
+  1. Ted runs `vpn-connect` in a terminal
+  2. The default browser opens a SAML auth page
+  3. Browser auto-completes (Ted is already signed in via SSO)
+  4. Tunnel comes up; reconnect-loop keeps it alive until Ctrl-C
+  5. Ted reaches `stash.digi.com`, `gitlab.drm.ninja`, etc. via in-container shells
+- **Extensions:**
+  - 1a. `vpn-connect` not on PATH → re-run `home-manager switch`; `vpn-connect` is a Nix-managed wrapper
+  - 2a. Browser doesn't open → check `xdg-open` and the registered URL scheme handler (see [docs/vpn.md](vpn.md))
+  - 3a. SAML times out or fails → re-authenticate to the IdP, re-run
+  - 4a. Pipeline exits silently after browser shows "authenticated" → URL scheme handler isn't dispatching back to the in-container helper; on Crostini, verify the `gpgui.desktop` symlink in `~/.local/share/applications/` exists (see [docs/vpn.md](vpn.md))
+  - 4b. Reconnect loop hammers a dead gateway → Ctrl-C, diagnose
+- **Postconditions:**
+  - **Success:** `tun0` interface up, split-tunnel routes installed for the configured hosts only, normal traffic stays on LAN
+  - **Failure:** No tunnel; previous network state intact
+- **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite — `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel — wrapped by `scripts/vpn-connect`. Split-horizon DNS via `vpn-slice`. See [design.md § VPN](design.md#vpn--uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
+
+---
+
+### UC-8: Access VPN Resources from Host Browser
+
+- **Actor:** Ted
+- **Goal:** Open VPN-only URLs (stash, gitlab, internal Jira, etc.) in ChromeOS host Chrome, not just in-container browsers
+- **Scope:** Crostini host
+- **Level:** User goal
+- **Trigger:** Ted clicks a `stash.digi.com` link from an email, chat, or another browser tab
+- **Preconditions:** UC-7 satisfied — VPN tunnel up in the container; ChromeOS Chrome configured with the PAC URL
+- **Stakeholders:**
+  - Ted — wants seamless link clicking from host Chrome without copying URLs into a separate browser
+  - Normal browsing — must NOT pay any container-hop cost; only VPN-bound hosts traverse the proxy
+- **Main Success Scenario:**
+  1. Ted clicks a corporate URL in host Chrome
+  2. Chrome consults the PAC file; matches a VPN host; routes through the in-container proxy
+  3. The in-container proxy forwards via tun0 over the VPN
+  4. Page loads in host Chrome
+- **Extensions:**
+  - 1a. Host Chrome PAC not configured → set ChromeOS Network → Proxy → Automatic configuration to `http://127.0.0.1:8120/proxy.pac`
+  - 2a. Host doesn't match → URL is not in the VPN host list → Chrome connects directly (correct, expected)
+  - 2b. Host should match but PAC list is stale → edit `contexts/crostini/home.nix` to add the host, re-activate
+  - 3a. Proxy unreachable → check `systemctl --user status tinyproxy proxy-pac-server`
+  - 3b. VPN tunnel down → see UC-7
+- **Postconditions:**
+  - **Success:** VPN-bound URLs work in host Chrome with no per-click setup; non-VPN URLs are unaffected
+  - **Failure:** Host Chrome cannot reach VPN URLs; Ted falls back to in-container Firefox or terminal tools
+- **Technology:** `tinyproxy` (forward HTTP proxy in container), `darkhttpd` (serves the PAC file over HTTP), Chrome's PAC mechanism. Crostini-specific. See [design.md § Browser VPN access](design.md#browser-vpn-access--uc-8).
+
+---
+
+### UC-9: Phone Notifications from Desktop Tools
+
+- **Actor:** Ted
+- **Goal:** Get push notifications on the phone when desktop tools fire local notifications, without each tool needing to know about the phone
+- **Scope:** Linux + Crostini hosts
+- **Level:** User goal
+- **Trigger:** A desktop tool calls `notify-send` (e.g., calendar reminder, build complete, alert)
+- **Preconditions:** ntfy app installed on phone; phone subscribed to a private topic; topic name in `~/secrets/ntfy-topic`
+- **Stakeholders:**
+  - Ted — wants reliable phone reminders for time-sensitive events even when away from the laptop
+  - Calendar reminders (UC-1's khal-notify integration) — depends on this for phone delivery
+  - Future tools — get phone push for free without modification
+- **Main Success Scenario:**
+  1. A desktop tool fires a `notify-send` call
+  2. The local desktop notification appears immediately
+  3. A push notification appears on Ted's phone within a few seconds
+- **Extensions:**
+  - 1a. Tool doesn't use `notify-send` → wrap it or have it call notify-send too
+  - 2a. Local notification doesn't appear → notification daemon issue, unrelated to phone push
+  - 3a. Phone push doesn't arrive → check `~/secrets/ntfy-topic` exists and is readable; check phone is subscribed to the matching topic; check ntfy.sh is reachable
+  - 3b. Network slow → push is fire-and-forget in the background; local notification is unaffected
+- **Postconditions:**
+  - **Success:** Both local popup and phone push, with no blocking on the network call
+  - **Failure:** Local popup still works; phone push silently dropped
+- **Technology:** ntfy.sh (third-party push service); a `notify-send` wrapper script (`scripts/notify-send`) installed via Nix that shadows libnotify's `notify-send` and tees the notification to `https://ntfy.sh/<topic>`. See [design.md § Phone notification bridge](design.md#phone-notification-bridge--uc-9).
+
+---
+
 ## Status
 
 | Use Case | Status | Notes |
 |----------|--------|-------|
-| UC-1 Software Development | Working | VPN via gp-saml-gui + openconnect, calendar via khal + vdirsyncer |
+| UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
 | UC-4 Environment Deployment | Working | NixOS, Crostini, Debian, macOS platform detection |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
+| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite via upstream flake; SAML callback validated end-to-end on Crostini |
+| UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
+| UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
