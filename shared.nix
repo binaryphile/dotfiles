@@ -1,5 +1,20 @@
 { config, pkgs, ... }:
 
+let
+  vpn-connect = pkgs.stdenv.mkDerivation {
+    name = "vpn-connect";
+    src = ./scripts/vpn-connect;
+    dontUnpack = true;
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    installPhase = ''
+      install -Dm755 $src $out/bin/vpn-connect
+      substituteInPlace $out/bin/vpn-connect \
+        --replace-fail '/etc/profiles/per-user/ted/bin/vpn-slice' '${pkgs.vpn-slice}/bin/vpn-slice'
+      wrapProgram $out/bin/vpn-connect \
+        --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.gp-saml-gui pkgs.openconnect ]}
+    '';
+  };
+in
 {
   home.packages = with pkgs; [
     claude-code
@@ -27,9 +42,8 @@
     stgit
     tmux
     tree
-    vpn-slice
     zip
-  ];
+  ] ++ [ vpn-connect ];
 
   home.sessionVariables = {
     EDITOR = "nvim";

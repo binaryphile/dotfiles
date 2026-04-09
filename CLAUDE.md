@@ -21,7 +21,7 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 - `bash/settings/` — base, login, interactive, env, cmds.
 - `claude/` — Claude Code config (`settings.json`, `CLAUDE.md`), deployed via `home.file`.
 - `scripts/` — vpn-connect, khal-notify, and other utilities.
-- `update-env` — idempotent deployment script (lives in `~/projects/task.bash/`, deployed to `~/.local/bin/`).
+- `update-env` — idempotent deployment script (lives in repo root, deployed to `~/.local/bin/`).
 
 ## Making changes
 

@@ -36,3 +36,17 @@ current project. Tasks are managed via event streams — use `evtctl task`,
 Use `mcp__era__publish` to log events to named streams. Use `mcp__era__read`
 and `mcp__era__query` to read events. Use `mcp__era__subscribe` to wait for
 new events.
+
+# Guides & Reference
+
+Primary: `~/projects/jeeves/guides/`
+Secondary: `~/projects/urma-obsidian/guides/`
+
+When you need official docs, product guides, or book references, check these
+folders first. Read the relevant guide before speculating or searching the web.
+
+# Secrets
+
+Never offer to read, display, copy, or otherwise handle secrets (files,
+credentials, tokens, URLs from ~/secrets/, etc.) for the user. If a workflow
+involves a secret value, tell the user what they need to do with it themselves.

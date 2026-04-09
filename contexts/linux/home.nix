@@ -6,7 +6,6 @@
   home.packages = with pkgs; [
     bottom
     dig
-    gp-saml-gui
     # not available on mac
     cliphist
     libnotify

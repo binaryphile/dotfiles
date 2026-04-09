@@ -46,7 +46,7 @@ scripts/                        # Setup utilities
 
 ### Deployment — UC-4
 
-`update-env` takes a bare machine to fully configured. Lives in `~/projects/task.bash/update-env`, deployed to `~/.local/bin/`. Eight phases:
+`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Eight phases:
 
 0. Git repo updates (conditional, subsequent runs)
 1. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
