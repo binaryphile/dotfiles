@@ -7,10 +7,6 @@
     bottom
     dig
     gp-saml-gui
-    nodePackages.prettier
-    openconnect
-    vpn-slice
-
     # not available on mac
     cliphist
     libnotify

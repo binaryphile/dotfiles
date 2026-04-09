@@ -34,6 +34,18 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 - **Calendar config** lives in both `contexts/linux/home.nix` and `contexts/crostini/home.nix`. Changes should be synced between them.
 - **NixOS note:** `~/nixos-config/flake.nix` imports `contexts/linux/home.nix` via a local path flake input pointing to `~/dotfiles`. Changes take effect on `sudo nixos-rebuild switch` without pushing first. System-level config belongs in nixos-config, not here. **Important:** after changing dotfiles, run `nix flake update dotfiles` in `~/nixos-config` before `nixos-rebuild switch` — the flake lock caches a hash of the dotfiles directory and won't see changes until updated.
 
+## Development tools
+
+- **`flake.nix`** — dev shell with kcov, scc, jq, and editor. Enter with `nix develop`.
+- **`mk`** — project command runner (uses mk.bash). Subcommands:
+  - `mk test` — run tesht, create test badge
+  - `mk cover` — run kcov coverage (Linux only), create coverage badge
+  - `mk lines` — run scc source line count, create lines badge
+  - `mk badges` — run all three and create all badges
+- **Coverage** — kcov instruments bash and reports line coverage. `--include-path bash` scopes reporting to the `bash/` directory.
+- **SLOC** — scc counts source lines of code (the "Code" column in CSV output). `cmd.lines` targets `bash/` and `scripts/`.
+- **Cyclomatic complexity** — scc calculates this for bash (the "Complexity" column in CSV output). Available via `scc bash/ scripts/`.
+
 ## Docs
 
 - `docs/use-cases.md` — what this repo does and for whom.

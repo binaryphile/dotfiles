@@ -17,6 +17,7 @@
     ncdu
     neovim
     obsidian
+    openconnect
     pandoc
     ranger
     rsync
@@ -26,6 +27,7 @@
     stgit
     tmux
     tree
+    vpn-slice
     zip
   ];
 

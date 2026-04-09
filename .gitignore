@@ -1,3 +1,5 @@
 context
 vendor/
 scripts/playbooks/macos
+kcov/
+assets/
