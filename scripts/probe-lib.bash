@@ -12,6 +12,16 @@
 # variables, lowercase first letter for locals, uppercase first
 # letter for globals.
 
+# Injectable command globals. Each defaults to the real binary but can
+# be overridden by callers (notably tests) to substitute a mock. Code
+# below invokes them via `$Var ...` expansion so the override is
+# transparent. Not safe for parallel use — globals are process-wide.
+Timeout=${Timeout:-timeout}
+Ssh=${Ssh:-ssh}
+Curl=${Curl:-curl}
+Jq=${Jq:-jq}
+Ip=${Ip:-ip}
+
 if [[ -z ${State:-} ]]; then
   echo "probe-lib.bash: \$State is not set — caller must set it to a writable directory before sourcing this library" >&2
   return 1 2>/dev/null || exit 1
@@ -63,7 +73,7 @@ readState() {
 }
 
 # vpnUp returns true if the VPN tunnel interface exists.
-vpnUp() { ip link show tun0 >/dev/null 2>&1; }
+vpnUp() { $Ip link show tun0 >/dev/null 2>&1; }
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
 # unreliable because most vendor sites block it). Returns ok or fail.
@@ -74,7 +84,7 @@ vpnUp() { ip link show tun0 >/dev/null 2>&1; }
 pingHost() {
   local key=$1
   local host=$2
-  if timeout 3 bash -c "exec 3<>/dev/tcp/$host/443" 2>/dev/null; then
+  if $Timeout 3 bash -c "exec 3<>/dev/tcp/$host/443" 2>/dev/null; then
     echo ok
   else
     echo fail > "$State/${key}-ssh.tmp" \
@@ -89,7 +99,7 @@ pingHost() {
 sshHost() {
   local host=$1
   local err rc
-  err=$(ssh -T -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
+  err=$($Ssh -T -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
     "git@$host" 2>&1) && rc=$? || rc=$?
   if (( rc == 0 || rc == 1 )) || grep -q 'shell request failed' <<<"$err"; then
     echo ok
@@ -124,9 +134,9 @@ combine() {
 # 'Git via SSH' component (id: qmh4tj8h5kbn). Returns: on, partial, off.
 bitbucketApiProbe() {
   local result
-  result=$(curl -fs --connect-timeout 3 --max-time 5 \
+  result=$($Curl -fs --connect-timeout 3 --max-time 5 \
     https://bitbucket.status.atlassian.com/api/v2/components.json 2>/dev/null \
-    | jq -r '.components[] | select(.id == "qmh4tj8h5kbn") | .status' 2>/dev/null) || true
+    | $Jq -r '.components[] | select(.id == "qmh4tj8h5kbn") | .status' 2>/dev/null) || true
   case $result in
     operational)                          echo on      ;;
     degraded_performance|partial_outage)  echo partial ;;
@@ -138,14 +148,46 @@ bitbucketApiProbe() {
 # 7 is the "Codeberg SSH access" monitor. Returns: on, off.
 codebergApiProbe() {
   local result
-  result=$(curl -fs --connect-timeout 3 --max-time 5 \
+  result=$($Curl -fs --connect-timeout 3 --max-time 5 \
     https://status.codeberg.org/api/status-page/heartbeat/codeberg 2>/dev/null \
-    | jq -er '.heartbeatList."7"[-1].status' 2>/dev/null) || true
+    | $Jq -er '.heartbeatList."7"[-1].status' 2>/dev/null) || true
   case $result in
     1) echo on ;;
     *) echo off ;;
   esac
 }
+
+# Widget metadata. Single source of truth for host names, VPN gating,
+# and vendor API probe selection — both the dotfiles tmux panel and
+# the nixos-config waybar widget-status renderer read these. Adding a
+# new widget host means editing this file once instead of two.
+declare -A WidgetHost=(
+  [stash]=stash.digi.com
+  [dm1]=dm1.devdevicecloud.com
+  [gitlab]=gitlab.drm.ninja
+  [nexus]=nexus.digi.com
+  [bitbucket]=bitbucket.org
+  [codeberg]=codeberg.org
+  [teams]=teams.microsoft.com
+  [ntfy]=ntfy.sh
+)
+declare -A WidgetVpnGated=(
+  [stash]=yes
+  [dm1]=yes
+  [gitlab]=yes
+  [nexus]=yes
+)
+declare -A WidgetApiFn=(
+  [bitbucket]=bitbucketApiProbe
+  [codeberg]=codebergApiProbe
+)
+
+# widgetHost prints the configured host for a widget, or empty if
+# unknown. Helper so callers don't have to know about the array name.
+widgetHost() { printf '%s' "${WidgetHost[$1]:-}"; }
+
+# widgetVpnGated returns true if the widget requires the VPN tunnel.
+widgetVpnGated() { [[ ${WidgetVpnGated[$1]:-no} == yes ]]; }
 
 # probeReachability runs the ssh+ping (and optional api) probes for a
 # named widget at the standard cadences and prints the combined class.
@@ -167,6 +209,20 @@ probeReachability() {
     api=on
   fi
   combine "$ssh" "$ping" "$api"
+}
+
+# probeWidget is a thin wrapper that reads host + apiFn from the
+# widget metadata table and calls probeReachability. Most callers
+# should use this — it eliminates the need to repeat the host name
+# at each call site.
+probeWidget() {
+  local key=$1
+  local host=${WidgetHost[$key]:-}
+  if [[ -z $host ]]; then
+    echo "probeWidget: unknown widget '$key'" >&2
+    return 1
+  fi
+  probeReachability "$key" "$host" "${WidgetApiFn[$key]:-}"
 }
 
 # probePing runs only the TCP/443 ping probe at a configurable

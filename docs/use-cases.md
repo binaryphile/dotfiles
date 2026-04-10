@@ -317,7 +317,8 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
 - **Main Success Scenario:**
   1. Ted opens a tmux session
   2. The status bar is two rows tall; row 0 has the standard tmux window list and hostname; row 1 has the panel widgets, all right-aligned
-  3. Row 1 always shows: era, teams, bitbucket, codeberg, load, vpn — the widgets that are always meaningful
+  3. Row 1 always shows: vpn, teams, bitbucket, codeberg, era, load — the widgets that are always meaningful
+  3a. Widget order is the same as waybar on NixOS (left-to-right: infrastructure, VPN-gated hosts, public services, system monitors), minus widgets that have no Crostini equivalent
   4. Row 1 conditionally shows the VPN-gated widgets (dm1, stash, nexus, gitlab) only when `tun0` is up
   5. Row 1 conditionally shows cpu, mem, disk only when usage is at 90% or above
   6. Segments refresh every 5 seconds; expensive probes (curl, ssh) are cached for 30 seconds and refreshed asynchronously so the bar never stalls

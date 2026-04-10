@@ -613,6 +613,9 @@ platform() {
 ## fp
 
 # each applies its arguments as a command to each argument from stdin.
+# stream prints each argument on its own line.
+stream() { printf '%s\n' "$@"; }
+
 each() {
   local command=$1 arg
   while IFS='' read -r arg; do
@@ -651,7 +654,7 @@ Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURC
 if [[ -e "$Here"/task.bash ]]; then
   source "$Here"/task.bash
 else
-  Lib=$(curl -fsSL https://raw.githubusercontent.com/binaryphile/task.bash/develop/task.bash) || exit
+  Lib=$(curl -fsSL https://raw.githubusercontent.com/binaryphile/task.bash/main/task.bash) || exit
   eval "$Lib"
 fi
 unset -v Here Lib

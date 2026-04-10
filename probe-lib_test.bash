@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
 # Tests for scripts/probe-lib.bash. Covers combine() (the pure-
-# function heart of the widget state machine) and pingHost's
-# load-bearing side effect of invalidating the cached SSH success
-# on failure. sshHost, the vendor API probes, and probeReachability
-# are not tested here — they require real network access or a
-# heavier mocking layer.
+# function heart of the widget state machine), pingHost's load-bearing
+# side effect of invalidating the cached SSH success on failure, and
+# sshHost's interpretation of SSH exit codes. External commands
+# (timeout, ssh) are injected via probe-lib's global command variables.
 #
 # Style follows tesht's table-driven pattern. State must be set
 # before sourcing probe-lib because probe-lib enforces it. combine()
@@ -54,8 +53,21 @@ test_combine() {
 # upgrade a widget back to "on" the next time ping succeeded.
 #
 # These tests use a private $State per case (so file writes are
-# isolated) and mock `timeout` to deterministically simulate a
-# successful or failing TCP/443 probe without touching the network.
+# isolated) and inject a mock `$Timeout` command via the global to
+# deterministically simulate a successful or failing TCP/443 probe
+# without touching the network.
+
+mockTimeoutFail() { return 1; }
+mockTimeoutOk()   { return 0; }
+
+# sshHost mock helpers. Each simulates a different ssh exit scenario.
+# The mock receives all the args that $Ssh would (e.g. -T -o ... git@host)
+# but ignores them — the test controls behavior via which mock is injected.
+mockSshRc0()              { return 0; }
+mockSshRc1()              { echo "Hi there! You've successfully authenticated" >&2; return 1; }
+mockSshShellRequestFailed() { echo "shell request failed on channel 0" >&2; return 128; }
+mockSshTimeout()          { return 255; }
+
 test_pingHostInvalidatesSshOnFailure() {
   ## arrange
   local stateDir
@@ -65,8 +77,8 @@ test_pingHostInvalidatesSshOnFailure() {
   # Pre-seed the SSH cache as if a recent successful probe ran.
   echo ok > "$State/widgetT-ssh"
 
-  # Mock `timeout` to fail unconditionally → simulates ping failure.
-  timeout() { return 1; }
+  # Inject failing timeout → simulates ping failure.
+  local Timeout=mockTimeoutFail
 
   ## act
   local got
@@ -88,8 +100,8 @@ test_pingHostLeavesSshCacheOnSuccess() {
   # Pre-seed the SSH cache as if a recent successful probe ran.
   echo ok > "$State/widgetT-ssh"
 
-  # Mock `timeout` to succeed → simulates ping success.
-  timeout() { return 0; }
+  # Inject succeeding timeout → simulates ping success.
+  local Timeout=mockTimeoutOk
 
   ## act
   local got
@@ -100,4 +112,27 @@ test_pingHostLeavesSshCacheOnSuccess() {
     tesht.AssertGot "$got" "ok"
     tesht.AssertGot "$(cat "$State/widgetT-ssh")" "ok"
   END
+}
+
+# sshHost returns ok when SSH indicates the server is reachable (rc 0,
+# rc 1, or "shell request failed" — all mean the SSH layer responded)
+# and fail otherwise (e.g. connection timeout rc 255).
+test_sshHost() {
+  local -A case1=([name]='rc 0 → ok'                    [mock]=mockSshRc0              [want]=ok)
+  local -A case2=([name]='rc 1 → ok (git rejection)'    [mock]=mockSshRc1              [want]=ok)
+  local -A case3=([name]='shell request failed → ok'     [mock]=mockSshShellRequestFailed [want]=ok)
+  local -A case4=([name]='rc 255 (timeout) → fail'       [mock]=mockSshTimeout          [want]=fail)
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    local Ssh=$mock
+    local got
+    got=$(sshHost example.invalid)
+
+    tesht.AssertGot "$got" "$want"
+  }
+
+  tesht.Run "${!case@}"
 }

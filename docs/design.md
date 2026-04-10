@@ -319,9 +319,12 @@ The wrapper shadows libnotify's `notify-send` because it's installed via a deriv
 
 Crostini doesn't have waybar, so the tmux status bar substitutes for it. Implementation lives in three files:
 
-- **`scripts/probe-lib.bash`** — shared probe library, sourced by both this repo's panel script AND nixos-config's waybar widget renderer. Defines `isStale`, `refresh`, `readState`, `pingHost`, `sshHost`, `combine`, `vpnUp`, `bitbucketApiProbe`, `codebergApiProbe`, and `probeReachability`. Caller sets `$State` to its own cache directory before sourcing. The same code path runs on both platforms — drift in probe semantics is impossible at this layer.
+- **`scripts/probe-lib.bash`** — shared probe library, sourced by both this repo's panel script AND nixos-config's waybar widget renderer. Caller sets `$State` to its own cache directory before sourcing. The same code path runs on both platforms — drift in probe semantics is impossible at this layer. Defines:
+  - Probe functions: `isStale`, `refresh`, `readState`, `pingHost`, `sshHost`, `combine`, `vpnUp`, `bitbucketApiProbe`, `codebergApiProbe`, `probeReachability`, `probePing`.
+  - Widget metadata tables: `WidgetHost`, `WidgetVpnGated`, `WidgetApiFn` — single source of truth for host names, VPN gating, and API probe selection. Accessors `widgetHost`, `widgetVpnGated`, `probeWidget` let callers look up by widget key instead of repeating host strings.
+  - Injectable command globals: `Timeout`, `Ssh`, `Curl`, `Jq`, `Ip` — each defaults to the real binary (`${Var:-binary}`) but can be overridden before sourcing or via bash dynamic scope in tests. This is the only test seam; the library has no other test hooks.
 
-- **`scripts/panel`** — tmux status bar renderer. Sources `probe-lib.bash`, sets `$State=$XDG_RUNTIME_DIR/panel`, and exposes `panel <module>` (returns a tmux-formatted segment with `#[fg=...]` color codes), `panel click <module>` (mouse handler), and `panel poll` (synchronous warmup). Module functions are one-liners that delegate to `probeReachability` and format with `segment`.
+- **`scripts/panel`** — tmux status bar renderer. Sources `probe-lib.bash`, sets `$State=$XDG_RUNTIME_DIR/panel`, and exposes `panel <module>` (returns a tmux-formatted segment with `#[fg=...]` color codes), `panel click <module>` (mouse handler), and `panel poll` (synchronous warmup). Module functions are one-liners that delegate to `probeWidget` and format with `segment`.
 
 - **`contexts/crostini/tmux.conf`** — sources `contexts/linux/tmux.conf` for the base then sets `status 2` (two rows), defines `status-format[1]` as the panel widgets right-aligned, and binds `MouseDown1Status` to `panel click '#{mouse_status_range}'`.
 

@@ -88,7 +88,7 @@ thresholdSegment() {
 # probes via `wait`. Used by `panel poll` for initial warm-up.
 pollAll() {
   local m
-  for m in era vpn dm1 stash gitlab nexus codeberg bitbucket teams; do
+  for m in vpn dm1 stash gitlab nexus codeberg bitbucket teams ntfy era; do
     "${m}Module" > /dev/null
   done
   wait
@@ -129,13 +129,14 @@ vpnProbe() {
 eraModule() { refresh era 30 eraProbe; segment era "$(readState era)"; }
 vpnModule() { refresh vpn  5 vpnProbe; segment vpn "$(readState vpn)"; }
 
-dm1Module()       { vpnUp || return; segment dm1 "$(probeReachability dm1       dm1.devdevicecloud.com)"; }
-stashModule()     { vpnUp || return; segment sta "$(probeReachability stash     stash.digi.com)"; }
-gitlabModule()    { vpnUp || return; segment git "$(probeReachability gitlab    gitlab.drm.ninja)"; }
-nexusModule()     { vpnUp || return; segment nex "$(probeReachability nexus     nexus.digi.com)"; }
-codebergModule()  { segment cbg "$(probeReachability codeberg  codeberg.org  codebergApiProbe)"; }
-bitbucketModule() { segment bbk "$(probeReachability bitbucket bitbucket.org bitbucketApiProbe)"; }
-teamsModule()     { segment tms "$(probePing teams teams.microsoft.com 300)"; }
+dm1Module()       { vpnUp || return; segment dm1 "$(probeWidget dm1)"; }
+stashModule()     { vpnUp || return; segment sta "$(probeWidget stash)"; }
+gitlabModule()    { vpnUp || return; segment git "$(probeWidget gitlab)"; }
+nexusModule()     { vpnUp || return; segment nex "$(probeWidget nexus)"; }
+codebergModule()  { segment cbg "$(probeWidget codeberg)"; }
+bitbucketModule() { segment bbk "$(probeWidget bitbucket)"; }
+teamsModule()     { segment tms "$(probePing teams "$(widgetHost teams)" 300)"; }
+ntfyModule()      { segment nfy "$(probePing ntfy  "$(widgetHost ntfy)"  300)"; }
 
 # ssh: shows inbound SSH connection count, but ONLY when there are
 # any. Crostini doesn't run sshd by default so this is normally empty
@@ -249,6 +250,7 @@ clickModule() {
     codeberg)  xdg-open https://codeberg.org/ ;;
     bitbucket) xdg-open https://bitbucket.org/ ;;
     teams)     xdg-open https://teams.microsoft.com/ ;;
+    ntfy)      xdg-open https://ntfy.sh/ ;;
     ssh)       tmux display-popup -E -h 60% -w 80% 'ss -tn sport = :22; echo; read -n1 -p "press any key "' ;;
     load)      tmux display-popup -E -h 90% -w 90% btop ;;
     *)         tmux display-message "panel: unknown click target '${m}'" ;;
@@ -268,6 +270,7 @@ main() {
     codeberg)   codebergModule ;;
     bitbucket)  bitbucketModule ;;
     teams)      teamsModule ;;
+    ntfy)       ntfyModule ;;
     ssh)        sshModule ;;
     load)       loadModule ;;
     cpu)        cpuModule ;;
@@ -276,7 +279,7 @@ main() {
     poll)       pollAll ;;
     click)      clickModule "$@" ;;
     *)
-      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|codeberg|bitbucket|teams|ssh|load|cpu|mem|disk|poll|click <m>}" >&2
+      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|poll|click <m>}" >&2
       exit 1
       ;;
   esac

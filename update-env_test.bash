@@ -71,7 +71,7 @@ test_glob() {
     [wants]="(file1.txt)"
   )
 
-  local -A case3=(
+  local -A case4=(
     [name]='match multiple patterns'
 
     [args]='(*.txt *.log)'
@@ -87,9 +87,9 @@ test_glob() {
     ## arrange
 
     # temporary directory
-    local dir=$(tesht.MktempDir) || return 128  # fatal if can't make dir
-    trap "rm -rf $dir" EXIT                     # always clean up
-    cd $dir
+    local dir
+    tesht.MktempDir dir || return 128
+    cd "$dir"
 
     # create variables from the keys/values of the test map
     eval "$(tesht.Inherit $casename)"
