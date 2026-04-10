@@ -28,11 +28,11 @@
 set -uo pipefail
 
 State=${XDG_RUNTIME_DIR:-/tmp}/panel
-mkdir -p "$State"
 
 # Source the shared probe library. State/probes/refresh/etc. live here
 # so the same logic can be reused by waybar's widget-status script on
 # the NixOS side. Path is identical on both machines (~/dotfiles).
+# probe-lib creates $State if missing and fails fast if it can't.
 # shellcheck source=./probe-lib.bash
 source "$HOME/dotfiles/scripts/probe-lib.bash"
 

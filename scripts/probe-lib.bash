@@ -1,14 +1,27 @@
 # probe-lib.bash — shared probe logic for tmux panel and waybar
 # widget-status. Sourced by both rendering scripts.
 #
-# Caller must set $State to a writable directory before sourcing
+# Caller must set $State to a writable directory BEFORE sourcing
 # (e.g., $XDG_RUNTIME_DIR/panel for tmux, /tmp/waybar-health for
-# waybar). All cached state lives under $State.
+# waybar). All cached state lives under $State. The check below
+# fails fast with a clear error if the caller forgot — without it,
+# probes silently write to a literal "$State/..." path in the cwd.
 #
 # Naming follows the project bash style guide (see
 # ~/projects/task.bash/update-env header): camelCase functions and
 # variables, lowercase first letter for locals, uppercase first
 # letter for globals.
+
+if [[ -z ${State:-} ]]; then
+  echo "probe-lib.bash: \$State is not set — caller must set it to a writable directory before sourcing this library" >&2
+  return 1 2>/dev/null || exit 1
+fi
+if [[ ! -d $State ]]; then
+  mkdir -p "$State" || {
+    echo "probe-lib.bash: cannot create state directory '$State'" >&2
+    return 1 2>/dev/null || exit 1
+  }
+fi
 
 # isStale returns true if the state file is missing or older than
 # $ttl seconds. Used to gate background refreshes.
