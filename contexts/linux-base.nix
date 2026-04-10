@@ -177,7 +177,6 @@ in
     Unit.Description = "Calendar event reminder timer";
     Timer = {
       OnCalendar = "*:0/5";
-      Persistent = true;
     };
     Install.WantedBy = [ "timers.target" ];
   };
