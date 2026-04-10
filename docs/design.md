@@ -315,6 +315,43 @@ Tools that already call `notify-send` get phone push for free with no source cha
 
 The wrapper shadows libnotify's `notify-send` because it's installed via a derivation named `notify-send` whose `bin/notify-send` ends up in the user's nix profile alongside libnotify's. Nix profile coalescing prefers the wrapper because it's installed via `home.packages` in `linux-base.nix` while libnotify is only present as a transitive dep of the wrapper itself (not directly in `home.packages`).
 
+### Status widgets — UC-10
+
+Crostini doesn't have waybar, so the tmux status bar substitutes for it. Implementation lives in three files:
+
+- **`scripts/probe-lib.bash`** — shared probe library, sourced by both this repo's panel script AND nixos-config's waybar widget renderer. Defines `isStale`, `refresh`, `readState`, `pingHost`, `sshHost`, `combine`, `vpnUp`, `bitbucketApiProbe`, `codebergApiProbe`, and `probeReachability`. Caller sets `$State` to its own cache directory before sourcing. The same code path runs on both platforms — drift in probe semantics is impossible at this layer.
+
+- **`scripts/panel`** — tmux status bar renderer. Sources `probe-lib.bash`, sets `$State=$XDG_RUNTIME_DIR/panel`, and exposes `panel <module>` (returns a tmux-formatted segment with `#[fg=...]` color codes), `panel click <module>` (mouse handler), and `panel poll` (synchronous warmup). Module functions are one-liners that delegate to `probeReachability` and format with `segment`.
+
+- **`contexts/crostini/tmux.conf`** — sources `contexts/linux/tmux.conf` for the base then sets `status 2` (two rows), defines `status-format[1]` as the panel widgets right-aligned, and binds `MouseDown1Status` to `panel click '#{mouse_status_range}'`.
+
+**Probe cadences** (set in `probe-lib.bash`):
+- SSH probe (`sshHost`): every 600s. `ssh -T git@<host>`; rc 0/1 or "shell request failed" both count as ok.
+- TCP/443 ping (`pingHost`): every 30s. Uses `bash`'s `/dev/tcp/<host>/443` rather than ICMP because most vendor sites block ICMP.
+- Vendor status API (`bitbucketApiProbe`, `codebergApiProbe`): every 30s. Atlassian Statuspage component `qmh4tj8h5kbn` and Codeberg Uptime Kuma monitor 7 respectively.
+
+**State machine** (per `combine` in `probe-lib.bash`): the displayed class is the worst tier across (api, ssh, ping). `api=down` → `off`. `api=degraded` → `partial`. `ping=fail` → `off`, AND `pingHost` invalidates the cached SSH success on failure so the widget can return to `on` only via a fresh successful SSH probe — a partial recovery from a network blip lands in `partial`, not back in `on`. `ssh=ok ∧ ping=ok` → `on`. `ping=ok` (without confirmed ssh) → `partial`. Otherwise `unknown`.
+
+**VPN gating**: `dm1`, `stash`, `gitlab`, `nexus` modules return early (empty string) when `tun0` is missing — the segment vanishes from the bar entirely, since tmux's per-segment range tolerates empty content.
+
+**Color palette** mirrors nixos-config's `home/sway/waybar.css`: white = on, light gray (`colour250`) = partial, dark gray (`colour244`) = off, amber (`colour130`) = unknown, red (`colour160`) = critical (cpu/mem/disk only).
+
+**cpu/mem/disk thresholding**: hidden below 90% (segment is empty), label + percentage in red at 90%+. Implemented via `thresholdSegment`. Uses `df`, `/proc/meminfo`, and a delta against `/proc/stat` cached in `$State/cpu-stat`.
+
+**Load sparkline**: 3-bar widget rendered left-to-right as 1m/5m/15m (matching `uptime`/`top` convention). Normalization formula:
+
+```
+idx = 1 + floor(load * 5 / (2 * nproc))
+```
+
+capped at 8. Bar 6 = 2 × nproc (the "2 processes waiting per CPU, time to be concerned" line). Bars 7–8 give headroom past that — bar 8 saturates at ≈2.8 × nproc. Below the concerned line the bar stays mostly empty; once you're past it, things are getting crazy and the bar fills up fast. `nproc` is invoked from bash and passed to awk via `-v nCpu`.
+
+**State files** live at `$XDG_RUNTIME_DIR/panel/<widget>-{api,ssh,ping}` for the panel script and `/tmp/waybar-health/<widget>-{api,ssh,ping}` for nixos-config's waybar — both use the same probe-lib code path but write to separate directories so the two consumers don't fight over each other's caches.
+
+**Why text labels instead of icons**: ChromeOS Terminal is locked to a fixed font list (Cousine, Fira Code, JetBrains Mono, etc.) — none of which include Nerd Font / Font Awesome glyphs. We tried installing alternative terminals (foot has no working clipboard under Sommelier; alacritty/kitty fail on the GL bridge) and rolled back. The widget contract is identical to waybar's; only the rendering glyphs differ. See git history for details.
+
+**Drift risk**: this UC has a sibling implementation in `nixos-config/home/sway/waybar.nix` + `nixos-config/scripts/widget-status`. The probe code is shared (single source of truth in `probe-lib.bash`); the renderers are not. Behavioral changes to widget visibility, colors, or polling cadences must be mirrored on both sides. Cadences live in `probe-lib.bash` and are therefore actually shared. CSS/colors and visibility rules live in each renderer and must be hand-synced.
+
 ### direnv — UC-1
 
 Automatically loads project-specific environments when entering a directory with `.envrc`. Works with Nix devShells via `use flake` in `.envrc`.
