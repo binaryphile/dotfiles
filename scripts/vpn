@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# vpn — manage vpn-connect in a detached tmux session.
+#
+# Running `vpn-connect &` from an interactive shell pollutes the prompt
+# with job-control noise and dumps reconnect-loop output into the active
+# pane. This wrapper hides vpn-connect inside a dedicated tmux session
+# (named "vpn"), where it has a real TTY for sudo, full reconnect output
+# is captured, and the calling shell sees nothing.
+#
+# Usage:
+#   vpn [up]      start vpn-connect in the vpn session (default)
+#   vpn down      kill the vpn session
+#   vpn attach    attach to the vpn session to view logs (Ctrl-B D to detach)
+#   vpn status    print up|down
+
+set -uo pipefail
+
+readonly Session=vpn
+
+cmdUp() {
+  if tmux has-session -t "$Session" 2>/dev/null; then
+    echo "vpn session already running; attach with: vpn attach"
+    return 0
+  fi
+  # Hold the pane open after vpn-connect exits so we can see the cause.
+  tmux new-session -d -s "$Session" 'vpn-connect; printf "\nvpn-connect exited; press any key to close. "; read -rn1'
+  echo "vpn started in tmux session '$Session'"
+  echo "  attach: vpn attach"
+  echo "  stop:   vpn down"
+}
+
+cmdDown() {
+  if tmux has-session -t "$Session" 2>/dev/null; then
+    tmux kill-session -t "$Session"
+    echo "vpn stopped"
+  else
+    echo "vpn session not running"
+  fi
+}
+
+cmdAttach() { tmux attach -t "$Session"; }
+
+cmdStatus() {
+  if tmux has-session -t "$Session" 2>/dev/null \
+     && pgrep -f 'gpclient connect' >/dev/null 2>&1; then
+    echo up
+  else
+    echo down
+  fi
+}
+
+main() {
+  case ${1:-up} in
+    up|start)        cmdUp ;;
+    down|stop|kill)  cmdDown ;;
+    attach|view)     cmdAttach ;;
+    status)          cmdStatus ;;
+    *)
+      printf 'usage: vpn {up|down|attach|status}\n' >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

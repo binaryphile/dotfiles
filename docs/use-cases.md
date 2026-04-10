@@ -289,6 +289,53 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 
 ---
 
+### UC-10: Tmux Status Bar Widgets
+
+This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State). The widget contracts described here are designed to match the waybar contracts in nixos-config so the user gets the same ambient experience on either platform. ChromeOS's locked-down shelf does not allow custom widgets the way waybar does on a real Linux desktop, so the tmux status bar substitutes here.
+
+- **Actor:** Ted
+- **Goal:** See ambient health for the same set of systems and services that the NixOS+Sway waybar shows — work VPN, work hosts behind that VPN, public dev forges, communication tools, the era memory store, system load, and resource exhaustion alerts — at a glance from any tmux pane on Crostini
+- **Scope:** Crostini host
+- **Level:** User goal
+- **Trigger:** Ted runs a tmux session
+- **Preconditions:** tmux 3.2+ (for `display-popup`), `panel` script on PATH, mouse support enabled
+- **Stakeholders:**
+  - Ted — wants the same ambient awareness as on NixOS, with the same "quiet by default, loud when something needs attention" contract
+  - VPN ergonomics (UC-7) — VPN status is always shown; VPN-gated widgets are hidden when the tunnel is down
+  - nixos-config UC-1a/UC-1b — sibling use cases on the other platform; this UC mirrors them
+- **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
+  - **Always shown**: vpn, teams, bitbucket, codeberg, era, load
+  - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
+  - **Hidden under 90% usage** (mirrors nixos-config UC-1b "CPU/memory/disk: invisible until 90%+"): cpu, mem, disk — only surface when there's a problem
+  - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default, so this widget is normally invisible
+  - **Not present on Crostini at all**:
+    - backlight, custom/vol, custom/bat, custom/temp — host-hardware widgets with no in-container equivalent
+    - tray, clock — handled by the ChromeOS shelf
+    - custom/fw — we don't run a firewall inside the Crostini container
+- **State coloring** (mirrors waybar.css from nixos-config):
+  - white = on, light gray = degraded/partial, dark gray = off, amber = unknown, red = critical
+- **Main Success Scenario:**
+  1. Ted opens a tmux session
+  2. The status bar is two rows tall; row 0 has the standard tmux window list and hostname; row 1 has the panel widgets, all right-aligned
+  3. Row 1 always shows: era, teams, bitbucket, codeberg, load, vpn — the widgets that are always meaningful
+  4. Row 1 conditionally shows the VPN-gated widgets (dm1, stash, nexus, gitlab) only when `tun0` is up
+  5. Row 1 conditionally shows cpu, mem, disk only when usage is at 90% or above
+  6. Segments refresh every 5 seconds; expensive probes (curl, ssh) are cached for 30 seconds and refreshed asynchronously so the bar never stalls
+  7. Ted clicks a segment; a relevant inspector pops up (btop for load/cpu/mem/disk drilldown, the URL for forge widgets, status info for vpn/era)
+- **Extensions:**
+  - 1a. Not in tmux → run `tmux` first; the bar lives in the status line
+  - 4a. VPN comes up after tmux session started → next refresh tick (≤5s) the VPN-gated widgets appear
+  - 5a. CPU spikes above 90% → cpu segment appears in red, vanishes again on the next tick once usage drops
+  - 7a. Underlying inspector tool not installed → click handler falls back to a basic `ip -s addr` or status echo
+- **Postconditions:**
+  - **Success:** Ted's bar is quiet most of the time, surfaces information only when meaningful, and matches the waybar contract on the NixOS side
+  - **Failure:** Bar is cluttered with always-visible "off" indicators OR misses important state changes
+- **Technology:** Custom `scripts/panel` bash script with subcommands per module plus a `click` dispatcher. Tmux `status-format[1]` interpolates `#(panel <m>)` for each segment; `bind-key -n MouseDown1Status` dispatches to `panel click <range>` via `mouse_status_range`. Async state caching at `$XDG_RUNTIME_DIR/panel/`. Crostini-only — `contexts/crostini/tmux.conf` sources the linux base and adds the 2-row status with panel widgets on row 1. Widgets render as plain colored text labels (3-char abbreviations) instead of waybar's Font Awesome icons because ChromeOS Terminal is locked to non-Nerd Font choices. The companion `scripts/vpn` wrapper runs `vpn-connect` in a detached tmux session so the VPN can be brought up without polluting the calling shell with job-control noise. See [design.md § Tmux status bar widgets](design.md#tmux-status-bar-widgets--uc-10) and the sibling waybar implementation in nixos-config UC-1a/UC-1b.
+
+> **Drift warning**: This UC has a sibling implementation in `nixos-config/docs/use-cases.md` (UC-1a "Connect VPN" + UC-1b "Monitor and Adjust System State"). Changes to widget visibility or coloring rules here MUST be mirrored on the nixos-config side and vice versa, otherwise the two platforms drift in their ambient experience. Both implementations are independent code (one shell, one nix-built waybar) so this drift cannot be prevented mechanically — only by editorial discipline at change time.
+
+---
+
 ## Status
 
 | Use Case | Status | Notes |
@@ -302,3 +349,4 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 | UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite via upstream flake; SAML callback validated end-to-end on Crostini |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
+| UC-10 Tmux Status Bar Widgets | Working | panel + crostini tmux.conf; vpn wrapper for shell-clean vpn-connect launches |

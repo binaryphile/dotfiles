@@ -1,6 +1,10 @@
 { config, pkgs, ... }:
 
 let
+  # Live symlink helper, mirroring linux-base.nix's pattern.
+  linkDotfile = path:
+    config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/${path}";
+
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
   # it via garcon's container->host localhost forwarding. Selectively used
   # by Chrome via the PAC file below — only VPN-bound hosts traverse it.
@@ -55,6 +59,7 @@ in
     darkhttpd
     tinyproxy
     wl-clipboard
+    xmlstarlet
   ];
 
   home.file = {
@@ -69,6 +74,13 @@ in
     # PAC file served by darkhttpd. Lives in its own directory so the
     # static server can be pointed at the directory and only serve this.
     ".local/share/proxy-pac/proxy.pac".source = proxyPac;
+
+    # Crostini-only user scripts: tmux status bar widgets, vpn ergonomic
+    # wrapper, and the Digi security advisory watcher. Live symlinks via
+    # mkOutOfStoreSymlink so edits in the repo take effect immediately.
+    ".local/bin/panel".source                = linkDotfile "scripts/panel";
+    ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
+    ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
   };
 
   # tinyproxy: forward HTTP proxy for VPN-bound traffic. Only invoked by
@@ -96,5 +108,32 @@ in
       RestartSec = 5;
     };
     Install.WantedBy = [ "default.target" ];
+  };
+
+  # Digi security advisory watcher: polls the Digi Security Center RSS
+  # feed every 30 minutes, fires a notify-send (which the linux-base
+  # wrapper bridges to ntfy phone push) for any advisory not seen
+  # before. Crostini-only — on NixOS, equivalent monitoring is handled
+  # by the waybar custom modules.
+  systemd.user.services.digi-security-watch = {
+    Unit.Description = "Watch Digi Security Center RSS for new advisories";
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${config.home.homeDirectory}/dotfiles/scripts/digi-security-watch";
+      Environment = [
+        "PATH=${pkgs.bash}/bin:${pkgs.curl}/bin:${pkgs.xmlstarlet}/bin:${pkgs.gnugrep}/bin:${pkgs.coreutils}/bin:${pkgs.util-linux}/bin:${config.home.homeDirectory}/.nix-profile/bin"
+      ];
+      TimeoutStopSec = 300;
+    };
+  };
+
+  systemd.user.timers.digi-security-watch = {
+    Unit.Description = "Poll Digi Security Center RSS every 30 minutes";
+    Timer = {
+      OnBootSec = "2min";
+      OnUnitActiveSec = "30min";
+      Persistent = true;
+    };
+    Install.WantedBy = [ "timers.target" ];
   };
 }

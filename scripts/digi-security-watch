@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# digi-security-watch — poll the Digi Security Center RSS feed and fire
+# a notification (local + ntfy phone push via the notify-send wrapper)
+# for any advisories not previously seen.
+#
+# State: a seen-set of <guid> values stored at
+#   $XDG_STATE_HOME/digi-security-watch/seen.txt
+#
+# Designed to be invoked from a systemd user timer, but safe to run by
+# hand. A flock prevents overlapping runs if the timer fires while a
+# previous one is still in flight.
+#
+# Style follows ~/projects/task.bash/update-env naming policy:
+# camelCase, lowercase locals, uppercase globals.
+
+set -uo pipefail
+
+readonly Feed=https://www.digi.com/resources/security-rss
+readonly StateDir=${XDG_STATE_HOME:-$HOME/.local/state}/digi-security-watch
+readonly SeenFile=$StateDir/seen.txt
+readonly LockFile=$StateDir/lock
+
+mkdir -p "$StateDir"
+touch "$SeenFile"
+
+# Acquire an exclusive non-blocking flock so two timer firings can't
+# race and double-notify.
+exec 9>"$LockFile"
+flock -n 9 || exit 0
+
+# parseFeed prints "guid<TAB>title<TAB>link" lines for every <item>.
+# normalize-space() collapses all whitespace (including embedded newlines
+# from pretty-printed XML) so each item is exactly one line and the tab
+# delimiter actually works with `read`.
+parseFeed() {
+  curl -fsSL --connect-timeout 5 --max-time 30 "$Feed" 2>/dev/null \
+    | xmlstarlet sel -t -m '//item' \
+        -v 'normalize-space(guid)'  -o $'\t' \
+        -v 'normalize-space(title)' -o $'\t' \
+        -v 'normalize-space(link)'  -n \
+      2>/dev/null
+}
+
+# notifyNew sends a desktop + phone notification via the notify-send
+# wrapper (which bridges to ntfy.sh transparently).
+notifyNew() {
+  local title=$1
+  local link=$2
+  notify-send -u normal "Digi Security Advisory" "$title"$'\n'"$link"
+}
+
+main() {
+  local feed
+  feed=$(parseFeed)
+  if [[ -z $feed ]]; then
+    # Network or parse failure — quietly exit so the timer doesn't spam
+    # error notifications when offline.
+    exit 0
+  fi
+
+  local newCount=0
+  while IFS=$'\t' read -r guid title link; do
+    [[ -z $guid ]] && continue
+    if ! grep -qxF "$guid" "$SeenFile"; then
+      notifyNew "$title" "$link"
+      printf '%s\n' "$guid" >> "$SeenFile"
+      newCount=$((newCount + 1))
+    fi
+  done <<<"$feed"
+
+  # Optional debug log when new items found.
+  if (( newCount > 0 )); then
+    logger -t digi-security-watch "notified for $newCount new advisory(ies)"
+  fi
+}
+
+main "$@"

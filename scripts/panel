@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+
+# panel — tmux status bar widgets, ported from waybar custom/* modules
+# in nixos-config/home/sway/waybar.nix.
+#
+# Usage:
+#   panel <module>           print a single fixed-width status segment
+#   panel click <module>     click handler (called from tmux mouse bind)
+#   panel poll               refresh all module state files (one-shot)
+#
+# Modules:
+#   era       era-mcp systemd service status         (click: toggle service)
+#   vpn       gpclient connect process state         (click: toggle vpn)
+#   dm1       dm1.devdevicecloud.com health (VPN)    (click: open url)
+#   stash     stash.digi.com ssh probe       (VPN)   (click: open url)
+#   gitlab    gitlab.drm.ninja health        (VPN)   (click: open url)
+#   codeberg  codeberg ssh status (status API)       (click: open url)
+#   bitbucket bitbucket ssh status (status API)      (click: open url)
+#   teams     teams.microsoft.com health              (click: open url)
+#   ssh       inbound ssh connection count            (click: ss popup)
+#   load      1/5/15-min loadavg sparkline            (click: btop popup)
+#
+# Each module emits a fixed-width segment so the bar doesn't reflow.
+# Slow probes (curl, ssh, ping) are dispatched to background subshells
+# and tmux always reads from a cached state file. The first read after
+# startup may show "?" until the first poll completes.
+
+set -uo pipefail
+
+State=${XDG_RUNTIME_DIR:-/tmp}/panel
+mkdir -p "$State"
+
+# fg colorizes text using a tmux inline format code.
+fg() { printf '#[fg=%s]%s#[default]' "$1" "$2"; }
+
+# Color palette mirrors waybar.css from nixos-config:
+#   on       white       (#ffffff) — default healthy
+#   partial  colour250   (#bcbcbc) — degraded
+#   off      colour244   (#808080) — down
+#   unknown  colour130   (#af5f00) — amber, no data yet
+#   warning  colour130   (#af5f00) — amber, threshold exceeded
+#   critical colour160   (#d70000) — red, critical threshold
+ColorOn=white
+ColorPartial=colour250
+ColorOff=colour244
+ColorUnknown=colour130
+ColorWarning=colour130
+ColorCritical=colour160
+
+# segment renders a 3-char text label colored by state. The label IS
+# the indicator; the color of the label is the only signal of state.
+# Plain text so it works in ChromeOS Terminal's font set (no Nerd Font
+# required).
+segment() {
+  local label=$1
+  local cls=${2:-unknown}
+  local color
+  case $cls in
+    on)      color=$ColorOn      ;;
+    partial) color=$ColorPartial ;;
+    off)     color=$ColorOff     ;;
+    *)       color=$ColorUnknown ;;
+  esac
+  fg "$color" "$label"
+}
+
+# thresholdSegment renders a cpu/mem/disk segment ONLY when usage is at
+# 90% or higher. Below threshold, prints nothing — the segment vanishes
+# from the bar entirely. At/above threshold, prints label + percent in
+# red so it stands out against the otherwise quiet white/gray bar.
+thresholdSegment() {
+  local label=$1
+  local pct=$2
+  if (( pct >= 90 )); then
+    fg "$ColorCritical" "$(printf '%s %d%%' "$label" "$pct")"
+  fi
+}
+
+# readState returns the cached class for a module, or "unknown" if absent.
+readState() {
+  local key=$1
+  local file=$State/$key
+  if [[ -e $file ]]; then
+    cat "$file"
+  else
+    echo unknown
+  fi
+}
+
+# isStale returns true if the cache file is missing or older than $2 seconds.
+isStale() {
+  local key=$1
+  local ttl=$2
+  local file=$State/$key
+  [[ ! -e $file ]] && return 0
+  local mtime now
+  mtime=$(stat -c %Y "$file" 2>/dev/null) || return 0
+  now=$(date +%s)
+  (( (now - mtime) >= ttl ))
+}
+
+# refresh runs a probe in the background if the cache is stale and
+# captures its stdout to the state file. Probe is invoked as
+# `cmd args...`; first 2 args to refresh are the cache key and TTL,
+# the rest are the command and its arguments.
+refresh() {
+  local key=$1
+  local ttl=$2
+  shift 2
+  if isStale "$key" "$ttl"; then
+    (
+      cls=$("$@" 2>/dev/null) || cls=unknown
+      printf '%s' "$cls" > "$State/$key.tmp" && mv "$State/$key.tmp" "$State/$key"
+    ) &
+    disown
+  fi
+}
+
+# pingHost performs a fast reachability check via a TCP connect to port
+# 443 (works for any HTTPS service; ICMP is unreliable because most
+# vendor sites block it). Returns ok or fail. On fail, also invalidates
+# the cached SSH success for the widget so the state cannot return to
+# "active" without a fresh SSH probe — implements the "stay active so
+# long as ping is succeeding" contract.
+# Args: state-key-prefix host
+pingHost() {
+  local key=$1
+  local host=$2
+  if timeout 3 bash -c "exec 3<>/dev/tcp/$host/443" 2>/dev/null; then
+    echo ok
+  else
+    echo fail > "$State/${key}-ssh.tmp" \
+      && mv "$State/${key}-ssh.tmp" "$State/${key}-ssh"
+    echo fail
+  fi
+}
+
+# sshHost tests git-over-ssh reachability. Returns ok if the server
+# responds (rc 0/1 or "shell request failed" — both indicate the SSH
+# layer is up regardless of git permissions), fail otherwise.
+sshHost() {
+  local host=$1
+  local err rc
+  err=$(ssh -T -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
+    "git@$host" 2>&1) && rc=$? || rc=$?
+  if (( rc == 0 || rc == 1 )) || grep -q 'shell request failed' <<<"$err"; then
+    echo ok
+  else
+    echo fail
+  fi
+}
+
+# combine merges per-source results into a single widget class. Rules:
+#   - api=down or api=off    → off  (service is down per vendor)
+#   - api=degraded/partial   → partial
+#   - ping=fail              → off  (network unreachable)
+#   - ssh=ok and ping=ok     → on   (fully active)
+#   - ping=ok                → partial (reachable but no auth confirmation)
+#   - otherwise              → unknown
+# Args: ssh-state ping-state [api-state]
+combine() {
+  local ssh=${1:-unknown}
+  local ping=${2:-unknown}
+  local api=${3:-on}
+  case $api in
+    down|off)         echo off;     return ;;
+    degraded|partial) echo partial; return ;;
+  esac
+  [[ $ping == fail ]] && { echo off; return; }
+  [[ $ssh  == ok && $ping == ok ]] && { echo on; return; }
+  [[ $ping == ok ]] && { echo partial; return; }
+  echo unknown
+}
+
+# pollAll forces a synchronous poll of every health module by simply
+# rendering each one — that runs the same refresh-if-stale logic the
+# normal status bar uses, but synchronously waits for all the spawned
+# probes via `wait`. Used by `panel poll` for initial warm-up.
+pollAll() {
+  local m
+  for m in era vpn dm1 stash gitlab nexus codeberg bitbucket teams; do
+    "${m}Module" > /dev/null
+  done
+  wait
+}
+
+# Probes — each prints exactly one of "on" "partial" "off" on stdout.
+
+eraProbe() {
+  systemctl --user is-active --quiet era-mcp && echo on || echo off
+}
+
+vpnProbe() {
+  ip link show tun0 >/dev/null 2>&1 && echo on || echo off
+}
+
+# urlProbe: curl URL, grep for marker. ping fallback gives "partial".
+# Args: url marker [needsVpn]
+urlProbe() {
+  local url=$1 marker=$2 needsVpn=${3:-no}
+  if [[ $needsVpn == yes ]] && ! ip link show tun0 >/dev/null 2>&1; then
+    echo off; return
+  fi
+  local body host
+  body=$(curl -skL --connect-timeout 3 --max-time 10 "$url" 2>/dev/null || true)
+  if grep -qi "$marker" <<<"$body"; then
+    echo on; return
+  fi
+  host=${url#https://}; host=${host#http://}; host=${host%%/*}
+  ping -c1 -W2 "$host" >/dev/null 2>&1 && echo partial || echo off
+}
+
+teamsProbe() { urlProbe https://teams.microsoft.com 'Microsoft Teams' no; }
+
+# codebergApiProbe queries the Codeberg uptime status API; component
+# 7 is the "Codeberg SSH access" monitor. Returns one of: on, off.
+codebergApiProbe() {
+  local result
+  result=$(curl -fs --connect-timeout 3 --max-time 5 \
+    https://status.codeberg.org/api/status-page/heartbeat/codeberg 2>/dev/null \
+    | jq -er '.heartbeatList."7"[-1].status' 2>/dev/null) || true
+  case $result in
+    1) echo on ;;
+    *) echo off ;;
+  esac
+}
+
+# bitbucketApiProbe queries Atlassian's component status API for the
+# 'Git via SSH' component (id: qmh4tj8h5kbn). Returns: on, partial, off.
+bitbucketApiProbe() {
+  local result
+  result=$(curl -fs --connect-timeout 3 --max-time 5 \
+    https://bitbucket.status.atlassian.com/api/v2/components.json 2>/dev/null \
+    | jq -r '.components[] | select(.id == "qmh4tj8h5kbn") | .status' 2>/dev/null) || true
+  case $result in
+    operational)                          echo on      ;;
+    degraded_performance|partial_outage)  echo partial ;;
+    *)                                    echo off     ;;
+  esac
+}
+
+# Module rendering — fast: read cached state, kick off async refresh,
+# emit a 3-char text segment colored by state. VPN-gated modules
+# (dm1, stash, gitlab, nexus) return empty when VPN is down — without
+# a tun0 interface there's nothing to probe and no useful state to
+# show, so the segment vanishes from the bar entirely.
+#
+# Two cadences for reachability widgets:
+#   - SSH probe: every 600s (10 min). Authoritative reachability check.
+#   - ping probe: every 30s. Fast keepalive between SSH probes; on ping
+#     failure invalidates the cached SSH success so the widget cannot
+#     return to "active" without a fresh successful SSH probe.
+#
+# API-based widgets (bitbucket, codeberg) additionally poll a vendor
+# status JSON API every 30s; the widget renders the worst-tier across
+# (api, ssh, ping). The same SSH+ping logic applies to the SSH layer.
+
+# vpnUp returns true if the VPN tunnel interface exists.
+vpnUp() { ip link show tun0 >/dev/null 2>&1; }
+
+# reachabilityModule renders a widget whose state comes from SSH+ping
+# (and optionally an API probe). Probes are run on independent cadences
+# (10 min for SSH, 30s for ping/api) and cached. Widget vanishes if it
+# is VPN-gated and the tunnel is down.
+# Args: state-key host label vpn-gated(yes|no) [api-probe-fn]
+reachabilityModule() {
+  local key=$1
+  local host=$2
+  local label=$3
+  local vpnGated=$4
+  local apiFn=${5:-}
+  if [[ $vpnGated == yes ]] && ! vpnUp; then
+    return
+  fi
+  refresh "${key}-ssh"  600 sshHost  "$host"
+  refresh "${key}-ping" 30  pingHost "$key" "$host"
+  local ssh ping api
+  ssh=$(readState "${key}-ssh")
+  ping=$(readState "${key}-ping")
+  if [[ -n $apiFn ]]; then
+    refresh "${key}-api" 30 "$apiFn"
+    api=$(readState "${key}-api")
+  else
+    api=on
+  fi
+  segment "$label" "$(combine "$ssh" "$ping" "$api")"
+}
+
+eraModule() { refresh era 30 eraProbe; segment era "$(readState era)"; }
+vpnModule() { refresh vpn  5 vpnProbe; segment vpn "$(readState vpn)"; }
+
+dm1Module()       { reachabilityModule dm1       dm1.devdevicecloud.com dm1 yes; }
+stashModule()     { reachabilityModule stash     stash.digi.com         sta yes; }
+gitlabModule()    { reachabilityModule gitlab    gitlab.drm.ninja       git yes; }
+nexusModule()     { reachabilityModule nexus     nexus.digi.com         nex yes; }
+codebergModule()  { reachabilityModule codeberg  codeberg.org           cbg no  codebergApiProbe; }
+bitbucketModule() { reachabilityModule bitbucket bitbucket.org          bbk no  bitbucketApiProbe; }
+teamsModule()     { refresh teams 300 teamsProbe; segment tms "$(readState teams)"; }
+
+# ssh: shows inbound SSH connection count, but ONLY when there are
+# any. Crostini doesn't run sshd by default so this is normally empty
+# and the segment vanishes from the bar. Useful as a passive indicator
+# for the rare host that does receive SSH.
+sshModule() {
+  local conns
+  conns=$(ss -tn sport = :22 2>/dev/null | grep -c ESTAB || true)
+  conns=${conns:-0}
+  (( conns > 9 )) && conns=9
+  if (( conns > 0 )); then
+    fg cyan "ssh ${conns}"
+  fi
+}
+
+loadModule() {
+  # /proc/loadavg has three values left-to-right: 1m, 5m, 15m. Render
+  # bars in the same left-to-right order so the widget matches the
+  # uptime/top convention. Tooltip shows the same order.
+  awk '{
+    bars[1]="▁"; bars[2]="▂"; bars[3]="▃"; bars[4]="▄";
+    bars[5]="▅"; bars[6]="▆"; bars[7]="▇"; bars[8]="█";
+    text="";
+    for (i=1; i<=3; i++) {
+      idx = int($i / 8 * 7) + 1;
+      if (idx > 8) idx = 8;
+      if (idx < 1) idx = 1;
+      text = text bars[idx];
+    }
+    print text;
+  }' /proc/loadavg
+}
+
+# cpu uses /proc/stat with delta caching. The first call returns 0% since
+# there's no baseline. Subsequent calls (every status-interval seconds)
+# return the average CPU usage between samples.
+cpuModule() {
+  local statefile=$State/cpu-stat
+  local _ user nice system idle iowait irq softirq steal _rest
+  read -r _ user nice system idle iowait irq softirq steal _rest < /proc/stat
+  local active=$((user + nice + system + irq + softirq + steal))
+  local total=$((active + idle + iowait))
+  local pct=0
+  if [[ -e $statefile ]]; then
+    local prevActive prevTotal
+    read -r prevActive prevTotal < "$statefile"
+    local diffTotal=$((total - prevTotal))
+    if (( diffTotal > 0 )); then
+      pct=$(( (active - prevActive) * 100 / diffTotal ))
+    fi
+  fi
+  printf '%s %s' "$active" "$total" > "$statefile"
+  thresholdSegment cpu "$pct"
+}
+
+memModule() {
+  local total avail
+  total=$(awk '/^MemTotal:/{print $2}'     /proc/meminfo)
+  avail=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+  local pct=$(( (total - avail) * 100 / total ))
+  thresholdSegment mem "$pct"
+}
+
+diskModule() {
+  local pct
+  pct=$(df --output=pcent / 2>/dev/null | tail -n1 | tr -d ' %')
+  thresholdSegment dsk "${pct:-0}"
+}
+
+# Click handlers. Toggling services for era and vpn matches the waybar
+# on-click bindings. URL-bound widgets open the URL in the default
+# browser via xdg-open (which on Crostini routes to ChromeOS Chrome).
+
+clickModule() {
+  local m=${1:-}
+  case $m in
+    era)
+      if systemctl --user is-active --quiet era-mcp; then
+        systemctl --user stop era-mcp
+      else
+        systemctl --user start era-mcp
+      fi
+      ;;
+    vpn)
+      if ip link show tun0 >/dev/null 2>&1; then
+        vpn down
+      else
+        vpn up
+      fi
+      ;;
+    dm1)       xdg-open https://dm1.devdevicecloud.com/ui/ ;;
+    stash)     xdg-open https://stash.digi.com/ ;;
+    gitlab)    xdg-open https://gitlab.drm.ninja/ ;;
+    nexus)     xdg-open https://nexus.digi.com/ ;;
+    codeberg)  xdg-open https://codeberg.org/ ;;
+    bitbucket) xdg-open https://bitbucket.org/ ;;
+    teams)     xdg-open https://teams.microsoft.com/ ;;
+    ssh)       tmux display-popup -E -h 60% -w 80% 'ss -tn sport = :22; echo; read -n1 -p "press any key "' ;;
+    load)      tmux display-popup -E -h 90% -w 90% btop ;;
+    *)         tmux display-message "panel: unknown click target '${m}'" ;;
+  esac
+}
+
+main() {
+  local cmd=${1:-}
+  shift || true
+  case $cmd in
+    era)        eraModule ;;
+    vpn)        vpnModule ;;
+    dm1)        dm1Module ;;
+    stash)      stashModule ;;
+    gitlab)     gitlabModule ;;
+    nexus)      nexusModule ;;
+    codeberg)   codebergModule ;;
+    bitbucket)  bitbucketModule ;;
+    teams)      teamsModule ;;
+    ssh)        sshModule ;;
+    load)       loadModule ;;
+    cpu)        cpuModule ;;
+    mem)        memModule ;;
+    disk)       diskModule ;;
+    poll)       pollAll ;;
+    click)      clickModule "$@" ;;
+    *)
+      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|codeberg|bitbucket|teams|ssh|load|cpu|mem|disk|poll|click <m>}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

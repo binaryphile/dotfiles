@@ -85,6 +85,7 @@ in
     ".config/ranger/rifle.conf".source = linkDotfile "ranger/rifle.conf";
     ".config/ranger/scope.sh".source = linkDotfile "ranger/scope.sh";
 
+
     # On Crostini, ChromeOS host Chrome dispatches custom URL schemes to
     # in-container handlers via garcon, but garcon only scans the standard
     # XDG user dir (~/.local/share/applications/), NOT ~/.nix-profile/share/.
