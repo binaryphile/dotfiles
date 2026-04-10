@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
-# Tests for scripts/probe-lib.bash. Currently focused on combine(),
-# the pure-function heart of the widget state machine. Network
-# probes (sshHost, pingHost, vendor APIs) are intentionally not
-# tested here — they would require either real network access or a
-# mocking layer that adds more complexity than the probes themselves.
+# Tests for scripts/probe-lib.bash. Covers combine() (the pure-
+# function heart of the widget state machine) and pingHost's
+# load-bearing side effect of invalidating the cached SSH success
+# on failure. sshHost, the vendor API probes, and probeReachability
+# are not tested here — they require real network access or a
+# heavier mocking layer.
 #
 # Style follows tesht's table-driven pattern. State must be set
 # before sourcing probe-lib because probe-lib enforces it. combine()
@@ -44,4 +45,59 @@ test_combine() {
   }
 
   tesht.Run "${!case@}"
+}
+
+# pingHost has a load-bearing side effect: on failure it must
+# invalidate the cached SSH success for the widget so the state can
+# only return to "active" via a fresh successful SSH probe. Without
+# this, a partial recovery from a network blip would prematurely
+# upgrade a widget back to "on" the next time ping succeeded.
+#
+# These tests use a private $State per case (so file writes are
+# isolated) and mock `timeout` to deterministically simulate a
+# successful or failing TCP/443 probe without touching the network.
+test_pingHostInvalidatesSshOnFailure() {
+  ## arrange
+  local stateDir
+  tesht.MktempDir stateDir || return 128
+  State=$stateDir
+
+  # Pre-seed the SSH cache as if a recent successful probe ran.
+  echo ok > "$State/widgetT-ssh"
+
+  # Mock `timeout` to fail unconditionally → simulates ping failure.
+  timeout() { return 1; }
+
+  ## act
+  local got
+  got=$(pingHost widgetT example.invalid)
+
+  ## assert
+  tesht.Softly <<'  END'
+    tesht.AssertGot "$got" "fail"
+    tesht.AssertGot "$(cat "$State/widgetT-ssh")" "fail"
+  END
+}
+
+test_pingHostLeavesSshCacheOnSuccess() {
+  ## arrange
+  local stateDir
+  tesht.MktempDir stateDir || return 128
+  State=$stateDir
+
+  # Pre-seed the SSH cache as if a recent successful probe ran.
+  echo ok > "$State/widgetT-ssh"
+
+  # Mock `timeout` to succeed → simulates ping success.
+  timeout() { return 0; }
+
+  ## act
+  local got
+  got=$(pingHost widgetT example.invalid)
+
+  ## assert
+  tesht.Softly <<'  END'
+    tesht.AssertGot "$got" "ok"
+    tesht.AssertGot "$(cat "$State/widgetT-ssh")" "ok"
+  END
 }
