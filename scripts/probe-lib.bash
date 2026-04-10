@@ -155,3 +155,22 @@ probeReachability() {
   fi
   combine "$ssh" "$ping" "$api"
 }
+
+# probePing runs only the TCP/443 ping probe at a configurable
+# cadence. Useful for widgets like teams that don't expose SSH and
+# don't have a vendor status API — just a "is the host reachable"
+# check at a slow cadence.
+# Args: key host [ttl-seconds]
+probePing() {
+  local key=$1
+  local host=$2
+  local ttl=${3:-30}
+  refresh "${key}-ping" "$ttl" pingHost "$key" "$host"
+  local ping
+  ping=$(readState "${key}-ping")
+  case $ping in
+    ok)   echo on ;;
+    fail) echo off ;;
+    *)    echo unknown ;;
+  esac
+}

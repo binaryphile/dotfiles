@@ -94,7 +94,9 @@ pollAll() {
   wait
 }
 
-# Probes — each prints exactly one of "on" "partial" "off" on stdout.
+# Local probes — each prints exactly one of "on" "partial" "off" on
+# stdout. Network probes (sshHost, pingHost, vendor APIs) come from
+# probe-lib.bash.
 
 eraProbe() {
   systemctl --user is-active --quiet era-mcp && echo on || echo off
@@ -103,26 +105,6 @@ eraProbe() {
 vpnProbe() {
   ip link show tun0 >/dev/null 2>&1 && echo on || echo off
 }
-
-# urlProbe: curl URL, grep for marker. ping fallback gives "partial".
-# Args: url marker [needsVpn]
-urlProbe() {
-  local url=$1 marker=$2 needsVpn=${3:-no}
-  if [[ $needsVpn == yes ]] && ! ip link show tun0 >/dev/null 2>&1; then
-    echo off; return
-  fi
-  local body host
-  body=$(curl -skL --connect-timeout 3 --max-time 10 "$url" 2>/dev/null || true)
-  if grep -qi "$marker" <<<"$body"; then
-    echo on; return
-  fi
-  host=${url#https://}; host=${host#http://}; host=${host%%/*}
-  ping -c1 -W2 "$host" >/dev/null 2>&1 && echo partial || echo off
-}
-
-teamsProbe() { urlProbe https://teams.microsoft.com 'Microsoft Teams' no; }
-
-# bitbucketApiProbe and codebergApiProbe come from probe-lib.bash.
 
 # Module rendering — fast: read cached state, kick off async refresh,
 # emit a 3-char text segment colored by state. VPN-gated modules
@@ -153,7 +135,7 @@ gitlabModule()    { vpnUp || return; segment git "$(probeReachability gitlab    
 nexusModule()     { vpnUp || return; segment nex "$(probeReachability nexus     nexus.digi.com)"; }
 codebergModule()  { segment cbg "$(probeReachability codeberg  codeberg.org  codebergApiProbe)"; }
 bitbucketModule() { segment bbk "$(probeReachability bitbucket bitbucket.org bitbucketApiProbe)"; }
-teamsModule()     { refresh teams 300 teamsProbe; segment tms "$(readState teams)"; }
+teamsModule()     { segment tms "$(probePing teams teams.microsoft.com 300)"; }
 
 # ssh: shows inbound SSH connection count, but ONLY when there are
 # any. Crostini doesn't run sshd by default so this is normally empty
