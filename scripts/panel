@@ -183,21 +183,27 @@ loadModule() {
 # there's no baseline. Subsequent calls (every status-interval seconds)
 # return the average CPU usage between samples.
 cpuModule() {
-  local statefile=$State/cpu-stat
-  local _ user nice system idle iowait irq softirq steal _rest
-  read -r _ user nice system idle iowait irq softirq steal _rest < /proc/stat
+  local stateFile=$State/cpu-stat
+  # /proc/stat first line: "cpu user nice system idle iowait irq
+  # softirq steal guest guest_nice". Read the whole row into an
+  # indexed array so we don't have to spell out throwaway names —
+  # the project bash style guide forbids leading-underscore locals.
+  local fields
+  read -ra fields < /proc/stat
+  local user=${fields[1]} nice=${fields[2]} system=${fields[3]}
+  local idle=${fields[4]} iowait=${fields[5]} irq=${fields[6]} softirq=${fields[7]} steal=${fields[8]}
   local active=$((user + nice + system + irq + softirq + steal))
   local total=$((active + idle + iowait))
   local pct=0
-  if [[ -e $statefile ]]; then
+  if [[ -e $stateFile ]]; then
     local prevActive prevTotal
-    read -r prevActive prevTotal < "$statefile"
+    read -r prevActive prevTotal < "$stateFile"
     local diffTotal=$((total - prevTotal))
     if (( diffTotal > 0 )); then
       pct=$(( (active - prevActive) * 100 / diffTotal ))
     fi
   fi
-  printf '%s %s' "$active" "$total" > "$statefile"
+  printf '%s %s' "$active" "$total" > "$stateFile"
   thresholdSegment cpu "$pct"
 }
 
