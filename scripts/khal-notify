@@ -2,8 +2,8 @@
 
 # khal-notify — desktop notifications for upcoming calendar events
 #
-# Runs every minute via systemd timer. Checks khal for events starting
-# in 60, 30, 10, 5, or 1 minutes and sends notify-send. Phone push is
+# Runs every 5 minutes via systemd timer. Checks khal for events starting
+# in 60, 30, 10, or 5 minutes and sends notify-send. Phone push is
 # handled transparently by the notify-send wrapper if ~/secrets/ntfy-topic
 # exists. Tracks sent notifications in a statefile to avoid duplicates.
 
@@ -42,13 +42,13 @@ while IFS= read -r line; do
 
   MinutesTill=$(( (StartEpoch - Now) / 60 ))
 
-  for Ahead in 60 30 10 5 1; do
+  for Ahead in 60 30 10 5; do
     Key="${StartTime}-${Title}-${Ahead}"
 
     # Already sent?
     grep -qxF "$Key" "$StateFile" && continue
 
-    if (( MinutesTill >= (Ahead - 1) && MinutesTill <= Ahead )); then
+    if (( MinutesTill >= (Ahead - 3) && MinutesTill <= (Ahead + 2) )); then
       if (( Ahead <= 5 )); then
         Urgency=critical
       else

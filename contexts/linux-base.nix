@@ -176,7 +176,7 @@ in
   systemd.user.timers.khal-notify = {
     Unit.Description = "Calendar event reminder timer";
     Timer = {
-      OnCalendar = "minutely";
+      OnCalendar = "*:0/5";
       Persistent = true;
     };
     Install.WantedBy = [ "timers.target" ];
