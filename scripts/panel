@@ -41,18 +41,14 @@ source "$HOME/dotfiles/scripts/probe-lib.bash"
 fg() { printf '#[fg=%s]%s#[default]' "$1" "$2"; }
 
 # Color palette mirrors waybar.css from nixos-config:
-#   on       white       (#ffffff) — default healthy
+#   on       white       (#ffffff) — healthy / default
 #   partial  colour250   (#bcbcbc) — degraded
 #   off      colour244   (#808080) — down
 #   unknown  colour130   (#af5f00) — amber, no data yet
-#   warning  colour130   (#af5f00) — amber, threshold exceeded
-#   critical colour160   (#d70000) — red, critical threshold
 ColorOn=white
 ColorPartial=colour250
 ColorOff=colour244
 ColorUnknown=colour130
-ColorWarning=colour130
-ColorCritical=colour160
 
 # segment renders a 3-char text label colored by state. The label IS
 # the indicator; the color of the label is the only signal of state.
@@ -68,18 +64,20 @@ segment() {
     off)     color=$ColorOff     ;;
     *)       color=$ColorUnknown ;;
   esac
+  printf ' '
   fg "$color" "$label"
 }
 
 # thresholdSegment renders a cpu/mem/disk segment ONLY when usage is at
 # 90% or higher. Below threshold, prints nothing — the segment vanishes
 # from the bar entirely. At/above threshold, prints label + percent in
-# red so it stands out against the otherwise quiet white/gray bar.
+# white (default text color) — threshold-gated visibility, not a warning.
 thresholdSegment() {
   local label=$1
   local pct=$2
   if (( pct >= 90 )); then
-    fg "$ColorCritical" "$(printf '%s %d%%' "$label" "$pct")"
+    printf ' '
+    fg "$ColorOn" "$(printf '%s %d%%' "$label" "$pct")"
   fi
 }
 
@@ -149,6 +147,7 @@ sshModule() {
   conns=${conns:-0}
   (( conns > 9 )) && conns=9
   if (( conns > 0 )); then
+    printf ' '
     fg cyan "ssh ${conns}"
   fi
 }
@@ -166,6 +165,7 @@ loadModule() {
   # things are getting crazy and the bar fills up fast.
   local nCpu
   nCpu=$(nproc)
+  printf ' '
   awk -v nCpu="$nCpu" '{
     bars[1]="▁"; bars[2]="▂"; bars[3]="▃"; bars[4]="▄";
     bars[5]="▅"; bars[6]="▆"; bars[7]="▇"; bars[8]="█";

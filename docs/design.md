@@ -7,7 +7,7 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 ## Principles
 
 1. **One environment, all hosts.** Same config on NixOS and Crostini. Platform differences handled by `contexts/`.
-2. **Symlinks over copies.** Configs live here. Home directory gets symlinks.
+2. **Symlinks over copies.** Configs live here. Home directory gets symlinks. See [Why symlinks, not immutable copies](#why-symlinks-not-immutable-copies) under Deployment.
 3. **Single-file bash init.** One entry point replaces `.bashrc`, `.bash_profile`, `.profile`. Explicit mode detection, no hidden sourcing rules. See [Why a single entry point](#why-a-single-entry-point).
 4. **Idempotent deployment.** `update-env` works on fresh or existing machines. Converges to desired state.
 5. **Nix for packages, dotfiles for config.** `home.nix` says what to install. Dotfiles say how to configure.
@@ -70,7 +70,24 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debian → linux.
 
-**Why split symlinks between update-env and home-manager:** bootstrap symlinks (`.bash*`, nixpkgs config, home-manager config) must exist before nix runs, so they can't be HM-managed. Everything else benefits from HM's atomic generations and rollback. The migration uses `home.file."<target>".source = config.lib.file.mkOutOfStoreSymlink "...";` to preserve edit-in-place semantics — symlinks point at the live source files in `~/dotfiles/`, not into the nix store, so editing the source is immediately visible without `home-manager switch`.
+**What belongs in update-env vs. home-manager:** The split is governed by one structural constraint and two categories:
+
+*Structural constraint:* anything home-manager needs in order to run must be managed by `update-env`, because it must exist before `home-manager switch` executes. This is a hard dependency, not a preference.
+
+| Owner | What | Count | Why |
+|-------|------|-------|-----|
+| `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `context` → active platform; `config.nix` → nixpkgs; `home.nix` → home-manager | 6 symlinks | Must exist before nix/HM runs. Shell init, nix config, and HM config are prerequisites for everything else. |
+| `update-env` (external) | Dev tool repos (`fp.bash`, `mk.bash`, `tesht`, `era`, etc.) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts | ~20 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation — cloned repos and secrets are not. |
+| `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3), gpgui desktop entry | 11 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
+| `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies — Claude Code may overwrite these, so HM restores them on switch. |
+| `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC | 3 symlinks + 1 generated (`crostini/home.nix`) | Crostini-only scripts and generated config. |
+| `home-manager` (`programs.*`) | direnv, bat, firefox, khal, vdirsyncer | 5 modules | Declarative program config via HM modules — not `home.file` but the same dependency tree. |
+
+*Decision test for new files:* (1) Is it needed before HM runs? → `update-env`. (2) Does its source live outside `~/dotfiles`? → `update-env`. (3) Otherwise → `home.file` with `mkOutOfStoreSymlink` for edit-in-place, or a `programs.*` module if one exists.
+
+The `home.file` blocks use `mkOutOfStoreSymlink` to preserve edit-in-place semantics — symlinks point at the live source files in `~/dotfiles/`, not into the nix store, so editing the source is immediately visible without `home-manager switch`.
+
+**Why symlinks, not immutable copies:** The NixOS model copies config files into the read-only nix store, making them immune to runtime mutation. This is valuable when the consumer of a config is a program that might silently overwrite it. But the files managed here — bash modules, tmux.conf, gitconfig, ssh config, ranger, liquidprompt — are files the user writes and controls. No program writes back to them; the drift risk is zero. Symlinks give instant feedback: edit the source file, the change is live. Immutable copies would require a rebuild/deploy step for every edit, adding friction without solving a real problem. The `home.file` blocks that do exist (Claude config, gpgui desktop entry, proxy PAC) use `force: true` or are generated — cases where immutability or atomic replacement actually matters. If a file were ever at risk of being silently modified by a program, the right move would be to promote it to a `home.file` block rather than building a parallel copy mechanism.
 
 **Post-install messages** (`postInstallMessages` function in `update-env`) write per-platform manual-setup instructions to a file under `~/.local/share/dotfiles/` (creating the file only if missing), then print a one-line reminder pointing at the file. Currently used on Crostini to document the ChromeOS Chrome PAC URL configuration for UC-8.
 
@@ -337,9 +354,18 @@ Crostini doesn't have waybar, so the tmux status bar substitutes for it. Impleme
 
 **VPN gating**: `dm1`, `stash`, `gitlab`, `nexus` modules return early (empty string) when `tun0` is missing — the segment vanishes from the bar entirely, since tmux's per-segment range tolerates empty content.
 
-**Color palette** mirrors nixos-config's `home/sway/waybar.css`: white = on, light gray (`colour250`) = partial, dark gray (`colour244`) = off, amber (`colour130`) = unknown, red (`colour160`) = critical (cpu/mem/disk only).
+**Widget order and separators:** Both waybar (nixos-config) and the tmux panel use the same canonical group order, separated by visual dividers (CSS borders in waybar, pipe characters in tmux):
 
-**cpu/mem/disk thresholding**: hidden below 90% (segment is empty), label + percentage in red at 90%+. Implemented via `thresholdSegment`. Uses `df`, `/proc/meminfo`, and a delta against `/proc/stat` cached in `$State/cpu-stat`.
+1. **System** — ssh, fw, vpn (waybar only; tmux has vpn only)
+2. **Health** — dm1, stash, gitlab, nexus, codeberg, bitbucket, teams, ntfy (external service reachability; VPN-gated widgets appear only when tunnel is up)
+3. **Services** — era (local infrastructure services managed by the user)
+4. **Hardware** — load, cpu, mem, disk (local resource monitors; tmux omits backlight, vol, bat, temp which are desktop-only)
+
+Within each group, widgets cuddle with a single space between them. Empty widgets (VPN-gated when tunnel is down, threshold-gated below 90%) produce no output and no space — the group contracts. Separators between groups are always visible regardless of which widgets are populated. Changes to group membership or order must be mirrored in both renderers — see nixos-config's `docs/design.md` Waybar section.
+
+**Color palette** mirrors nixos-config's `home/sway/waybar.css`: white = on, light gray (`colour250`) = partial, dark gray (`colour244`) = off, amber (`colour130`) = unknown. cpu/mem/disk use white (same as on) when above threshold — they signal by appearing, not by color.
+
+**cpu/mem/disk thresholding**: hidden below 90% (segment is empty), label + percentage in white (default text color) at 90%+. Implemented via `thresholdSegment`. Uses `df`, `/proc/meminfo`, and a delta against `/proc/stat` cached in `$State/cpu-stat`.
 
 **Load sparkline**: 3-bar widget rendered left-to-right as 1m/5m/15m (matching `uptime`/`top` convention). Normalization formula:
 
@@ -353,7 +379,7 @@ capped at 8. Bar 6 = 2 × nproc (the "2 processes waiting per CPU, time to be co
 
 **Why text labels instead of icons**: ChromeOS Terminal is locked to a fixed font list (Cousine, Fira Code, JetBrains Mono, etc.) — none of which include Nerd Font / Font Awesome glyphs. We tried installing alternative terminals (foot has no working clipboard under Sommelier; alacritty/kitty fail on the GL bridge) and rolled back. The widget contract is identical to waybar's; only the rendering glyphs differ. See git history for details.
 
-**Drift risk**: this UC has a sibling implementation in `nixos-config/home/sway/waybar.nix` + `nixos-config/scripts/widget-status`. The probe code is shared (single source of truth in `probe-lib.bash`); the renderers are not. Behavioral changes to widget visibility, colors, or polling cadences must be mirrored on both sides. Cadences live in `probe-lib.bash` and are therefore actually shared. CSS/colors and visibility rules live in each renderer and must be hand-synced.
+**Drift risk**: this UC has a sibling implementation in `nixos-config/home/sway/waybar.nix` + `nixos-config/scripts/widget-status`. The probe code is shared (single source of truth in `probe-lib.bash`); the renderers are not. Widget group order, separator placement, visibility rules, and color mappings must be kept in sync between the two renderers. Cadences live in `probe-lib.bash` and are therefore actually shared. Both design docs (this file and `nixos-config/docs/design.md`) document the canonical group order — update both when changing it.
 
 ### direnv — UC-1
 

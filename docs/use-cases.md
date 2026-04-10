@@ -306,7 +306,7 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
 - **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
   - **Always shown**: vpn, teams, ntfy, bitbucket, codeberg, era, load
   - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
-  - **Hidden under 90% usage** (mirrors nixos-config UC-1b "CPU/memory/disk: invisible until 90%+"): cpu, mem, disk — only surface when there's a problem
+  - **Hidden under 90% usage** (mirrors nixos-config UC-1b): cpu, mem, disk — appear in default text color (white) when threshold crossed, not styled as a warning
   - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default, so this widget is normally invisible
   - **Not present on Crostini at all**:
     - backlight, custom/vol, custom/bat, custom/temp — host-hardware widgets with no in-container equivalent
@@ -326,7 +326,7 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
 - **Extensions:**
   - 1a. Not in tmux → run `tmux` first; the bar lives in the status line
   - 4a. VPN comes up after tmux session started → next refresh tick (≤5s) the VPN-gated widgets appear
-  - 5a. CPU spikes above 90% → cpu segment appears in red, vanishes again on the next tick once usage drops
+  - 5a. CPU spikes above 90% → cpu segment appears in white, vanishes again on the next tick once usage drops
   - 7a. Underlying inspector tool not installed → click handler falls back to a basic `ip -s addr` or status echo
 - **Postconditions:**
   - **Success:** Ted's bar is quiet most of the time, surfaces information only when meaningful, and matches the waybar contract on the NixOS side
