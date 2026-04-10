@@ -304,7 +304,7 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
   - VPN ergonomics (UC-7) — VPN status is always shown; VPN-gated widgets are hidden when the tunnel is down
   - nixos-config UC-1a/UC-1b — sibling use cases on the other platform; this UC mirrors them
 - **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
-  - **Always shown**: vpn, teams, bitbucket, codeberg, era, load
+  - **Always shown**: vpn, teams, ntfy, bitbucket, codeberg, era, load
   - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
   - **Hidden under 90% usage** (mirrors nixos-config UC-1b "CPU/memory/disk: invisible until 90%+"): cpu, mem, disk — only surface when there's a problem
   - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default, so this widget is normally invisible

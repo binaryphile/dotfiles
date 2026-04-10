@@ -331,7 +331,7 @@ Crostini doesn't have waybar, so the tmux status bar substitutes for it. Impleme
 **Probe cadences** (set in `probe-lib.bash`):
 - SSH probe (`sshHost`): every 600s. `ssh -T git@<host>`; rc 0/1 or "shell request failed" both count as ok.
 - TCP/443 ping (`pingHost`): every 30s. Uses `bash`'s `/dev/tcp/<host>/443` rather than ICMP because most vendor sites block ICMP.
-- Vendor status API (`bitbucketApiProbe`, `codebergApiProbe`): every 30s. Atlassian Statuspage component `qmh4tj8h5kbn` and Codeberg Uptime Kuma monitor 7 respectively.
+- Vendor status API (`bitbucketApiProbe`, `codebergApiProbe`, `dm1ApiProbe`): every 30s. Atlassian Statuspage component `qmh4tj8h5kbn` (bitbucket), Codeberg Uptime Kuma monitor 7, and Digi Remote Manager status page (worst-of across all components) respectively.
 
 **State machine** (per `combine` in `probe-lib.bash`): the displayed class is the worst tier across (api, ssh, ping). `api=down` → `off`. `api=degraded` → `partial`. `ping=fail` → `off`, AND `pingHost` invalidates the cached SSH success on failure so the widget can return to `on` only via a fresh successful SSH probe — a partial recovery from a network blip lands in `partial`, not back in `on`. `ssh=ok ∧ ping=ok` → `on`. `ping=ok` (without confirmed ssh) → `partial`. Otherwise `unknown`.
 

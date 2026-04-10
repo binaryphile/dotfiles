@@ -17,6 +17,7 @@
 #   codeberg  codeberg ssh status (status API)       (click: open url)
 #   bitbucket bitbucket ssh status (status API)      (click: open url)
 #   teams     teams.microsoft.com health              (click: open url)
+#   ntfy      ntfy.sh health                          (click: open url)
 #   ssh       inbound ssh connection count            (click: ss popup)
 #   load      1/5/15-min loadavg sparkline            (click: btop popup)
 #

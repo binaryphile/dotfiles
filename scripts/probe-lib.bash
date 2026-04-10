@@ -12,15 +12,16 @@
 # variables, lowercase first letter for locals, uppercase first
 # letter for globals.
 
-# Injectable command globals. Each defaults to the real binary but can
-# be overridden by callers (notably tests) to substitute a mock. Code
-# below invokes them via `$Var ...` expansion so the override is
-# transparent. Not safe for parallel use — globals are process-wide.
-Timeout=${Timeout:-timeout}
-Ssh=${Ssh:-ssh}
-Curl=${Curl:-curl}
-Jq=${Jq:-jq}
-Ip=${Ip:-ip}
+# Injectable command variables. Each defaults to the real binary but
+# can be overridden by callers (notably tests) to substitute a mock.
+# Code below invokes them via `$var ...` expansion so the override is
+# transparent. Named lowercase because they exist only to be shadowed
+# by locals in test functions (via bash dynamic scope).
+timeout=${timeout:-timeout}
+ssh=${ssh:-ssh}
+curl=${curl:-curl}
+jq=${jq:-jq}
+ip=${ip:-ip}
 
 if [[ -z ${State:-} ]]; then
   echo "probe-lib.bash: \$State is not set — caller must set it to a writable directory before sourcing this library" >&2
@@ -73,7 +74,7 @@ readState() {
 }
 
 # vpnUp returns true if the VPN tunnel interface exists.
-vpnUp() { $Ip link show tun0 >/dev/null 2>&1; }
+vpnUp() { $ip link show tun0 >/dev/null 2>&1; }
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
 # unreliable because most vendor sites block it). Returns ok or fail.
@@ -84,7 +85,7 @@ vpnUp() { $Ip link show tun0 >/dev/null 2>&1; }
 pingHost() {
   local key=$1
   local host=$2
-  if $Timeout 3 bash -c "exec 3<>/dev/tcp/$host/443" 2>/dev/null; then
+  if $timeout 3 bash -c "exec 3<>/dev/tcp/$host/443" 2>/dev/null; then
     echo ok
   else
     echo fail > "$State/${key}-ssh.tmp" \
@@ -99,7 +100,7 @@ pingHost() {
 sshHost() {
   local host=$1
   local err rc
-  err=$($Ssh -T -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
+  err=$($ssh -T -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
     "git@$host" 2>&1) && rc=$? || rc=$?
   if (( rc == 0 || rc == 1 )) || grep -q 'shell request failed' <<<"$err"; then
     echo ok
@@ -134,9 +135,9 @@ combine() {
 # 'Git via SSH' component (id: qmh4tj8h5kbn). Returns: on, partial, off.
 bitbucketApiProbe() {
   local result
-  result=$($Curl -fs --connect-timeout 3 --max-time 5 \
+  result=$($curl -fs --connect-timeout 3 --max-time 5 \
     https://bitbucket.status.atlassian.com/api/v2/components.json 2>/dev/null \
-    | $Jq -r '.components[] | select(.id == "qmh4tj8h5kbn") | .status' 2>/dev/null) || true
+    | $jq -r '.components[] | select(.id == "qmh4tj8h5kbn") | .status' 2>/dev/null) || true
   case $result in
     operational)                          echo on      ;;
     degraded_performance|partial_outage)  echo partial ;;
@@ -148,12 +149,30 @@ bitbucketApiProbe() {
 # 7 is the "Codeberg SSH access" monitor. Returns: on, off.
 codebergApiProbe() {
   local result
-  result=$($Curl -fs --connect-timeout 3 --max-time 5 \
+  result=$($curl -fs --connect-timeout 3 --max-time 5 \
     https://status.codeberg.org/api/status-page/heartbeat/codeberg 2>/dev/null \
-    | $Jq -er '.heartbeatList."7"[-1].status' 2>/dev/null) || true
+    | $jq -er '.heartbeatList."7"[-1].status' 2>/dev/null) || true
   case $result in
     1) echo on ;;
     *) echo off ;;
+  esac
+}
+
+# dm1ApiProbe queries the Digi Remote Manager status page (Atlassian
+# Statuspage) for the worst component status. Returns: on, partial, off.
+dm1ApiProbe() {
+  local result
+  result=$($curl -fs --connect-timeout 3 --max-time 5 \
+    https://status.digi.com/api/v2/components.json 2>/dev/null \
+    | $jq -r '[.components[].status] |
+      if any(. == "major_outage") then "off"
+      elif any(. == "partial_outage" or . == "degraded_performance") then "partial"
+      elif all(. == "operational") then "on"
+      else "off" end' 2>/dev/null) || true
+  case $result in
+    on)      echo on      ;;
+    partial) echo partial ;;
+    *)       echo off     ;;
   esac
 }
 
@@ -180,6 +199,7 @@ declare -A WidgetVpnGated=(
 declare -A WidgetApiFn=(
   [bitbucket]=bitbucketApiProbe
   [codeberg]=codebergApiProbe
+  [dm1]=dm1ApiProbe
 )
 
 # widgetHost prints the configured host for a widget, or empty if
