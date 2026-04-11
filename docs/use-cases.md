@@ -291,11 +291,11 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 
 ### UC-10: Tmux Status Bar Widgets
 
-This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State). The widget contracts described here are designed to match the waybar contracts in nixos-config so the user gets the same ambient experience on either platform. ChromeOS's locked-down shelf does not allow custom widgets the way waybar does on a real Linux desktop, so the tmux status bar substitutes here.
+This use case mirrors nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State) for headless sessions — Crostini (where ChromeOS's locked-down shelf doesn't allow custom widgets) and SSH into NixOS (where waybar isn't available). The widget contracts match waybar so the user gets the same ambient experience on either platform.
 
 - **Actor:** Ted
-- **Goal:** See ambient health for the same set of systems and services that the NixOS+Sway waybar shows — work VPN, work hosts behind that VPN, public dev forges, communication tools, the era memory store, system load, and resource exhaustion alerts — at a glance from any tmux pane on Crostini
-- **Scope:** Crostini host
+- **Goal:** See ambient health for the same set of systems and services that the NixOS+Sway waybar shows — work VPN, work hosts behind that VPN, public dev forges, communication tools, the era memory store, system load, and resource exhaustion alerts — at a glance from any tmux pane on Crostini or headless Linux
+- **Scope:** Crostini and headless Linux (SSH without desktop)
 - **Level:** User goal
 - **Trigger:** Ted runs a tmux session
 - **Preconditions:** tmux 3.2+ (for `display-popup`), `panel` script on PATH, mouse support enabled
@@ -304,22 +304,23 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
   - VPN ergonomics (UC-7) — VPN status is always shown; VPN-gated widgets are hidden when the tunnel is down
   - nixos-config UC-1a/UC-1b — sibling use cases on the other platform; this UC mirrors them
 - **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
-  - **Always shown**: vpn, remotemanager, teams, ntfy, bitbucket, codeberg, era, load
+  - **Hidden when healthy** (quiet-by-default): health monitor widgets (dm1, stash, nexus, gitlab, remotemanager, codeberg, bitbucket, teams, ntfy) vanish when state is `on`. They appear only for `partial` (mid-gray) or `off` (dark-gray) or `unknown` (amber) — surfacing information only when something needs attention. The separator between vpn and era collapses when all health widgets are hidden.
+  - **Always shown**: vpn, era, load — infrastructure status and service toggles that are always meaningful. These are interactive controls (click to toggle), not passive monitors.
   - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
-  - **Always shown** (public Digi service): remotemanager — not VPN-gated, always probed
   - **Hidden under 90% usage** (mirrors nixos-config UC-1b): cpu, mem, disk — appear in default text color (white) when threshold crossed, not styled as a warning
   - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default, so this widget is normally invisible
-  - **Always shown (non-widget)**: clock (`%H:%M`), hostname — follow the hardware group
+  - **Battery** (hidden above 10%): warning [10,5%) shows "H:MM" in partial color (dimmer than clock); critical [5,0%] shows "N% bat" in white
+  - **Always shown (non-widget)**: clock (`MM/DD HH:MM`), hostname (reads from `~/crostini/hostname` on Crostini, system hostname elsewhere) — follow the hardware group
   - **Not present on Crostini at all**:
-    - backlight, custom/vol, custom/bat, custom/temp — host-hardware widgets with no in-container equivalent
+    - backlight, custom/vol, custom/temp — host-hardware widgets with no in-container equivalent
     - tray — handled by the ChromeOS shelf
     - custom/fw — we don't run a firewall inside the Crostini container
 - **State coloring** (mirrors waybar.css from nixos-config):
-  - white = on, light gray = degraded/partial, dark gray = off, amber = unknown
+  - on = hidden (health widget vanishes; vpn/era/load always visible in white), light gray = degraded/partial, dark gray = off, amber = unknown
 - **Main Success Scenario:**
   1. Ted opens a tmux session
   2. The status bar dynamically uses 1 or 2 rows depending on terminal width: when the window list + widgets fit on one line, everything is on row 0 (window list left, widgets + clock + hostname right); when they don't fit, row 0 has the window list and row 1 has the widgets + clock + hostname, right-aligned. `panel layout` toggles between modes on resize, window add/remove, and every 5-second refresh.
-  3. The widget bar always shows: vpn, remotemanager, teams, bitbucket, codeberg, era, load — the widgets that are always meaningful
+  3. The widget bar is quiet by default — health widgets are hidden when everything is healthy, showing only vpn and load as always-visible anchors. Degraded or down services surface automatically.
   3a. Widget order is the same as waybar on NixOS (left-to-right: infrastructure, VPN-gated hosts, public services, system monitors), minus widgets that have no Crostini equivalent
   4. VPN-gated widgets (dm1, stash, nexus, gitlab) appear only when `tun0` is up
   5. cpu, mem, disk appear only when usage is at 90% or above
@@ -352,4 +353,4 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
 | UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite via upstream flake; SAML callback validated end-to-end on Crostini |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
-| UC-10 Tmux Status Bar Widgets | Working | panel + crostini tmux.conf; vpn wrapper for shell-clean vpn-connect launches |
+| UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |

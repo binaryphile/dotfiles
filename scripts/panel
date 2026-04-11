@@ -52,16 +52,17 @@ ColorPartial=colour250
 ColorOff=colour244
 ColorUnknown=colour130
 
-# segment renders a 3-char text label colored by state. The label IS
-# the indicator; the color of the label is the only signal of state.
-# Plain text so it works in ChromeOS Terminal's font set (no Nerd Font
-# required).
+# segment renders a 3-char text label colored by state. Hidden when
+# state is "on" — healthy widgets vanish so the bar is quiet by default,
+# surfacing only when something needs attention. Partial and off states
+# render in the customary mid-gray/dark-gray. Plain text so it works
+# in ChromeOS Terminal's font set (no Nerd Font required).
 segment() {
   local label=$1
   local cls=${2:-unknown}
   local color
   case $cls in
-    on)      color=$ColorOn      ;;
+    on)      return ;;
     partial) color=$ColorPartial ;;
     off)     color=$ColorOff     ;;
     *)       color=$ColorUnknown ;;
@@ -128,8 +129,25 @@ vpnProbe() {
 # combined state, then renders a tmux segment. VPN-gated widgets
 # return early (empty output) when tun0 is down.
 
-eraModule() { refresh era 30 eraProbe; segment era "$(readState era)"; }
-vpnModule() { refresh vpn  5 vpnProbe; segment vpn "$(readState vpn)"; }
+# alwaysSegment renders like segment but is always visible, including
+# when state is "on". Used for service toggles (era, vpn) where the
+# widget is an interactive control, not a passive health monitor.
+alwaysSegment() {
+  local label=$1
+  local cls=${2:-unknown}
+  local color
+  case $cls in
+    on)      color=$ColorOn      ;;
+    partial) color=$ColorPartial ;;
+    off)     color=$ColorOff     ;;
+    *)       color=$ColorUnknown ;;
+  esac
+  printf ' '
+  fg "$color" "$label"
+}
+
+eraModule() { refresh era 30 eraProbe; alwaysSegment era "$(readState era)"; }
+vpnModule() { refresh vpn  5 vpnProbe; alwaysSegment vpn "$(readState vpn)"; }
 
 dm1Module()       { vpnUp || return; segment dm1 "$(probeWidget dm1)"; }
 stashModule()     { vpnUp || return; segment sta "$(probeWidget stash)"; }
@@ -140,6 +158,59 @@ codebergModule()  { segment cbg "$(probeWidget codeberg)"; }
 bitbucketModule() { segment bbk "$(probeWidget bitbucket)"; }
 teamsModule()     { segment tms "$(probePing teams "$(widgetHost teams)" 300)"; }
 ntfyModule()      { segment nfy "$(probePing ntfy  "$(widgetHost ntfy)"  300)"; }
+
+# cachedHealthState reads the cached sub-states (ssh, ping, api) for a
+# health widget and combines them WITHOUT triggering new probes. Used by
+# healthSep and layoutCmd to check visibility without side effects.
+cachedHealthState() {
+  local key=$1
+  local ssh ping api
+  if [[ ${WidgetNoSsh[$key]:-no} == yes ]]; then
+    ssh=skip
+  else
+    ssh=$(readState "${key}-ssh")
+  fi
+  ping=$(readState "${key}-ping")
+  if [[ -n ${WidgetApiFn[$key]:-} ]]; then
+    api=$(readState "${key}-api")
+  else
+    api=on
+  fi
+  combine "$ssh" "$ping" "$api"
+}
+
+# cachedPingState reads the cached ping state for a ping-only widget
+# and maps it to on/off/unknown. Used by healthSep and layoutCmd.
+cachedPingState() {
+  local ping
+  ping=$(readState "${1}-ping")
+  case $ping in
+    ok)   echo on ;;
+    fail) echo off ;;
+    *)    echo unknown ;;
+  esac
+}
+
+# healthSep emits a pipe separator only if any health monitor widget
+# is currently visible (state != on). Prevents two adjacent separators
+# with nothing between them when all health monitors are healthy.
+healthSep() {
+  local state widget
+  for widget in remotemanager codeberg bitbucket; do
+    state=$(cachedHealthState $widget)
+    [[ $state != on ]] && { printf ' '; fg colour240 '|'; return; }
+  done
+  for widget in teams ntfy; do
+    state=$(cachedPingState $widget)
+    [[ $state != on ]] && { printf ' '; fg colour240 '|'; return; }
+  done
+  if vpnUp; then
+    for widget in dm1 stash gitlab nexus; do
+      state=$(cachedHealthState $widget)
+      [[ $state != on ]] && { printf ' '; fg colour240 '|'; return; }
+    done
+  fi
+}
 
 # ssh: shows inbound SSH connection count, but ONLY when there are
 # any. Crostini doesn't run sshd by default so this is normally empty
@@ -230,31 +301,81 @@ diskModule() {
   thresholdSegment dsk "${pct:-0}"
 }
 
-# batModule shows battery time remaining ("H:MM left") when discharging,
-# or percentage when at 5% or below. Hidden when charging/full/unknown.
-# Reads Crostini's sysfs (charge_counter/current_now in µAh/µA).
+# batModule shows battery state when discharging in warning/critical range.
+# Hidden when: charging, full, unknown, or capacity > 10%.
+# Warning [10,5%): "H:MM bat" in partial color (dimmer than clock).
+# Critical [5,0%]: percentage in white.
+# Matches nixos-config UC-1b battery thresholds.
+# Supports Crostini (/sys/class/power_supply/battery/) and standard
+# Linux laptops (/sys/class/power_supply/BAT0/).
 batModule() {
-  local base=/sys/class/power_supply/battery
-  [[ -r $base/status ]] || return
+  local sysfs=${BatSysfs:-/sys/class/power_supply}
+  local base
+  if [[ -r $sysfs/battery/status ]]; then
+    base=$sysfs/battery
+  elif [[ -r $sysfs/BAT0/status ]]; then
+    base=$sysfs/BAT0
+  else
+    return
+  fi
+
   local status
   read -r status < "$base/status"
   [[ $status == Discharging ]] || return
 
-  local capacity current charge
+  local capacity
   read -r capacity < "$base/capacity"
-  read -r current  < "$base/current_now"
-  read -r charge   < "$base/charge_counter"
+  (( capacity <= 10 )) || return
 
+  # Critical: [5,0%] — show "N% bat" in white
   if (( capacity <= 5 )); then
     printf ' '
-    fg "$ColorOn" "${capacity}%%"
-  elif (( current > 0 )); then
-    local mins=$(( charge * 60 / current ))
-    local hours=$(( mins / 60 ))
-    local m=$(( mins % 60 ))
-    printf ' '
-    fg "$ColorOn" "$(printf '%d:%02d left' "$hours" "$m")"
+    fg "$ColorOn" "${capacity}%% bat"
+    return
   fi
+
+  # Warning: (10,5%] — show "H:MM" in partial color
+  # Time remaining: charge_now/current_now (µAh/µA, standard ACPI),
+  # charge_counter/current_now (µAh/µA, Crostini Android bridge), or
+  # energy_now/power_now (µWh/µW, energy-based laptops). Same formula.
+  local current=0 charge=0
+  if [[ -r $base/charge_now && -r $base/current_now ]]; then
+    read -r current < "$base/current_now"
+    read -r charge  < "$base/charge_now"
+  elif [[ -r $base/current_now && -r $base/charge_counter ]]; then
+    read -r current < "$base/current_now"
+    read -r charge  < "$base/charge_counter"
+  elif [[ -r $base/power_now && -r $base/energy_now ]]; then
+    read -r current < "$base/power_now"
+    read -r charge  < "$base/energy_now"
+  fi
+  (( current > 0 && charge > 0 )) || return
+
+  local mins=$(( charge * 60 / current ))
+  local hours=$(( mins / 60 ))
+  local m=$(( mins % 60 ))
+  printf ' '
+  fg "$ColorPartial" "$(printf '%d:%02d' "$hours" "$m")"
+}
+
+# hostnameCmd prints a human-friendly hostname. On Crostini, reads from
+# ~/crostini/hostname (the real machine name) since the container hostname
+# is always "penguin".
+hostnameCmd() {
+  if [[ -r ~/crostini/hostname ]]; then
+    cat ~/crostini/hostname
+  else
+    hostname
+  fi
+}
+
+# canLoadCmd checks whether the current tmux session should load the
+# panel. True when SSH_CONNECTION is set (non-empty) and WAYLAND_DISPLAY
+# is absent — i.e., an SSH session without a desktop. Reads session env
+# via tmux show-env (populated by update-environment from the client).
+canLoadCmd() {
+  tmux show-env SSH_CONNECTION 2>/dev/null | grep -q '=.' &&
+    ! tmux show-env WAYLAND_DISPLAY 2>/dev/null | grep -q '=.'
 }
 
 # Click handlers. Toggling services for era and vpn matches the waybar
@@ -299,20 +420,48 @@ clickModule() {
 # tmux hooks on resize/window changes. Idempotent — skips if already
 # in the correct mode.
 layoutCmd() {
-  local width session hostname
-  IFS=$'\t' read -r width session hostname < <(tmux display-message -p '#{client_width}	#S	#H')
+  local width session
+  IFS=$'\t' read -r width session < <(tmux display-message -p '#{client_width}	#S')
+  local hostname
+  hostname=$(hostnameCmd)
 
   # Window list display width: session name in brackets + window tabs.
   local winWidth
   winWidth=$(tmux list-windows -F '#I:#W#{window_flags}' \
     | awk -v base="$(( ${#session} + 3 ))" '{s+=length+1} END {print s+base}')
 
-  # Right-side display width: 4 chars per visible widget (space + 3-char
-  # label), 3 pipe separators (2 chars each), clock (6), hostname.
-  # Always-visible: vpn remotemanager codeberg bitbucket teams ntfy era load
-  local nWidgets=8
-  vpnUp && nWidgets=$(( nWidgets + 4 ))  # dm1 stash gitlab nexus
-  local rightWidth=$(( nWidgets * 4 + 6 + 6 + ${#hostname} + 1 ))
+  # Right-side display width: count actually-visible widgets by checking
+  # cached state. Always-visible: vpn, era, load (3). Health widgets only
+  # count when their combined state != on.
+  local nWidgets=3  # vpn era load
+  local healthVisible=0
+  local widget state
+  for widget in remotemanager codeberg bitbucket; do
+    state=$(cachedHealthState $widget)
+    if [[ $state != on ]]; then
+      nWidgets=$(( nWidgets + 1 ))
+      healthVisible=1
+    fi
+  done
+  for widget in teams ntfy; do
+    state=$(cachedPingState $widget)
+    if [[ $state != on ]]; then
+      nWidgets=$(( nWidgets + 1 ))
+      healthVisible=1
+    fi
+  done
+  if vpnUp; then
+    for widget in dm1 stash gitlab nexus; do
+      state=$(cachedHealthState $widget)
+      if [[ $state != on ]]; then
+        nWidgets=$(( nWidgets + 1 ))
+        healthVisible=1
+      fi
+    done
+  fi
+  local nSeps=$(( healthVisible ? 3 : 2 ))
+  # clock: " MM/DD HH:MM" = 12, hostname: " name" = 1 + length
+  local rightWidth=$(( nWidgets * 4 + nSeps * 2 + 12 + ${#hostname} + 1 ))
 
   local current
   current=$(tmux show-option -v status 2>/dev/null)
@@ -351,14 +500,19 @@ main() {
     mem)        memModule ;;
     disk)       diskModule ;;
     bat)        batModule ;;
+    healthsep)  healthSep ;;
+    hostname)   hostnameCmd ;;
+    can-load)   canLoadCmd ;;
     poll)       pollAll ;;
     click)      clickModule "$@" ;;
     layout)     layoutCmd ;;
     *)
-      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|remotemanager|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|poll|layout|click <m>}" >&2
+      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|remotemanager|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|bat|healthsep|hostname|can-load|poll|layout|click <m>}" >&2
       exit 1
       ;;
   esac
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi

@@ -113,13 +113,15 @@ main() {
     task.Ln $CrostiniDir ~/crostini
 
     # clone from persisted repo directories to home dir
-    local -A branches=(
-      [tlilley-daily-notes.git]=main
-      [urma-next-local.git]=main
-    )
-    (cd $CrostiniDir/repos; glob * | keepIf isDir) |
-      map target '$CrostiniDir/repos/$target ~/projects/${target%.git} ${branches[$target]:-develop}' |
-      each task.GitClone
+    if [[ -d $CrostiniDir/repos ]]; then
+      local -A branches=(
+        [tlilley-daily-notes.git]=main
+        [urma-next-local.git]=main
+      )
+      (cd $CrostiniDir/repos; glob * | keepIf isDir) |
+        map target '$CrostiniDir/repos/$target ~/projects/${target%.git} ${branches[$target]:-develop}' |
+        each task.GitClone
+    fi
   fi
 
   #  ┌─────────────────────────────────────────────────────────────┐
