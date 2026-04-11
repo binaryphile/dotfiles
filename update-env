@@ -74,9 +74,6 @@ main() {
     ~/dotfiles/bash/init.bash                     ~/.bashrc
     ~/dotfiles/bash/init.bash                     ~/.profile
   END
-  [[ -e ~/dotfiles/context/btop.conf ]] &&
-    task.Ln ~/dotfiles/context/btop.conf ~/.config/btop/btop.conf
-
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 3: Package Management (sections nix & home-manager)   │
   #  │   ├─> Install Nix (Lix installer)                           │
@@ -135,11 +132,11 @@ main() {
   #  └─────────────────────────────────────────────────────────────┘
 
   section fp.bash
-  githubCloneAndLinkTask fp.bash develop
+  githubCloneAndLinkTask fp.bash main
   task.Ln ~/projects/fp.bash/fp.bash ~/.local/lib/fp.bash
 
   section mk.bash
-  githubCloneAndLinkTask mk.bash develop
+  githubCloneAndLinkTask mk.bash main
   task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
   task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
 
@@ -149,7 +146,7 @@ main() {
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
 
   section tesht
-  githubCloneAndLinkTask tesht develop
+  githubCloneAndLinkTask tesht main
   task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
 
   section jeeves
@@ -159,7 +156,7 @@ main() {
   githubCloneAndLinkTask sofdevsim-2026 main
 
   section blog
-  githubCloneAndLinkTask binaryphile.github.io main
+  githubCloneAndLinkTask binaryphile.github.io master
 
   section tandem-protocol
   codebergCloneAndLinkTask tandem-protocol main
@@ -186,7 +183,7 @@ main() {
 
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 5b: Work Projects (VPN-dependent, graceful failure)   │
-  #  │   ├─> urma-next        - main application (+ npm, MCP)      │
+  #  │   ├─> urma-next        - main application (+ MCP)            │
   #  │   ├─> pepin            - build/deploy tooling               │
   #  │   ├─> cloud-services                                        │
   #  │   ├─> accelerated-linux                                     │
@@ -203,7 +200,6 @@ main() {
     accelerated-linux master accelerated-linux acl
     urma-obsidian main urma/obsidian ~tlilley
   END
-  try npmInstallTask ~/projects/urma
   try writeMcpJsonTask ~/projects/urma
 
   section share
@@ -363,15 +359,6 @@ chromeDevtoolsMcpRegisterTask() {
       mv ~/.claude.json.tmp ~/.claude.json
   }
   cmd chromeDevtoolsMcpRegister
-}
-
-npmInstallTask() {
-  local dir=$1
-  desc   "npm install in $dir"
-  exist  "$dir/node_modules"
-  prog   on
-
-  cmd "cd '$dir' && npm install"
 }
 
 writeMcpJsonTask() {

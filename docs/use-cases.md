@@ -82,7 +82,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Postconditions:**
   - **Success:** All expected apps declaratively installed and working
   - **Failure:** App needs manual install or has unresolved issues
-- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, signal-desktop, btop, highlight, wl-clipboard, cliphist, asciinema. notify-send is wrapped to also push to ntfy.sh (UC-9).
+- **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, signal-desktop, bottom, highlight, wl-clipboard, cliphist, asciinema. notify-send is wrapped to also push to ntfy.sh (UC-9).
 
 ---
 
@@ -130,7 +130,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   3. update-env prints any platform-specific manual steps that cannot be automated (e.g., ChromeOS proxy setup for UC-8 on Crostini)
 - **Extensions:**
   - 1a. NixOS host → `update-env` skips apt and nix/home-manager phases (system-managed)
-  - 1b. New machine → create a machine-specific context with per-machine config (e.g., btop network interface)
+  - 1b. New machine → create a machine-specific context with per-machine config
   - 2a. A phase fails → script reports which; diagnose
   - 2b. Package fails to build → nixpkgs compatibility issue
   - 3a. Manual step missed → re-run update-env to see the reminders again, or check use-cases.md
@@ -298,34 +298,34 @@ This use case mirrors nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Ad
 - **Scope:** Crostini and headless Linux (SSH without desktop)
 - **Level:** User goal
 - **Trigger:** Ted runs a tmux session
-- **Preconditions:** tmux 3.2+ (for `display-popup`), `panel` script on PATH, mouse support enabled
+- **Preconditions:** tmux 3.2+ (for `display-popup`), `panel` script on PATH
 - **Stakeholders:**
   - Ted — wants the same ambient awareness as on NixOS, with the same "quiet by default, loud when something needs attention" contract
   - VPN ergonomics (UC-7) — VPN status is always shown; VPN-gated widgets are hidden when the tunnel is down
   - nixos-config UC-1a/UC-1b — sibling use cases on the other platform; this UC mirrors them
 - **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
-  - **Hidden when healthy** (quiet-by-default): health monitor widgets (dm1, stash, nexus, gitlab, remotemanager, codeberg, bitbucket, teams, ntfy) vanish when state is `on`. They appear only for `partial` (mid-gray) or `off` (dark-gray) or `unknown` (amber) — surfacing information only when something needs attention. The separator between vpn and era collapses when all health widgets are hidden.
-  - **Always shown**: vpn, era, load — infrastructure status and service toggles that are always meaningful. These are interactive controls (click to toggle), not passive monitors.
+  - **Hidden when healthy** (quiet-by-default): health monitor widgets (dm1, stash, nexus, gitlab, remotemanager, codeberg, bitbucket, teams, ntfy) vanish when state is `on`. They appear only for `partial` (mid-gray) or `off` (dark-gray) or `unknown` (amber) — surfacing information only when something needs attention. The separator between vpn and the health group collapses when all health widgets are hidden.
+  - **Always shown**: vpn, era, load — infrastructure status and service toggles that are always meaningful. vpn and era are interactive controls (click to toggle); load shows a sparkline (click opens top).
   - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
   - **Hidden under 90% usage** (mirrors nixos-config UC-1b): cpu, mem, disk — appear in default text color (white) when threshold crossed, not styled as a warning
-  - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default, so this widget is normally invisible
+  - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default so this is normally invisible there; on NixOS SSH the host does run sshd, so this widget shows inbound connection count
   - **Battery** (hidden above 10%): warning [10,5%) shows "H:MM" in partial color (dimmer than clock); critical [5,0%] shows "N% bat" in white
   - **Always shown (non-widget)**: clock (`MM/DD HH:MM`), hostname (reads from `~/crostini/hostname` on Crostini, system hostname elsewhere) — follow the hardware group
-  - **Not present on Crostini at all**:
-    - backlight, custom/vol, custom/temp — host-hardware widgets with no in-container equivalent
-    - tray — handled by the ChromeOS shelf
-    - custom/fw — we don't run a firewall inside the Crostini container
+  - **Not present in tmux panel** (desktop-only widgets handled by waybar):
+    - backlight, vol, temp — hardware controls with no headless equivalent
+    - tray — handled by ChromeOS shelf on Crostini, desktop tray on NixOS
+    - fw — firewall status shown by waybar only
 - **State coloring** (mirrors waybar.css from nixos-config):
   - on = hidden (health widget vanishes; vpn/era/load always visible in white), light gray = degraded/partial, dark gray = off, amber = unknown
 - **Main Success Scenario:**
   1. Ted opens a tmux session
   2. The status bar dynamically uses 1 or 2 rows depending on terminal width: when the window list + widgets fit on one line, everything is on row 0 (window list left, widgets + clock + hostname right); when they don't fit, row 0 has the window list and row 1 has the widgets + clock + hostname, right-aligned. `panel layout` toggles between modes on resize, window add/remove, and every 5-second refresh.
   3. The widget bar is quiet by default — health widgets are hidden when everything is healthy, showing only vpn and load as always-visible anchors. Degraded or down services surface automatically.
-  3a. Widget order is the same as waybar on NixOS (left-to-right: infrastructure, VPN-gated hosts, public services, system monitors), minus widgets that have no Crostini equivalent
+  3a. Widget order is the same as waybar on NixOS (left-to-right: infrastructure, VPN-gated hosts, public services, system monitors), minus desktop-only widgets (backlight, vol, temp, tray, fw)
   4. VPN-gated widgets (dm1, stash, nexus, gitlab) appear only when `tun0` is up
   5. cpu, mem, disk appear only when usage is at 90% or above
   6. Segments refresh every 5 seconds; expensive probes (curl, ssh) are cached for 30 seconds and refreshed asynchronously so the bar never stalls
-  7. Ted clicks a segment; a relevant inspector pops up (btop for load/cpu/mem/disk drilldown, the URL for forge widgets, status info for vpn/era)
+  7. Ted clicks a segment; a relevant inspector pops up (top for load/cpu/mem/disk drilldown, the URL for forge widgets, status info for vpn/era)
 - **Extensions:**
   - 1a. Not in tmux → run `tmux` first; the bar lives in the status line
   - 2a. Ted resizes terminal to full-width → `panel layout` detects room and collapses to 1-line mode on the next tick (≤5s) or immediately via `client-resized` hook
@@ -336,7 +336,7 @@ This use case mirrors nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Ad
 - **Postconditions:**
   - **Success:** Ted's bar is quiet most of the time, surfaces information only when meaningful, and matches the waybar contract on the NixOS side
   - **Failure:** Bar is cluttered with always-visible "off" indicators OR misses important state changes
-- **Sibling implementation:** This UC describes the same observable widget contract as nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State). On NixOS+Sway, waybar renders the widgets; on Crostini, the tmux status bar substitutes for waybar. Behavioral changes must be mirrored across both UCs. The implementations are independent rendering wrappers around a shared probe library — see [design.md § Status widgets](design.md#status-widgets--uc-10) for how that works and which files are shared.
+- **Sibling implementation:** This UC describes the same observable widget contract as nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State). On NixOS+Sway, waybar renders the widgets; on Crostini and headless Linux (SSH without desktop), the tmux status bar substitutes for waybar. On NixOS, both renderers can be active on the same machine — waybar on desktop sessions, panel on SSH sessions. Behavioral changes must be mirrored across both UCs. The implementations are independent rendering wrappers around a shared probe library — see [design.md § Status widgets](design.md#status-widgets--uc-10) for how that works and which files are shared.
 
 ---
 

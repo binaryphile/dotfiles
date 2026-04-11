@@ -4,9 +4,11 @@
 # in nixos-config/home/sway/waybar.nix.
 #
 # Usage:
-#   panel <module>           print a single fixed-width status segment
+#   panel <module>           print a status segment (or nothing if hidden)
 #   panel click <module>     click handler (called from tmux mouse bind)
 #   panel poll               refresh all module state files (one-shot)
+#   panel layout             toggle 1-line/2-line status bar by width
+#   panel can-load           exit 0 if session should load panel (SSH check)
 #
 # Modules:
 #   era       era-mcp systemd service status         (click: toggle service)
@@ -21,12 +23,19 @@
 #   teams          teams.microsoft.com health              (click: open url)
 #   ntfy           ntfy.sh health                          (click: open url)
 #   ssh       inbound ssh connection count            (click: ss popup)
-#   load      1/5/15-min loadavg sparkline            (click: btop popup)
+#   load      1/5/15-min loadavg sparkline            (click: top popup)
+#   cpu       CPU usage, visible at 90%+              (no click)
+#   mem       memory usage, visible at 90%+           (no click)
+#   disk      root disk usage, visible at 90%+        (no click)
+#   bat       battery time/pct, visible at 10%-       (no click)
+#   healthsep dynamic separator for health group      (no click)
+#   hostname  human-friendly hostname                 (no click)
 #
-# Each module emits a fixed-width segment so the bar doesn't reflow.
-# Slow probes (curl, ssh, ping) are dispatched to background subshells
-# and tmux always reads from a cached state file. The first read after
-# startup may show "?" until the first poll completes.
+# Health widgets are quiet by default — hidden when healthy, visible
+# only when degraded/down/unknown. Service toggles (era, vpn) and
+# resource monitors (load) are always visible. Slow probes are cached
+# asynchronously; the first read after startup shows "?" until the
+# first poll completes.
 
 set -uo pipefail
 
@@ -43,10 +52,11 @@ source "$HOME/dotfiles/scripts/probe-lib.bash"
 fg() { printf '#[fg=%s]%s#[default]' "$1" "$2"; }
 
 # Color palette mirrors waybar.css from nixos-config:
-#   on       white       (#ffffff) — healthy / default
+#   on       white       (#ffffff) — used by alwaysSegment and thresholdSegment
 #   partial  colour250   (#bcbcbc) — degraded
 #   off      colour244   (#808080) — down
 #   unknown  colour130   (#af5f00) — amber, no data yet
+# Health widgets (segment) are hidden when on — they don't use ColorOn.
 ColorOn=white
 ColorPartial=colour250
 ColorOff=colour244
@@ -409,7 +419,7 @@ clickModule() {
     teams)     xdg-open https://teams.microsoft.com/ ;;
     ntfy)      xdg-open https://ntfy.sh/ ;;
     ssh)       tmux display-popup -E -h 60% -w 80% 'ss -tn sport = :22; echo; read -n1 -p "press any key "' ;;
-    load)      tmux display-popup -E -h 90% -w 90% btop ;;
+    load)      tmux display-popup -E -h 60% -w 80% 'top -b -n1 | head -30; echo; read -n1 -p "press any key "' ;;
     *)         tmux display-message "panel: unknown click target '${m}'" ;;
   esac
 }

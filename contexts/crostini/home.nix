@@ -51,7 +51,6 @@ in
 
   home.packages = with pkgs; [
     ast-grep
-    btop
     bubblewrap
     abcde
     asciinema

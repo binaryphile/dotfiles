@@ -44,6 +44,15 @@ test_batModule() {
   )
 
   local -A case2=(
+    [name]='warning: charge_now/current_now shows time bat'
+    [bat]=BAT0
+    [status]=Discharging
+    [capacity]=8
+    [files]='current_now=1000000 charge_now=2500000'
+    [want]='2:30'
+  )
+
+  local -A case3=(
     [name]='warning: energy_now/power_now shows time bat'
     [bat]=BAT0
     [status]=Discharging
@@ -52,7 +61,16 @@ test_batModule() {
     [want]='3:00'
   )
 
-  local -A case3=(
+  local -A case4=(
+    [name]='charge_now wins over charge_counter when both exist'
+    [bat]=BAT0
+    [status]=Discharging
+    [capacity]=8
+    [files]='current_now=1000000 charge_now=2500000 charge_counter=9999999'
+    [want]='2:30'
+  )
+
+  local -A case5=(
     [name]='negative charge returns nothing'
     [bat]=battery
     [status]=Discharging
@@ -61,7 +79,7 @@ test_batModule() {
     [want]=''
   )
 
-  local -A case4=(
+  local -A case6=(
     [name]='zero current returns nothing'
     [bat]=battery
     [status]=Discharging
@@ -70,7 +88,7 @@ test_batModule() {
     [want]=''
   )
 
-  local -A case5=(
+  local -A case7=(
     [name]='warning: no compatible files shows nothing'
     [bat]=battery
     [status]=Discharging
@@ -79,7 +97,7 @@ test_batModule() {
     [want]=''
   )
 
-  local -A case6=(
+  local -A case8=(
     [name]='critical: capacity at 5 shows percentage'
     [bat]=battery
     [status]=Discharging
@@ -88,7 +106,7 @@ test_batModule() {
     [want]='5%% bat'
   )
 
-  local -A case7=(
+  local -A case9=(
     [name]='above 10 pct hides widget'
     [bat]=battery
     [status]=Discharging
@@ -97,7 +115,7 @@ test_batModule() {
     [want]=''
   )
 
-  local -A case8=(
+  local -A case10=(
     [name]='charging hides widget'
     [bat]=battery
     [status]=Charging
@@ -106,17 +124,16 @@ test_batModule() {
     [want]=''
   )
 
-  local -A case9=(
+  local -A case11=(
     [name]='no sysfs dir returns nothing'
     [bat]=MISSING
     [status]=Discharging
     [capacity]=8
     [files]=''
     [want]=''
-
   )
 
-  local -A case10=(
+  local -A case12=(
     [name]='exactly 10 pct shows time bat'
     [bat]=battery
     [status]=Discharging
