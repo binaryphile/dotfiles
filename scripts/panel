@@ -167,6 +167,7 @@ loadModule() {
   #   idx = 1 + floor(load * 5 / (2 * nproc))
   # Below that line the bar is mostly empty; once you're past it,
   # things are getting crazy and the bar fills up fast.
+  [[ -r /proc/loadavg ]] || return
   local nCpu
   nCpu=$(nproc)
   printf ' '
@@ -194,6 +195,7 @@ cpuModule() {
   # softirq steal guest guest_nice". Read the whole row into an
   # indexed array so we don't have to spell out throwaway names —
   # the project bash style guide forbids leading-underscore locals.
+  [[ -r /proc/stat ]] || return
   local fields
   read -ra fields < /proc/stat
   local user=${fields[1]} nice=${fields[2]} system=${fields[3]}
@@ -214,6 +216,7 @@ cpuModule() {
 }
 
 memModule() {
+  [[ -r /proc/meminfo ]] || return
   local total avail
   total=$(awk '/^MemTotal:/{print $2}'     /proc/meminfo)
   avail=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
