@@ -83,9 +83,9 @@ LP_ENABLE_LOAD=1
 # The tmux panel monitors memory via its own guarded /proc read.
 LP_ENABLE_RAM=0
 
-# Enable the battery feature.
-# Recommended value is 1
-LP_ENABLE_BATT=1
+# Disable battery — Crostini exposes ChromeOS battery but the
+# lightning bolt indicator is noise in a container prompt.
+LP_ENABLE_BATT=0
 
 # Enable the 'sudo credentials' feature.
 # Be warned that this may pollute the syslog if you don't have sudo

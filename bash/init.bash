@@ -30,7 +30,12 @@ Globbing on
   TestAndSource $Root/apps/keychain/init.bash
 }
 ShellIsInteractive && {
-  command -v liquidprompt >/dev/null && source "$(command -v liquidprompt)"
+  command -v liquidprompt >/dev/null && {
+    source "$(command -v liquidprompt)"
+    # Theme must be sourced after liquidprompt — 2.2.1's lp_activate
+    # applies the default theme, overriding any variables set before it.
+    [[ -r $Root/../liquidprompt/liquid.theme ]] && source "$Root/../liquidprompt/liquid.theme"
+  }
   TestAndSource $Root/apps/direnv/init.bash
 }
 
