@@ -15,6 +15,7 @@
     jira-cli-go
     jq
     keychain
+    liquidprompt
     mnemonicode
     ncdu
     neovim

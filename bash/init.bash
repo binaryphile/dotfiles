@@ -30,7 +30,7 @@ Globbing on
   TestAndSource $Root/apps/keychain/init.bash
 }
 ShellIsInteractive && {
-  [[ -r $Root/../liquidprompt/liquidprompt ]] && source $Root/../liquidprompt/liquidprompt
+  command -v liquidprompt >/dev/null && source "$(command -v liquidprompt)"
   TestAndSource $Root/apps/direnv/init.bash
 }
 

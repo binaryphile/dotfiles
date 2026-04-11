@@ -49,10 +49,6 @@ LP_PATH_KEEP=2
 # set to -1 if you want to never see the hostname
 LP_HOSTNAME_ALWAYS=0
 
-# Use the fully qualified domain name (FQDN) instead of the short hostname when
-# the hostname is displayed
-LP_ENABLE_FQDN=0
-
 # Always display the user name, even if the user is the same as the one logged
 # in.
 # Defaults to 1 (always display the user name)
@@ -63,7 +59,7 @@ LP_USER_ALWAYS=0
 # Display the percentages of load/batteries along with their
 # corresponding marks. Set to 0 to only print the colored marks.
 # Defaults to 1 (display percentages)
-LP_PERCENTS_ALWAYS=1
+LP_DISPLAY_VALUES_AS_PERCENTS=1
 
 # Use the permissions feature and display a red ':' before the prompt to show
 # when you don't have write permission to the current directory.
