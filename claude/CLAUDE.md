@@ -28,8 +28,10 @@ understanding when and why changes were made.
 ## Tasks
 
 At session start, run `evtctl open` to check for open tasks relevant to the
-current project. Tasks are managed via event streams — use `evtctl task`,
-`evtctl done`, `evtctl claim`, `evtctl open`, and `evtctl audit`.
+current project. Task management: `evtctl task`, `evtctl done`, `evtctl claim`,
+`evtctl unclaim`, `evtctl claims`, `evtctl open`, `evtctl audit`. Event
+publishing: `evtctl contract`, `evtctl complete`, `evtctl interaction`,
+`evtctl plan`. Messaging: `evtctl inbox`.
 
 ## Events
 
@@ -40,7 +42,7 @@ new events.
 # Guides & Reference
 
 Primary: `~/projects/jeeves/guides/`
-Secondary: `~/projects/urma-obsidian/guides/`
+Secondary: `~/projects/urma/obsidian/guides/`
 
 When you need official docs, product guides, or book references, check these
 folders first. Read the relevant guide before speculating or searching the web.
