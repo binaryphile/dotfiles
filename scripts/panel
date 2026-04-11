@@ -11,13 +11,15 @@
 # Modules:
 #   era       era-mcp systemd service status         (click: toggle service)
 #   vpn       gpclient connect process state         (click: toggle vpn)
-#   dm1       dm1.devdevicecloud.com health (VPN)    (click: open url)
-#   stash     stash.digi.com ssh probe       (VPN)   (click: open url)
-#   gitlab    gitlab.drm.ninja health        (VPN)   (click: open url)
-#   codeberg  codeberg ssh status (status API)       (click: open url)
-#   bitbucket bitbucket ssh status (status API)      (click: open url)
-#   teams     teams.microsoft.com health              (click: open url)
-#   ntfy      ntfy.sh health                          (click: open url)
+#   dm1            dm1.devdevicecloud.com health (VPN)    (click: open url)
+#   stash          stash.digi.com ssh probe       (VPN)   (click: open url)
+#   gitlab         gitlab.drm.ninja health        (VPN)   (click: open url)
+#   nexus          nexus.digi.com health          (VPN)   (click: open url)
+#   remotemanager  remotemanager.digi.com health          (click: open url)
+#   codeberg       codeberg ssh status (status API)       (click: open url)
+#   bitbucket      bitbucket ssh status (status API)      (click: open url)
+#   teams          teams.microsoft.com health              (click: open url)
+#   ntfy           ntfy.sh health                          (click: open url)
 #   ssh       inbound ssh connection count            (click: ss popup)
 #   load      1/5/15-min loadavg sparkline            (click: btop popup)
 #
@@ -87,7 +89,7 @@ thresholdSegment() {
 # probes via `wait`. Used by `panel poll` for initial warm-up.
 pollAll() {
   local m
-  for m in vpn dm1 stash gitlab nexus codeberg bitbucket teams ntfy era; do
+  for m in vpn dm1 stash gitlab nexus remotemanager codeberg bitbucket teams ntfy era; do
     "${m}Module" > /dev/null
   done
   wait
@@ -113,13 +115,14 @@ vpnProbe() {
 #
 # Two cadences for reachability widgets:
 #   - SSH probe: every 600s (10 min). Authoritative reachability check.
+#     Skipped for hosts in WidgetNoSsh (dm1, nexus, remotemanager).
 #   - ping probe: every 30s. Fast keepalive between SSH probes; on ping
 #     failure invalidates the cached SSH success so the widget cannot
 #     return to "active" without a fresh successful SSH probe.
 #
-# API-based widgets (bitbucket, codeberg) additionally poll a vendor
-# status JSON API every 30s; the widget renders the worst-tier across
-# (api, ssh, ping). The same SSH+ping logic applies to the SSH layer.
+# API-based widgets (bitbucket, codeberg, dm1, remotemanager) additionally
+# poll a vendor status JSON API every 30s; the widget renders the
+# worst-tier across (api, ssh, ping).
 
 # Modules: each calls into probe-lib via probeReachability for the
 # combined state, then renders a tmux segment. VPN-gated widgets
@@ -130,8 +133,9 @@ vpnModule() { refresh vpn  5 vpnProbe; segment vpn "$(readState vpn)"; }
 
 dm1Module()       { vpnUp || return; segment dm1 "$(probeWidget dm1)"; }
 stashModule()     { vpnUp || return; segment sta "$(probeWidget stash)"; }
-gitlabModule()    { vpnUp || return; segment git "$(probeWidget gitlab)"; }
+gitlabModule()    { vpnUp || return; segment glb "$(probeWidget gitlab)"; }
 nexusModule()     { vpnUp || return; segment nex "$(probeWidget nexus)"; }
+remotemanagerModule() { segment drm "$(probeWidget remotemanager)"; }
 codebergModule()  { segment cbg "$(probeWidget codeberg)"; }
 bitbucketModule() { segment bbk "$(probeWidget bitbucket)"; }
 teamsModule()     { segment tms "$(probePing teams "$(widgetHost teams)" 300)"; }
@@ -248,6 +252,7 @@ clickModule() {
     stash)     xdg-open https://stash.digi.com/ ;;
     gitlab)    xdg-open https://gitlab.drm.ninja/ ;;
     nexus)     xdg-open https://nexus.digi.com/ ;;
+    remotemanager) xdg-open https://remotemanager.digi.com/ ;;
     codeberg)  xdg-open https://codeberg.org/ ;;
     bitbucket) xdg-open https://bitbucket.org/ ;;
     teams)     xdg-open https://teams.microsoft.com/ ;;
@@ -256,6 +261,43 @@ clickModule() {
     load)      tmux display-popup -E -h 90% -w 90% btop ;;
     *)         tmux display-message "panel: unknown click target '${m}'" ;;
   esac
+}
+
+# layoutCmd toggles tmux between 1-line and 2-line status bar based on
+# whether the window list + right-side content fits the terminal width.
+# Called silently from the status format every refresh (5s) and from
+# tmux hooks on resize/window changes. Idempotent — skips if already
+# in the correct mode.
+layoutCmd() {
+  local width session hostname
+  IFS=$'\t' read -r width session hostname < <(tmux display-message -p '#{client_width}	#S	#H')
+
+  # Window list display width: session name in brackets + window tabs.
+  local winWidth
+  winWidth=$(tmux list-windows -F '#I:#W#{window_flags}' \
+    | awk -v base="$(( ${#session} + 3 ))" '{s+=length+1} END {print s+base}')
+
+  # Right-side display width: 4 chars per visible widget (space + 3-char
+  # label), 3 pipe separators (2 chars each), clock (6), hostname.
+  # Always-visible: vpn remotemanager codeberg bitbucket teams ntfy era load
+  local nWidgets=8
+  vpnUp && nWidgets=$(( nWidgets + 4 ))  # dm1 stash gitlab nexus
+  local rightWidth=$(( nWidgets * 4 + 6 + 6 + ${#hostname} + 1 ))
+
+  local current
+  current=$(tmux show-option -v status 2>/dev/null)
+  # Fall back to global if no session override yet.
+  [[ -z $current ]] && current=$(tmux show-option -gv status 2>/dev/null)
+
+  if (( winWidth + rightWidth < width )); then
+    [[ $current == on ]] && return
+    tmux set status on
+    tmux set status-right '#{E:#{@panel-right}}'
+  else
+    [[ $current == 2 ]] && return
+    tmux set status 2
+    tmux set status-right ''
+  fi
 }
 
 main() {
@@ -268,6 +310,7 @@ main() {
     stash)      stashModule ;;
     gitlab)     gitlabModule ;;
     nexus)      nexusModule ;;
+    remotemanager) remotemanagerModule ;;
     codeberg)   codebergModule ;;
     bitbucket)  bitbucketModule ;;
     teams)      teamsModule ;;
@@ -279,8 +322,9 @@ main() {
     disk)       diskModule ;;
     poll)       pollAll ;;
     click)      clickModule "$@" ;;
+    layout)     layoutCmd ;;
     *)
-      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|poll|click <m>}" >&2
+      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|remotemanager|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|poll|layout|click <m>}" >&2
       exit 1
       ;;
   esac

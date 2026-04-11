@@ -304,27 +304,31 @@ This use case is the Crostini-side mirror of nixos-config UC-1a (Connect VPN) an
   - VPN ergonomics (UC-7) — VPN status is always shown; VPN-gated widgets are hidden when the tunnel is down
   - nixos-config UC-1a/UC-1b — sibling use cases on the other platform; this UC mirrors them
 - **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
-  - **Always shown**: vpn, teams, ntfy, bitbucket, codeberg, era, load
+  - **Always shown**: vpn, remotemanager, teams, ntfy, bitbucket, codeberg, era, load
   - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
+  - **Always shown** (public Digi service): remotemanager — not VPN-gated, always probed
   - **Hidden under 90% usage** (mirrors nixos-config UC-1b): cpu, mem, disk — appear in default text color (white) when threshold crossed, not styled as a warning
   - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default, so this widget is normally invisible
+  - **Always shown (non-widget)**: clock (`%H:%M`), hostname — follow the hardware group
   - **Not present on Crostini at all**:
     - backlight, custom/vol, custom/bat, custom/temp — host-hardware widgets with no in-container equivalent
-    - tray, clock — handled by the ChromeOS shelf
+    - tray — handled by the ChromeOS shelf
     - custom/fw — we don't run a firewall inside the Crostini container
 - **State coloring** (mirrors waybar.css from nixos-config):
-  - white = on, light gray = degraded/partial, dark gray = off, amber = unknown, red = critical
+  - white = on, light gray = degraded/partial, dark gray = off, amber = unknown
 - **Main Success Scenario:**
   1. Ted opens a tmux session
-  2. The status bar is two rows tall; row 0 has the standard tmux window list and hostname; row 1 has the panel widgets, all right-aligned
-  3. Row 1 always shows: vpn, teams, bitbucket, codeberg, era, load — the widgets that are always meaningful
+  2. The status bar dynamically uses 1 or 2 rows depending on terminal width: when the window list + widgets fit on one line, everything is on row 0 (window list left, widgets + clock + hostname right); when they don't fit, row 0 has the window list and row 1 has the widgets + clock + hostname, right-aligned. `panel layout` toggles between modes on resize, window add/remove, and every 5-second refresh.
+  3. The widget bar always shows: vpn, remotemanager, teams, bitbucket, codeberg, era, load — the widgets that are always meaningful
   3a. Widget order is the same as waybar on NixOS (left-to-right: infrastructure, VPN-gated hosts, public services, system monitors), minus widgets that have no Crostini equivalent
-  4. Row 1 conditionally shows the VPN-gated widgets (dm1, stash, nexus, gitlab) only when `tun0` is up
-  5. Row 1 conditionally shows cpu, mem, disk only when usage is at 90% or above
+  4. VPN-gated widgets (dm1, stash, nexus, gitlab) appear only when `tun0` is up
+  5. cpu, mem, disk appear only when usage is at 90% or above
   6. Segments refresh every 5 seconds; expensive probes (curl, ssh) are cached for 30 seconds and refreshed asynchronously so the bar never stalls
   7. Ted clicks a segment; a relevant inspector pops up (btop for load/cpu/mem/disk drilldown, the URL for forge widgets, status info for vpn/era)
 - **Extensions:**
   - 1a. Not in tmux → run `tmux` first; the bar lives in the status line
+  - 2a. Ted resizes terminal to full-width → `panel layout` detects room and collapses to 1-line mode on the next tick (≤5s) or immediately via `client-resized` hook
+  - 2b. Ted opens several tabs on a half-width terminal → bar switches to 2-line mode
   - 4a. VPN comes up after tmux session started → next refresh tick (≤5s) the VPN-gated widgets appear
   - 5a. CPU spikes above 90% → cpu segment appears in white, vanishes again on the next tick once usage drops
   - 7a. Underlying inspector tool not installed → click handler falls back to a basic `ip -s addr` or status echo

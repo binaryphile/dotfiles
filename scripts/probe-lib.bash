@@ -114,6 +114,7 @@ sshHost() {
 #   - api=degraded/partial   → partial
 #   - ping=fail              → off  (network unreachable)
 #   - ssh=ok and ping=ok     → on   (fully active)
+#   - ssh=skip and ping=ok   → on   (no SSH layer; ping+api sufficient)
 #   - ping=ok                → partial (reachable but no auth confirmation)
 #   - otherwise              → unknown
 # Args: ssh-state ping-state [api-state]
@@ -126,7 +127,8 @@ combine() {
     degraded|partial) echo partial; return ;;
   esac
   [[ $ping == fail ]] && { echo off; return; }
-  [[ $ssh  == ok && $ping == ok ]] && { echo on; return; }
+  [[ $ssh  == ok   && $ping == ok ]] && { echo on; return; }
+  [[ $ssh  == skip && $ping == ok ]] && { echo on; return; }
   [[ $ping == ok ]] && { echo partial; return; }
   echo unknown
 }
@@ -158,9 +160,10 @@ codebergApiProbe() {
   esac
 }
 
-# dm1ApiProbe queries the Digi Remote Manager status page (Atlassian
+# digiApiProbe queries the Digi Remote Manager status page (Atlassian
 # Statuspage) for the worst component status. Returns: on, partial, off.
-dm1ApiProbe() {
+# Shared by dm1 and remotemanager widgets.
+digiApiProbe() {
   local result
   result=$($curl -fs --connect-timeout 3 --max-time 5 \
     https://status.digi.com/api/v2/components.json 2>/dev/null \
@@ -185,6 +188,7 @@ declare -A WidgetHost=(
   [dm1]=dm1.devdevicecloud.com
   [gitlab]=gitlab.drm.ninja
   [nexus]=nexus.digi.com
+  [remotemanager]=remotemanager.digi.com
   [bitbucket]=bitbucket.org
   [codeberg]=codeberg.org
   [teams]=teams.microsoft.com
@@ -196,10 +200,16 @@ declare -A WidgetVpnGated=(
   [gitlab]=yes
   [nexus]=yes
 )
+declare -A WidgetNoSsh=(
+  [dm1]=yes
+  [nexus]=yes
+  [remotemanager]=yes
+)
 declare -A WidgetApiFn=(
   [bitbucket]=bitbucketApiProbe
   [codeberg]=codebergApiProbe
-  [dm1]=dm1ApiProbe
+  [dm1]=digiApiProbe
+  [remotemanager]=digiApiProbe
 )
 
 # widgetHost prints the configured host for a widget, or empty if
@@ -217,10 +227,14 @@ probeReachability() {
   local key=$1
   local host=$2
   local apiFn=${3:-}
-  refresh "${key}-ssh"  600 sshHost  "$host"
-  refresh "${key}-ping" 30  pingHost "$key" "$host"
   local ssh ping api
-  ssh=$(readState "${key}-ssh")
+  if [[ ${WidgetNoSsh[$key]:-no} == yes ]]; then
+    ssh=skip
+  else
+    refresh "${key}-ssh"  600 sshHost  "$host"
+    ssh=$(readState "${key}-ssh")
+  fi
+  refresh "${key}-ping" 30  pingHost "$key" "$host"
   ping=$(readState "${key}-ping")
   if [[ -n $apiFn ]]; then
     refresh "${key}-api" 30 "$apiFn"

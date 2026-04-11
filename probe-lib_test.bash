@@ -91,6 +91,18 @@ test_combine() {
     [want]=unknown
   )
 
+  local -A case12=(
+    [name]='ssh skip with ping ok yields on'
+    [ssh]=skip    [ping]=ok      [api]=on
+    [want]=on
+  )
+
+  local -A case13=(
+    [name]='ssh skip with api degraded yields partial'
+    [ssh]=skip    [ping]=ok      [api]=degraded
+    [want]=partial
+  )
+
   subtest() {
     local casename=$1
     eval "$(tesht.Inherit "$casename")"
@@ -248,9 +260,9 @@ test_bitbucketApiProbe() {
 }
 
 
-## dm1ApiProbe -- worst-of across all Digi Remote Manager components
+## digiApiProbe -- worst-of across all Digi status page components
 
-test_dm1ApiProbe() {
+test_digiApiProbe() {
   local -A case1=(
     [name]='all operational means on'
     [curl]=mockCurl
@@ -285,7 +297,7 @@ test_dm1ApiProbe() {
     eval "$(tesht.Inherit "$casename")"
 
     local got
-    got=$(dm1ApiProbe)
+    got=$(digiApiProbe)
 
     tesht.AssertGot "$got" "$want"
   }

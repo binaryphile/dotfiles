@@ -337,31 +337,33 @@ The wrapper shadows libnotify's `notify-send` because it's installed via a deriv
 Crostini doesn't have waybar, so the tmux status bar substitutes for it. Implementation lives in three files:
 
 - **`scripts/probe-lib.bash`** — shared probe library, sourced by both this repo's panel script AND nixos-config's waybar widget renderer. Caller sets `$State` to its own cache directory before sourcing. The same code path runs on both platforms — drift in probe semantics is impossible at this layer. Defines:
-  - Probe functions: `isStale`, `refresh`, `readState`, `pingHost`, `sshHost`, `combine`, `vpnUp`, `bitbucketApiProbe`, `codebergApiProbe`, `probeReachability`, `probePing`.
-  - Widget metadata tables: `WidgetHost`, `WidgetVpnGated`, `WidgetApiFn` — single source of truth for host names, VPN gating, and API probe selection. Accessors `widgetHost`, `widgetVpnGated`, `probeWidget` let callers look up by widget key instead of repeating host strings.
+  - Probe functions: `isStale`, `refresh`, `readState`, `pingHost`, `sshHost`, `combine`, `vpnUp`, `bitbucketApiProbe`, `codebergApiProbe`, `digiApiProbe`, `probeReachability`, `probePing`.
+  - Widget metadata tables: `WidgetHost`, `WidgetVpnGated`, `WidgetApiFn`, `WidgetNoSsh` — single source of truth for host names, VPN gating, API probe selection, and SSH probe skipping. Accessors `widgetHost`, `widgetVpnGated`, `probeWidget` let callers look up by widget key instead of repeating host strings. `WidgetNoSsh` marks hosts (dm1, nexus, remotemanager) that skip SSH probes — `probeReachability` checks this table and skips `sshHost` for those entries, and `combine` treats `ssh=skip` + `ping=ok` as "on".
   - Injectable command globals: `Timeout`, `Ssh`, `Curl`, `Jq`, `Ip` — each defaults to the real binary (`${Var:-binary}`) but can be overridden before sourcing or via bash dynamic scope in tests. This is the only test seam; the library has no other test hooks.
 
-- **`scripts/panel`** — tmux status bar renderer. Sources `probe-lib.bash`, sets `$State=$XDG_RUNTIME_DIR/panel`, and exposes `panel <module>` (returns a tmux-formatted segment with `#[fg=...]` color codes), `panel click <module>` (mouse handler), and `panel poll` (synchronous warmup). Module functions are one-liners that delegate to `probeWidget` and format with `segment`.
+- **`scripts/panel`** — tmux status bar renderer. Sources `probe-lib.bash`, sets `$State=$XDG_RUNTIME_DIR/panel`, and exposes `panel <module>` (returns a tmux-formatted segment with `#[fg=...]` color codes), `panel click <module>` (mouse handler), `panel poll` (synchronous warmup), and `panel layout` (dynamic status bar height). Module functions are one-liners that delegate to `probeWidget` and format with `segment`.
 
-- **`contexts/crostini/tmux.conf`** — sources `contexts/linux/tmux.conf` for the base then sets `status 2` (two rows), defines `status-format[1]` as the panel widgets right-aligned, and binds `MouseDown1Status` to `panel click '#{mouse_status_range}'`.
+- **`contexts/crostini/tmux.conf`** — sources `contexts/linux/tmux.conf` for the base, stores the right-side widget format in a `@panel-right` user option (so it's defined once), and references it via `#{E:#{@panel-right}}` from both `status-right` (1-line mode) and `status-format[1]` (2-line mode). Binds `MouseDown1Status` to `panel click '#{mouse_status_range}'`.
 
 **Probe cadences** (set in `probe-lib.bash`):
 - SSH probe (`sshHost`): every 600s. `ssh -T git@<host>`; rc 0/1 or "shell request failed" both count as ok.
 - TCP/443 ping (`pingHost`): every 30s. Uses `bash`'s `/dev/tcp/<host>/443` rather than ICMP because most vendor sites block ICMP.
-- Vendor status API (`bitbucketApiProbe`, `codebergApiProbe`, `dm1ApiProbe`): every 30s. Atlassian Statuspage component `qmh4tj8h5kbn` (bitbucket), Codeberg Uptime Kuma monitor 7, and Digi Remote Manager status page (worst-of across all components) respectively.
+- Vendor status API (`bitbucketApiProbe`, `codebergApiProbe`, `digiApiProbe`): every 30s. Atlassian Statuspage component `qmh4tj8h5kbn` (bitbucket), Codeberg Uptime Kuma monitor 7, and Digi Remote Manager status page (worst-of across all components) respectively. `digiApiProbe` is shared by dm1 and remotemanager widgets.
 
-**State machine** (per `combine` in `probe-lib.bash`): the displayed class is the worst tier across (api, ssh, ping). `api=down` → `off`. `api=degraded` → `partial`. `ping=fail` → `off`, AND `pingHost` invalidates the cached SSH success on failure so the widget can return to `on` only via a fresh successful SSH probe — a partial recovery from a network blip lands in `partial`, not back in `on`. `ssh=ok ∧ ping=ok` → `on`. `ping=ok` (without confirmed ssh) → `partial`. Otherwise `unknown`.
+**State machine** (per `combine` in `probe-lib.bash`): the displayed class is the worst tier across (api, ssh, ping). `api=down` → `off`. `api=degraded` → `partial`. `ping=fail` → `off`, AND `pingHost` invalidates the cached SSH success on failure so the widget can return to `on` only via a fresh successful SSH probe — a partial recovery from a network blip lands in `partial`, not back in `on`. `ssh=ok ∧ ping=ok` → `on`. `ssh=skip ∧ ping=ok` → `on` (for hosts in `WidgetNoSsh`). `ping=ok` (without confirmed ssh) → `partial`. Otherwise `unknown`.
 
-**VPN gating**: `dm1`, `stash`, `gitlab`, `nexus` modules return early (empty string) when `tun0` is missing — the segment vanishes from the bar entirely, since tmux's per-segment range tolerates empty content.
+**VPN gating**: `dm1`, `stash`, `gitlab`, `nexus` modules return early (empty string) when `tun0` is missing — the segment vanishes from the bar entirely, since tmux's per-segment range tolerates empty content. `remotemanager` is public (not VPN-gated) and always probed.
 
 **Widget order and separators:** Both waybar (nixos-config) and the tmux panel use the same canonical group order, separated by visual dividers (CSS borders in waybar, pipe characters in tmux):
 
 1. **System** — ssh, fw, vpn (waybar only; tmux has vpn only)
-2. **Health** — dm1, stash, gitlab, nexus, codeberg, bitbucket, teams, ntfy (external service reachability; VPN-gated widgets appear only when tunnel is up)
+2. **Health** — dm1, stash, gitlab, nexus, remotemanager, codeberg, bitbucket, teams, ntfy (external service reachability; VPN-gated widgets appear only when tunnel is up)
 3. **Services** — era (local infrastructure services managed by the user)
 4. **Hardware** — load, cpu, mem, disk (local resource monitors; tmux omits backlight, vol, bat, temp which are desktop-only)
 
-Within each group, widgets cuddle with a single space between them. Empty widgets (VPN-gated when tunnel is down, threshold-gated below 90%) produce no output and no space — the group contracts. Separators between groups are always visible regardless of which widgets are populated. Changes to group membership or order must be mirrored in both renderers — see nixos-config's `docs/design.md` Waybar section.
+Within each group, widgets cuddle with a single space between them. Empty widgets (VPN-gated when tunnel is down, threshold-gated below 90%) produce no output and no space — the group contracts. Separators between groups are always visible regardless of which widgets are populated. A clock (`%H:%M`) and hostname follow the hardware group with no separator. Changes to group membership or order must be mirrored in both renderers — see nixos-config's `docs/design.md` Waybar section.
+
+**Dynamic status bar height:** `panel layout` toggles between 1-line (`status on`) and 2-line (`status 2`) mode based on whether the window list + widget bar fits the terminal width. In 1-line mode, `status-right` renders the widget bar (via `#{E:#{@panel-right}}`); in 2-line mode, `status-format[1]` renders it and `status-right` is empty. Triggered by tmux hooks (`client-resized`, `window-linked`, `window-unlinked`, `after-rename-window`) and a silent `#(panel layout)` call embedded in `@panel-right` that runs every `status-interval` (5s). Width estimation: window list width (session name + tab names), widget bar width (4 chars per visible widget + separators + clock + hostname). Idempotent — skips if already in the correct mode.
 
 **Color palette** mirrors nixos-config's `home/sway/waybar.css`: white = on, light gray (`colour250`) = partial, dark gray (`colour244`) = off, amber (`colour130`) = unknown. cpu/mem/disk use white (same as on) when above threshold — they signal by appearing, not by color.
 
