@@ -135,7 +135,7 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   - 2b. Package fails to build → nixpkgs compatibility issue
   - 3a. Manual step missed → re-run update-env to see the reminders again, or check use-cases.md
 - **Postconditions:**
-  - **Success:** Git, neovim, tmux, shell, SSH keys, dev tools, packages, and dotfile symlinks all in place; user has been told about any remaining manual steps
+  - **Success:** Git, neovim, tmux, shell, SSH keys, dev tools, project repos, packages, and dotfile symlinks all in place; user has been told about any remaining manual steps
   - **Failure:** Partial deployment; re-run after fixing
 
 ---

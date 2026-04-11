@@ -57,15 +57,16 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 ### Deployment — UC-4
 
-`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Eight phases:
+`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Nine phases:
 
 0. Git repo updates (conditional, subsequent runs)
 1. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
 2. Clone this repo, install **bootstrap-only** symlinks (`.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `~/dotfiles/context` → active context). The rest of the dotfile symlinks (gitconfig, tmux.conf, ssh, ranger, liquidprompt, etc.) are managed declaratively by home-manager via `linux-base.nix` once nix and HM are installed.
 3. Install Nix + home-manager (crostini/debian/linux/macos only — skipped on NixOS, system-managed there)
 4. Platform-specific setup (crostini only)
-5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht)
-6. Neovim plugins
+5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht, jeeves, sofdevsim-2026, blog, tandem-protocol, era)
+5b. Work projects (VPN-dependent, graceful failure): urma-next, pepin, cloud-services, accelerated-linux, urma-obsidian, share
+6. Neovim plugins, daily notes
 7. SSH key generation (crostini/linux only)
 
 Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debian → linux.
@@ -77,7 +78,7 @@ Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debia
 | Owner | What | Count | Why |
 |-------|------|-------|-----|
 | `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `context` → active platform; `config.nix` → nixpkgs; `home.nix` → home-manager | 6 symlinks | Must exist before nix/HM runs. Shell init, nix config, and HM config are prerequisites for everything else. |
-| `update-env` (external) | Dev tool repos (`fp.bash`, `mk.bash`, `tesht`, `era`, etc.) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts | ~20 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation — cloned repos and secrets are not. |
+| `update-env` (external) | Dev tool and project repos (phases 5 + 5b) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation — cloned repos and secrets are not. |
 | `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3), gpgui desktop entry | 11 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
 | `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies — Claude Code may overwrite these, so HM restores them on switch. |
 | `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC | 3 symlinks + 1 generated (`crostini/home.nix`) | Crostini-only scripts and generated config. |
@@ -93,10 +94,7 @@ The `home.file` blocks use `mkOutOfStoreSymlink` to preserve edit-in-place seman
 
 The "create file if missing" pattern lets the user delete the file to regenerate it after instructions change, while keeping every routine `update-env` run quiet — just a single line of output instead of a 20-line block. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
 
-**Private repos** (e.g., jeeves) are cloned manually, not by update-env:
-```bash
-git clone git@bitbucket.org:accelecon/jeeves ~/projects/jeeves
-```
+All project repos — including private repos like jeeves — are cloned by update-env. Private repos use `try` so failures are non-fatal. All `*CloneAndLinkTask` functions default the branch to `main`.
 
 On NixOS, `~/nixos-config/flake.nix` imports `home.nix` via flake input. Dotfile symlinks still deployed by `update-env`.
 

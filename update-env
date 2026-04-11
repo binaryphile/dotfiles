@@ -116,57 +116,61 @@ main() {
         [urma-next-local.git]=main
       )
       (cd $CrostiniDir/repos; glob * | keepIf isDir) |
-        map target '$CrostiniDir/repos/$target ~/projects/${target%.git} ${branches[$target]:-develop}' |
+        map target '$CrostiniDir/repos/$target ~/projects/${target%.git} ${branches[$target]:-main}' |
         each task.GitClone
     fi
   fi
 
   #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 5: Development Tools (various sections)               │
-  #  │   ├─> fp.bash    - functional programming utilities         │
-  #  │   ├─> mk.bash    - build tool & git updater                 │
-  #  │   ├─> task.bash  - task automation (this script!)           │
-  #  │   ├─> tesht      - testing framework                        │
-  #  │   └─> era        - semantic memory MCP server for AI agents │
-  #  │       All cloned from GitHub and symlinked to ~/.local/bin  │
+  #  │ PHASE 5: Development Tools & Projects                       │
+  #  │   ├─> fp.bash           - functional programming utilities  │
+  #  │   ├─> mk.bash           - build tool & git updater          │
+  #  │   ├─> task.bash         - task automation (this script!)    │
+  #  │   ├─> tesht             - testing framework                 │
+  #  │   ├─> jeeves            - project guides (bitbucket)        │
+  #  │   ├─> sofdevsim-2026    - software dev simulation           │
+  #  │   ├─> blog              - binaryphile.github.io             │
+  #  │   ├─> tandem-protocol   - Claude slash commands (codeberg)  │
+  #  │   └─> era               - semantic memory MCP (codeberg)    │
+  #  │       Default branch: main. Cloned and symlinked.           │
   #  └─────────────────────────────────────────────────────────────┘
 
   section fp.bash
-  githubCloneAndLinkTask fp.bash main
+  githubCloneAndLinkTask fp.bash
   task.Ln ~/projects/fp.bash/fp.bash ~/.local/lib/fp.bash
 
   section mk.bash
-  githubCloneAndLinkTask mk.bash main
+  githubCloneAndLinkTask mk.bash
   task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
   task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
 
   section task.bash
-  githubCloneAndLinkTask task.bash main
+  githubCloneAndLinkTask task.bash
 
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
 
   section tesht
-  githubCloneAndLinkTask tesht main
+  githubCloneAndLinkTask tesht
   task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
 
   section jeeves
-  try bitbucketCloneAndLinkTask jeeves main
+  try bitbucketCloneAndLinkTask jeeves
 
   section sofdevsim-2026
-  githubCloneAndLinkTask sofdevsim-2026 main
+  githubCloneAndLinkTask sofdevsim-2026
 
   section blog
-  githubCloneAndLinkTask binaryphile.github.io master
+  githubCloneAndLinkTask binaryphile.github.io
 
   section tandem-protocol
-  codebergCloneAndLinkTask tandem-protocol main
+  codebergCloneAndLinkTask tandem-protocol
   glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
   section era
-  codebergCloneAndLinkTask era main
+  codebergCloneAndLinkTask era
   eraBuildTask
   each task.Ln <<'  END'
     ~/projects/era/bin/era           ~/.local/bin/era
@@ -194,16 +198,16 @@ main() {
 
   section stash
   each 'try stashCloneAndLinkTask' <<'  END'
-    urma-next develop urma
-    pepin develop
-    cloud-services develop
-    accelerated-linux master accelerated-linux acl
-    urma-obsidian main urma/obsidian ~tlilley
+    pepin
+    cloud-services
+    urma-next urma
+    accelerated-linux accelerated-linux acl
+    urma-obsidian urma/obsidian ~tlilley
   END
   try writeMcpJsonTask ~/projects/urma
 
   section share
-  try stashCloneAndLinkTask share main share ~tlilley
+  try stashCloneAndLinkTask share share ~tlilley
   try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
 
   #  ┌─────────────────────────────────────────────────────────────┐
@@ -222,7 +226,7 @@ main() {
   task.Ln ~/.config/nvim ~/nvim
 
   section obsidian
-  try bitbucketCloneAndLinkTask tlilley-daily-notes main
+  try bitbucketCloneAndLinkTask tlilley-daily-notes
 
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 7: SSH Key Generation (section unique_credential)     │
@@ -308,13 +312,13 @@ aptUpgradeTask() {
 }
 
 bitbucketCloneAndLinkTask() {
-  local repo=$1 branch=$2
+  local repo=$1 branch=${2:-main}
   task.GitClone git@bitbucket.org:accelecon/$repo ~/projects/$repo $branch
   try task.GitUpdate ~/projects/$repo
 }
 
 codebergCloneAndLinkTask() {
-  local repo=$1 branch=$2
+  local repo=$1 branch=${2:-main}
   task.GitClone git@codeberg.org:binaryphile/$repo ~/projects/$repo $branch
   try task.GitUpdate ~/projects/$repo
 }
@@ -389,7 +393,7 @@ EOF
 }
 
 stashCloneAndLinkTask() {
-  local repo=$1 branch=$2 dir=${3:-$1} project=${4:-idigi}
+  local repo=$1 dir=${2:-$1} project=${3:-idigi} branch=${4:-main}
 
   desc   "clone repo stash.digi.com/$project/$repo to ~/projects/$dir"
   exist  "$HOME/projects/$dir"
@@ -404,7 +408,7 @@ stashCloneAndLinkTask() {
 }
 
 githubCloneAndLinkTask() {
-  local repo=$1 branch=$2
+  local repo=$1 branch=${2:-main}
   task.GitClone git@github.com:binaryphile/$repo ~/projects/$repo $branch
   try task.GitUpdate ~/projects/$repo
 }
