@@ -78,6 +78,11 @@ LP_ENABLE_JOBS=1
 # Recommended value is 1
 LP_ENABLE_LOAD=1
 
+# Disable RAM display — Crostini's /proc/meminfo can fail after
+# ChromeOS sleep/resume, causing a division-by-zero in liquidprompt.
+# The tmux panel monitors memory via its own guarded /proc read.
+LP_ENABLE_RAM=0
+
 # Enable the battery feature.
 # Recommended value is 1
 LP_ENABLE_BATT=1
