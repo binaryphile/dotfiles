@@ -230,6 +230,33 @@ diskModule() {
   thresholdSegment dsk "${pct:-0}"
 }
 
+# batModule shows battery time remaining ("H:MM left") when discharging,
+# or percentage when at 5% or below. Hidden when charging/full/unknown.
+# Reads Crostini's sysfs (charge_counter/current_now in µAh/µA).
+batModule() {
+  local base=/sys/class/power_supply/battery
+  [[ -r $base/status ]] || return
+  local status
+  read -r status < "$base/status"
+  [[ $status == Discharging ]] || return
+
+  local capacity current charge
+  read -r capacity < "$base/capacity"
+  read -r current  < "$base/current_now"
+  read -r charge   < "$base/charge_counter"
+
+  if (( capacity <= 5 )); then
+    printf ' '
+    fg "$ColorOn" "${capacity}%%"
+  elif (( current > 0 )); then
+    local mins=$(( charge * 60 / current ))
+    local hours=$(( mins / 60 ))
+    local m=$(( mins % 60 ))
+    printf ' '
+    fg "$ColorOn" "$(printf '%d:%02d left' "$hours" "$m")"
+  fi
+}
+
 # Click handlers. Toggling services for era and vpn matches the waybar
 # on-click bindings. URL-bound widgets open the URL in the default
 # browser via xdg-open (which on Crostini routes to ChromeOS Chrome).
@@ -323,6 +350,7 @@ main() {
     cpu)        cpuModule ;;
     mem)        memModule ;;
     disk)       diskModule ;;
+    bat)        batModule ;;
     poll)       pollAll ;;
     click)      clickModule "$@" ;;
     layout)     layoutCmd ;;
