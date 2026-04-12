@@ -401,8 +401,11 @@ scaffoldTask() {
   local dir=$1
   ProjectDirW=$dir
   source ~/dotfiles/scripts/scaffold
+  scaffold.MkdirTask "$dir/bin"
   scaffold.NixWrapperTask
+  scaffold.GitExcludeBinTask
   scaffold.EnvrcTask
+  scaffold.DirenvAllowTask
 }
 
 eraScaffoldTask() {

@@ -42,8 +42,10 @@ main() {
   section scaffold
   scaffold.MkdirTask "$ProjectDirW/bin"
   scaffold.NixWrapperTask
+  scaffold.GitExcludeBinTask
   task.Ln nix-wrapper "$ProjectDirW/bin/claude"
   scaffold.EnvrcTask
+  scaffold.DirenvAllowTask
   scaffold.FlakeNixTask
 
   task.Summarize
@@ -81,6 +83,24 @@ scaffold.EnvrcTask() {
 
   scaffold.installEnvrc() { scaffold.EnvrcContent > "$path"; }
   cmd scaffold.installEnvrc
+}
+
+scaffold.GitExcludeBinTask() {
+  local excludeFile=$ProjectDirW/.git/info/exclude
+  desc "git exclude /bin in $ProjectDirW"
+  check "[[ -d '$ProjectDirW/.git' ]]"
+  ok "git -C '$ProjectDirW' ls-files --error-unmatch bin/ &>/dev/null || grep -qxF /bin '$excludeFile' 2>/dev/null"
+
+  cmd "echo /bin >> '$excludeFile'"
+}
+
+scaffold.DirenvAllowTask() {
+  local path=$ProjectDirW/.envrc
+  desc "direnv allow $ProjectDirW"
+  check "diff -q '$path' <(scaffold.EnvrcContent) >/dev/null 2>&1"
+  ok "grep -rq '$path' ~/.local/share/direnv/allow/ 2>/dev/null"
+
+  cmd "direnv allow '$ProjectDirW'"
 }
 
 scaffold.FlakeNixTask() {
