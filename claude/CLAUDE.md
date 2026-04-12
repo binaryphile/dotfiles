@@ -43,6 +43,12 @@ new events.
 
 Primary: `~/projects/jeeves/guides/`
 Secondary: `~/projects/urma/obsidian/guides/`
+DAL: `~/projects/dal/obsidian/`
+
+When working in DAL (`~/projects/dal`), read `~/projects/dal/obsidian/DAL_PROJECT_UNDERSTANDING.md`
+first. It covers the software stack, config/schema system, feature gating,
+modem subsystem, testing, release process, product diversity, and a change
+impact checklist.
 
 When you need official docs, product guides, or book references, check these
 folders first. Read the relevant guide before speculating or searching the web.

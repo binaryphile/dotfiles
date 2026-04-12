@@ -114,6 +114,34 @@ stage1() {
     ;;
   esac
 
+  #  ┌─────────────────────────────────────────────────────────────┐
+  #  │ PHASE 5 (core): Development Tools                           │
+  #  │   ├─> fp.bash           - functional programming utilities  │
+  #  │   ├─> mk.bash           - build tool & git updater          │
+  #  │   ├─> task.bash         - task automation (this script!)    │
+  #  │   └─> tesht             - testing framework                 │
+  #  │       Default branch: main. Cloned and symlinked.           │
+  #  └─────────────────────────────────────────────────────────────┘
+
+  section fp.bash
+  githubCloneAndLinkTask fp.bash
+  task.Ln ~/projects/fp.bash/fp.bash ~/.local/lib/fp.bash
+
+  section mk.bash
+  githubCloneAndLinkTask mk.bash
+  task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
+  task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
+
+  section task.bash
+  githubCloneAndLinkTask task.bash
+
+  task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
+
+  section tesht
+  githubCloneAndLinkTask tesht
+  task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
+}
+
 stage1Epilogue() {
   echo
   echo "Stage 1 complete. Shell configuration changed."
@@ -171,22 +199,22 @@ stage2() {
   try bitbucketCloneAndLinkTask jeeves
 
   section sofdevsim-2026
-  githubCloneAndLinkTask sofdevsim-2026
+  try githubCloneAndLinkTask sofdevsim-2026
 
   section blog
-  githubCloneAndLinkTask binaryphile.github.io
+  try githubCloneAndLinkTask binaryphile.github.io
 
   section tandem-protocol
-  codebergCloneAndLinkTask tandem-protocol
+  try codebergCloneAndLinkTask tandem-protocol
   glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
   section era
-  codebergCloneAndLinkTask era
-  eraScaffoldTask
-  eraBuildTask
+  try codebergCloneAndLinkTask era
+  try eraScaffoldTask
+  try eraBuildTask
   each task.Ln <<'  END'
     ~/projects/era/bin/era           ~/.local/bin/era
     ~/projects/era/bin/era-hook      ~/.local/bin/era-hook
@@ -194,8 +222,8 @@ stage2() {
     ~/projects/era/scripts/task-audit             ~/.local/bin/task-audit
     ~/projects/era/scripts/validate-attestation   ~/.local/bin/validate-attestation
   END
-  task.Install 644 ~/projects/era/era-mcp.service ~/.config/systemd/user/era-mcp.service
-  eraSystemdEnableTask
+  try task.Install 644 ~/projects/era/era-mcp.service ~/.config/systemd/user/era-mcp.service
+  try eraSystemdEnableTask
   eraMcpRegisterTask
   chromeDevtoolsMcpRegisterTask
 
@@ -270,6 +298,7 @@ stage2() {
   #  │       • Generate new passphrase-protected key               │
   #  └─────────────────────────────────────────────────────────────┘
   case $Platform in crostini )
+    local keyDir=$CrostiniDir
     section unique_credential
     if [[ -e $keyDir/np_id_ed25519.pub ]]; then
       removeMatchingFileTask ~/.ssh/id_ed25519.pub $keyDir/np_id_ed25519.pub
@@ -282,14 +311,6 @@ stage2() {
     ;;
   esac
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ FINALIZATION                                                │
-  #  │   ├─> Display task summary                                  │
-  #  │   ├─> Run deferred git updates (if mk was just installed)   │
-  #  │   └─> Print platform-specific manual setup reminders        │
-  #  └─────────────────────────────────────────────────────────────┘
-  task.Summarize
-  postInstallMessages
 }
 
 # postInstallMessages writes platform-specific manual setup instructions
