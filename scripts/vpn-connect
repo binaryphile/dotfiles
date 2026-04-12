@@ -25,7 +25,7 @@ connect() {
       --user "$USER" \
       --os Windows \
       --gateway 'US East' \
-      --script '@vpn-slice@ 10.0.0.0/8 172.26.0.0/16 stash.digi.com nexus.digi.com dm1.devdevicecloud.com gitlab.drm.ninja 3.16.193.243'
+      --script '@vpn-slice@ 10.0.0.0/8 172.26.0.0/16 dm1.devdevicecloud.com gitlab.drm.ninja 3.16.193.243 --domains-vpn-dns digi.com'
 }
 
 main() {
