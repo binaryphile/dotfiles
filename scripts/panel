@@ -81,17 +81,31 @@ segment() {
   fg "$color" "$label"
 }
 
-# thresholdSegment renders a cpu/mem/disk segment ONLY when usage is at
-# 90% or higher. Below threshold, prints nothing — the segment vanishes
-# from the bar entirely. At/above threshold, prints label + percent in
-# white (default text color) — threshold-gated visibility, not a warning.
+# thresholdSegment renders a cpu/mem/disk segment with time-based hysteresis.
+# Shows at 90%+. Once visible, stays for at least ThresholdHoldSeconds
+# regardless of value. Format: "N% label" (percent on the left, label on
+# the right).
+ThresholdHoldSeconds=10
 thresholdSegment() {
   local label=$1
   local pct=$2
-  if (( pct >= 90 )); then
-    printf ' '
-    fg "$ColorOn" "$(printf '%s %d%%' "$label" "$pct")"
+  local stateFile=$State/threshold-$label
+  local held=0
+  if [[ -e $stateFile ]]; then
+    local now mtime
+    now=$(date +%s)
+    mtime=$(stat -c %Y "$stateFile")
+    (( now - mtime < ThresholdHoldSeconds )) && held=1
   fi
+
+  if (( pct >= 90 )); then
+    touch "$stateFile"
+  elif ! (( held )); then
+    rm -f "$stateFile"
+    return
+  fi
+  printf ' '
+  fg "$ColorOn" "$(printf '%d%% %s' "$pct" "$label")"
 }
 
 # pollAll forces a synchronous poll of every health module by simply
@@ -162,7 +176,7 @@ vpnModule() { refresh vpn  5 vpnProbe; alwaysSegment vpn "$(readState vpn)"; }
 dm1Module()       { vpnUp || return; segment dm1 "$(probeWidget dm1)"; }
 stashModule()     { vpnUp || return; segment sta "$(probeWidget stash)"; }
 gitlabModule()    { vpnUp || return; segment glb "$(probeWidget gitlab)"; }
-nexusModule()     { vpnUp || return; segment nex "$(probeWidget nexus)"; }
+nexusModule()     { vpnUp || return; segment nxs "$(probeWidget nexus)"; }
 remotemanagerModule() { segment drm "$(probeWidget remotemanager)"; }
 codebergModule()  { segment cbg "$(probeWidget codeberg)"; }
 bitbucketModule() { segment bbk "$(probeWidget bitbucket)"; }
@@ -293,6 +307,8 @@ cpuModule() {
     fi
   fi
   printf '%s %s' "$active" "$total" > "$stateFile"
+  # Crostini CPUs max at 50% — double to show real utilization
+  [[ $HOSTNAME == penguin ]] && pct=$((pct * 2))
   thresholdSegment cpu "$pct"
 }
 
