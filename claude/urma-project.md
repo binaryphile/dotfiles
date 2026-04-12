@@ -1,7 +1,7 @@
 # URMA
 
 Read `~/projects/urma/obsidian/URMA_PROJECT_UNDERSTANDING.md` before starting
-work. It covers the architecture, API proxying, device communication, data
+work. It covers the architecture, change flow, device communication, data
 fetching patterns, testing, CI/CD, and a change impact checklist.
 
 ## Where to look first
@@ -22,38 +22,47 @@ fetching patterns, testing, CI/CD, and a change impact checklist.
 | E2E tests | `urma-test/tests/` |
 | Design documents | `obsidian/` |
 
-Key abstractions: **Rest** (HTTP singleton with multi-tenancy headers),
-**SCI/RCI** (XML device communication), **useV1Api** (paginated SWR hook),
-**useMongo** (MongoDB-backed preferences).
+Key abstractions: **Rest** (HTTP singleton with tenant headers), **SCI/RCI**
+(XML device communication), **useV1Api** (paginated SWR hook), **useMongo**
+(MongoDB-backed preferences).
 
 ## Change impact checklist
 
-- **API endpoint?** Check `api-constants.ts`, the `Rest` call site, the SWR
-  hook, and whether the middleware needs special handling.
-- **Form behavior?** Check Formik's `enableReinitialize`, SWR's
-  `revalidateOnFocus`, and whether pending state persists across steps.
-- **Feature flag?** Check MongoDB `features` collection, `useFeatures()` hook,
-  and `FEATURE_FLAGS` env var. Some flags are per-account, some per-environment.
-- **Authentication?** Check both OAuth and JSession paths. The feature flag
-  selects which runs. Test both.
-- **Device operation?** Check the SCI mixin (sci.js), the RCI wrapper (rci.ts),
-  and the XML schema DRM expects. Cached vs. fresh matters.
-- **New page?** Add under `(pages)/`, follow the route group pattern, check
-  `next.config.js` redirects.
-- **E2E test?** Check auth and db fixtures, use `test-` prefix for cleanup,
-  follow Page Object Model in `urma-test/ui/pages/`.
+- **API contract change?** Check endpoint constant, hook wrapper, response
+  types, pagination logic, cache key, mutation invalidation via `mutate()`,
+  error normalization in `Rest`, tenant header injection, E2E data fixtures.
+- **Multi-step form change?** Check fetched-to-local initialization,
+  edit-mode rehydration, SWR `revalidateOnFocus` + Formik
+  `enableReinitialize` interaction, step persistence, unsaved-change guard,
+  save sequencing, post-save cache refresh.
+- **Tenant-scoped change?** Check active account source, `Actor` vs
+  `Account-Filter` headers in `Rest`, SWR cache scoping on account switch,
+  server route handlers with user-scoped MongoDB filters.
+- **Authentication change?** Check both OAuth and JSession paths (feature flag
+  selects), middleware session extraction, page load vs API request behavior,
+  session refresh/expiration, protected route redirects.
+- **Device operation?** Check SCI mixin (sci.js), RCI wrapper (rci.ts), XML
+  schema DRM expects, cached vs fresh response semantics.
+- **Provider or context?** Check nesting order, account-scoped memoization,
+  cache invalidation on reorder, client-only vs server boundary.
+- **New page?** Identify archetype (inventory, detail, wizard, live,
+  reporting), add under `(pages)/`, check `next.config.js` redirects, add
+  E2E with Page Object Model.
 
 ## Key architectural facts
 
-- URMA is a frontend proxy for DRM (Digi Remote Manager). All business data
-  and device connectivity live in DRM's Java/Spring backend.
-- Middleware at `src/middleware.ts` rewrites `/api/ws/*` requests to
-  `DRM_ADDRESS` and injects auth tokens. The browser never talks to DRM.
-- Multi-tenancy: `Account-Filter` header scopes reads, `Actor` header scopes
-  writes. Getting these wrong exposes other accounts' data.
+- URMA is a frontend proxy for DRM (Digi Remote Manager). Business data and
+  device connectivity live in DRM's Java/Spring backend.
+- The governing flow: user interaction → Formik state → Rest with tenant
+  headers → middleware proxy with auth → DRM → response → SWR mutate →
+  React re-render → Formik reinitialize risk.
+- Multi-tenancy: `Account-Filter` scopes reads, `Actor` scopes writes.
+  Switching accounts invalidates the SWR cache.
 - SWR + Formik tension: SWR's `revalidateOnFocus` returns new object
   references that can reset Formik forms. Guard with refs or disable
   `enableReinitialize` selectively.
-- MongoDB stores preferences and feature flags, not business data.
-- Releases: `release/YY.MM.DD` branches, biweekly, GitLab CI → Docker →
-  FluxCD → Kubernetes.
+- Authorization is layered: middleware session, DRM backend, provider-level
+  role gating, feature flag visibility.
+- Per-account feature flags in MongoDB; server-side flags via FEATURE_FLAGS
+  env var.
+- Releases: `release/YY.MM.DD` branches, GitLab CI → Docker → FluxCD → K8s.
