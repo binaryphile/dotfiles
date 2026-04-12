@@ -129,16 +129,20 @@ stage1() {
 
   section mk.bash
   githubCloneAndLinkTask mk.bash
+  scaffoldTask ~/projects/mk.bash
   task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
   task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
 
   section task.bash
   githubCloneAndLinkTask task.bash
+  scaffoldTask ~/projects/task.bash
 
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
+  task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
 
   section tesht
   githubCloneAndLinkTask tesht
+  scaffoldTask ~/projects/tesht
   task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
 }
 
@@ -197,15 +201,19 @@ stage2() {
 
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
+  try scaffoldTask ~/projects/jeeves
 
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
+  try scaffoldTask ~/projects/sofdevsim-2026
 
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
+  try scaffoldTask ~/projects/binaryphile.github.io
 
   section tandem-protocol
   try codebergCloneAndLinkTask tandem-protocol
+  try scaffoldTask ~/projects/tandem-protocol
   glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
     map path '$path ~/.claude/commands/$(basename $path)' |
@@ -252,7 +260,7 @@ stage2() {
   #  │   ├─> accelerated-linux   - DAL (cloned to ~/projects/dal)   │
   #  │   ├─> urma-obsidian    - obsidian vault                     │
   #  │   ├─> dal-obsidian     - DAL knowledge vault                │
-  #  │   └─> share            - cross-team utilities (+ scaffold)  │
+  #  │   └─> share            - cross-team utilities               │
   #  │       All from stash.digi.com, require VPN                  │
   #  └─────────────────────────────────────────────────────────────┘
 
@@ -271,7 +279,6 @@ stage2() {
 
   section share
   try stashCloneAndLinkTask share share ~tlilley
-  try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
 
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 6: Applications & VPN                                 │
@@ -379,11 +386,16 @@ codebergCloneAndLinkTask() {
   try task.GitUpdate ~/projects/$repo
 }
 
-eraScaffoldTask() {
-  ProjectDirW=~/projects/era
+scaffoldTask() {
+  local dir=$1
+  ProjectDirW=$dir
   source ~/dotfiles/scripts/scaffold
   scaffold.NixWrapperTask
   scaffold.EnvrcTask
+}
+
+eraScaffoldTask() {
+  scaffoldTask ~/projects/era
   each task.Ln <<'  END'
     nix-wrapper ~/projects/era/bin/go
     nix-wrapper ~/projects/era/bin/node
