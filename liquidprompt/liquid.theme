@@ -14,4 +14,14 @@ LP_MARK_PREFIX=" "
 LP_MARK_UNTRACKED="*"
 LP_MARK_STASH="+"
 
+# Load as percentage of nproc.
+# LP 2.2.1 always displays the raw load average. lp_load_adjusted is
+# already (load * 100) / nproc, so we display that with a % suffix.
+_lp_load_color() {
+    _lp_load || return "$?"
+    local ret
+    _lp_color_map "$lp_load_adjusted" "$_LP_LOAD_CAP"
+    lp_load_color="${ret}${LP_MARK_LOAD}${lp_load_adjusted}%${NO_COL}"
+}
+
 # vim: set et sts=4 sw=4 tw=120 ft=sh:

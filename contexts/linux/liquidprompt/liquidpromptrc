@@ -15,9 +15,8 @@ LP_ENABLE_VCS_ROOT=1          # show VCS info as root (default: 0)
 LP_RUNTIME_THRESHOLD=20       # seconds before showing runtime (default: 2)
 LP_DISPLAY_VALUES_AS_PERCENTS=1  # show temp as percentage (default: 0)
 
-# Disabled — panel has a load sparkline widget. LP_DISPLAY_VALUES_AS_PERCENTS
-# does not affect load (LP 2.2.1 always shows the raw load average).
-LP_ENABLE_LOAD=0
+# Load shown as percentage of nproc — see liquid.theme override.
+LP_ENABLE_LOAD=1
 
 # Disabled features — either unused VCS or not needed on Crostini.
 LP_ENABLE_SVN=0
