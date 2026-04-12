@@ -3,79 +3,100 @@
 #
 # Usage: scaffold <project-dir> [packages...]
 # Default packages: bash coreutils git
+#
+# Can also be sourced as a library.  Set ProjectDirW before calling task functions.
+
+# Naming Policy:
+#
+# All function and variable names are camelCased.
+#
+# Private function names begin with lowercase letters.
+# Public function names begin with uppercase letters.
+# Function names are prefixed with "scaffold." (always lowercase) so they are namespaced.
+#
+# Local variable names begin with lowercase letters, e.g. localVariable.
+#
+# Global variable names begin with uppercase letters, e.g. GlobalVariable.
+# Since this is a library, global variable names are also namespaced by suffixing them with
+# the randomly-generated letter W, e.g. GlobalVariableW.
+# Global variables are not public.  Library consumers should not be aware of them.
+# If users need to interact with them, create accessor functions for the purpose.
+#
+# Variable declarations that are name references borrow the environment namespace, e.g.
+# "local -n ARRAY=$1".
 
 main() {
   set -euo pipefail
 
   [[ $# -ge 1 ]] || { echo "usage: scaffold <project-dir> [packages...]" >&2; exit 1; }
 
-  ProjectDir=$1
+  ProjectDirW=$1
   shift
 
   if [[ $# -eq 0 ]]; then
-    Packages=(bash coreutils git)
+    PackagesW=(bash coreutils git)
   else
-    Packages=("$@")
+    PackagesW=("$@")
   fi
 
   section scaffold
-  mkdirTask "$ProjectDir/bin"
-  nixWrapperTask
-  task.Ln nix-wrapper "$ProjectDir/bin/claude"
-  envrcTask
-  flakeNixTask
+  scaffold.MkdirTask "$ProjectDirW/bin"
+  scaffold.NixWrapperTask
+  task.Ln nix-wrapper "$ProjectDirW/bin/claude"
+  scaffold.EnvrcTask
+  scaffold.FlakeNixTask
 
   task.Summarize
 }
 
 ## task definitions
 
-mkdirTask() {
+scaffold.MkdirTask() {
   local dir=$1
   desc  "create $dir"
   exist "$dir"
   cmd   "mkdir -p '$dir'"
 }
 
-nixWrapperTask() {
-  local path=$ProjectDir/bin/nix-wrapper
+scaffold.NixWrapperTask() {
+  local path=$ProjectDirW/bin/nix-wrapper
   desc 'install bin/nix-wrapper'
 
-  isUpToDate() { [[ -f $path ]] && diff -q "$path" <(nixWrapperContent) >/dev/null 2>&1; }
-  ok isUpToDate
+  scaffold.nixWrapperUpToDate() { [[ -f $path ]] && diff -q "$path" <(scaffold.NixWrapperContent) >/dev/null 2>&1; }
+  ok scaffold.nixWrapperUpToDate
 
-  installWrapper() {
-    nixWrapperContent > "$path"
+  scaffold.installNixWrapper() {
+    scaffold.NixWrapperContent > "$path"
     chmod +x "$path"
   }
-  cmd installWrapper
+  cmd scaffold.installNixWrapper
 }
 
-envrcTask() {
-  local path=$ProjectDir/.envrc
+scaffold.EnvrcTask() {
+  local path=$ProjectDirW/.envrc
   desc 'install .envrc'
 
-  isUpToDate() { [[ -f $path ]] && diff -q "$path" <(envrcContent) >/dev/null 2>&1; }
-  ok isUpToDate
+  scaffold.envrcUpToDate() { [[ -f $path ]] && diff -q "$path" <(scaffold.EnvrcContent) >/dev/null 2>&1; }
+  ok scaffold.envrcUpToDate
 
-  installEnvrc() { envrcContent > "$path"; }
-  cmd installEnvrc
+  scaffold.installEnvrc() { scaffold.EnvrcContent > "$path"; }
+  cmd scaffold.installEnvrc
 }
 
-flakeNixTask() {
-  local path=$ProjectDir/flake.nix
+scaffold.FlakeNixTask() {
+  local path=$ProjectDirW/flake.nix
   desc 'install flake.nix'
 
-  isUpToDate() { [[ -f $path ]] && diff -q "$path" <(flakeNixContent) >/dev/null 2>&1; }
-  ok isUpToDate
+  scaffold.flakeUpToDate() { [[ -f $path ]] && diff -q "$path" <(scaffold.FlakeNixContent) >/dev/null 2>&1; }
+  ok scaffold.flakeUpToDate
 
-  installFlake() { flakeNixContent > "$path"; }
-  cmd installFlake
+  scaffold.installFlake() { scaffold.FlakeNixContent > "$path"; }
+  cmd scaffold.installFlake
 }
 
 ## content generators
 
-nixWrapperContent() {
+scaffold.NixWrapperContent() {
   cat << 'EOF'
 #!/usr/bin/env bash
 # Generic wrapper for running commands inside nix develop.
@@ -118,18 +139,18 @@ main "$@"
 EOF
 }
 
-envrcContent() {
+scaffold.EnvrcContent() {
   cat << 'EOF'
 export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
 EOF
 }
 
-flakeNixContent() {
-  local pkg_list=""
+scaffold.FlakeNixContent() {
+  local pkgList=""
   local pkg
-  for pkg in "${Packages[@]}"; do
-    pkg_list+=$'\n'"            $pkg"
+  for pkg in "${PackagesW[@]}"; do
+    pkgList+=$'\n'"            $pkg"
   done
 
   cat << FLAKE
@@ -149,7 +170,7 @@ flakeNixContent() {
         };
       in {
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [$pkg_list
+          buildInputs = with pkgs; [$pkgList
           ];
         };
       }
@@ -164,4 +185,5 @@ Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURC
 source ~/projects/task.bash/task.bash
 unset -v Here
 
+return 2>/dev/null    # stop if sourced, for use as library
 main "$@"

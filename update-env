@@ -18,10 +18,26 @@
 # it does not have spaces and is exempt from quoting
 CrostiniDir=/mnt/chromeos/MyFiles/Downloads/crostini
 
-# Phases are documented inline at each section below.
+# Two-stage execution: stage 1 delivers a working shell (phases 1-3 + core
+# tools); stage 2 handles remaining projects, builds, and config.
+# Bare `update-env` runs both stages sequentially (backwards-compatible).
 main() {
   set -euo pipefail   # enable strict mode
+  Platform=$(platform)
+  readonly Platform
 
+  case $Stage in
+    1   ) stage1; stage1Epilogue;;
+    2   ) stage2Preflight; stage2;;
+    all ) stage1; stage2;;
+  esac
+
+  task.Summarize
+  postInstallMessages
+}
+
+# Stage 1: critical path — working shell after completion + exec bash
+stage1() {
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 1: System & Credentials (section system)              │
   #  │   ├─> [crostini/linux] apt upgrade                          │
@@ -36,12 +52,11 @@ main() {
     .ssh            ~/ssh
     secrets/netrc   ~/.netrc
   END
-  platform=$(platform)
-  case $platform in crostini|debian )
+  case $Platform in crostini|debian )
     aptUpgradeTask
   ;; esac
 
-  case $platform in crostini )
+  case $Platform in crostini )
     local keyDir=$CrostiniDir
     if [[ -e $keyDir/np_id_ed25519.pub ]]; then
       section credential
@@ -69,7 +84,7 @@ main() {
   # Bootstrap-only symlinks. The rest are managed by home-manager via
   # contexts/linux-base.nix once nix and home-manager are installed.
   each task.Ln <<'  END'
-    contexts/"$platform"                          ~/dotfiles/context
+    contexts/"$Platform"                          ~/dotfiles/context
     ~/dotfiles/bash/init.bash                     ~/.bash_profile
     ~/dotfiles/bash/init.bash                     ~/.bashrc
     ~/dotfiles/bash/init.bash                     ~/.profile
@@ -82,7 +97,7 @@ main() {
   #  │   └─> Apply Home Manager configuration                      │
   #  └─────────────────────────────────────────────────────────────┘
 
-  case $platform in crostini|debian|linux|macos )
+  case $Platform in crostini|debian|linux|macos )
     section nix
     curlPipeLixInstallerTask
     chownRTask /nix "$(id -u)" "$(id -g)"
@@ -99,13 +114,34 @@ main() {
     ;;
   esac
 
+stage1Epilogue() {
+  echo
+  echo "Stage 1 complete. Shell configuration changed."
+  echo "Run 'exec bash' to reload your shell."
+  echo "Then run 'update-env -2' to install remaining tools and repos."
+}
+
+stage2Preflight() {
+  local missing=()
+  command -v nix  &>/dev/null || missing+=("nix")
+  command -v git  &>/dev/null || missing+=("git")
+  [[ -d ~/dotfiles ]]        || missing+=("~/dotfiles")
+  if (( ${#missing[@]} )); then
+    echo "Stage 2 requires: ${missing[*]}"
+    echo "Run 'update-env -1' first, then 'exec bash'."
+    exit 2
+  fi
+}
+
+# Stage 2: projects, builds, and config — all externals try-wrapped
+stage2() {
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 4: Platform-Specific Setup                            │
   #  │   └─> [crostini only]:                                      │
   #  │       • Link ~/crostini → $CrostiniDir                      │
   #  │       • Clone project directories from permanent mount      │
   #  └─────────────────────────────────────────────────────────────┘
-  if [[ $platform == crostini ]]; then
+  if [[ $Platform == crostini ]]; then
     section crostini
     task.Ln $CrostiniDir ~/crostini
 
@@ -122,11 +158,7 @@ main() {
   fi
 
   #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 5: Development Tools & Projects                       │
-  #  │   ├─> fp.bash           - functional programming utilities  │
-  #  │   ├─> mk.bash           - build tool & git updater          │
-  #  │   ├─> task.bash         - task automation (this script!)    │
-  #  │   ├─> tesht             - testing framework                 │
+  #  │ PHASE 5 (projects): Additional Tools & Projects             │
   #  │   ├─> jeeves            - project guides (bitbucket)        │
   #  │   ├─> sofdevsim-2026    - software dev simulation           │
   #  │   ├─> blog              - binaryphile.github.io             │
@@ -134,24 +166,6 @@ main() {
   #  │   └─> era               - semantic memory MCP (codeberg)    │
   #  │       Default branch: main. Cloned and symlinked.           │
   #  └─────────────────────────────────────────────────────────────┘
-
-  section fp.bash
-  githubCloneAndLinkTask fp.bash
-  task.Ln ~/projects/fp.bash/fp.bash ~/.local/lib/fp.bash
-
-  section mk.bash
-  githubCloneAndLinkTask mk.bash
-  task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
-  task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
-
-  section task.bash
-  githubCloneAndLinkTask task.bash
-
-  task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
-
-  section tesht
-  githubCloneAndLinkTask tesht
-  task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
 
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
@@ -171,10 +185,10 @@ main() {
 
   section era
   codebergCloneAndLinkTask era
+  eraScaffoldTask
   eraBuildTask
   each task.Ln <<'  END'
     ~/projects/era/bin/era           ~/.local/bin/era
-    ~/projects/era/bin/era-mcp       ~/.local/bin/era-mcp
     ~/projects/era/bin/era-hook      ~/.local/bin/era-hook
     ~/projects/era/scripts/evtctl                ~/.local/bin/evtctl
     ~/projects/era/scripts/task-audit             ~/.local/bin/task-audit
@@ -199,6 +213,7 @@ main() {
     ~/projects/tandem-protocol
     ~/projects/urma
     ~/projects/share
+    ~/projects/dal
   END
 
   #  ┌─────────────────────────────────────────────────────────────┐
@@ -206,8 +221,9 @@ main() {
   #  │   ├─> urma-next        - main application (+ MCP)            │
   #  │   ├─> pepin            - build/deploy tooling               │
   #  │   ├─> cloud-services                                        │
-  #  │   ├─> accelerated-linux                                     │
+  #  │   ├─> accelerated-linux   - DAL (cloned to ~/projects/dal)   │
   #  │   ├─> urma-obsidian    - obsidian vault                     │
+  #  │   ├─> dal-obsidian     - DAL knowledge vault                │
   #  │   └─> share            - cross-team utilities (+ scaffold)  │
   #  │       All from stash.digi.com, require VPN                  │
   #  └─────────────────────────────────────────────────────────────┘
@@ -217,9 +233,12 @@ main() {
     pepin
     cloud-services
     urma-next urma
-    accelerated-linux accelerated-linux acl
+    accelerated-linux dal acl
     urma-obsidian urma/obsidian ~tlilley
+    dal-obsidian dal/obsidian ~tlilley
   END
+  try gitExcludeTask ~/projects/urma /obsidian
+  try gitExcludeTask ~/projects/dal /obsidian
   try writeMcpJsonTask ~/projects/urma
 
   section share
@@ -250,7 +269,7 @@ main() {
   #  │       • Remove non-passphrase key if it was copied          │
   #  │       • Generate new passphrase-protected key               │
   #  └─────────────────────────────────────────────────────────────┘
-  case $platform in crostini )
+  case $Platform in crostini )
     section unique_credential
     if [[ -e $keyDir/np_id_ed25519.pub ]]; then
       removeMatchingFileTask ~/.ssh/id_ed25519.pub $keyDir/np_id_ed25519.pub
@@ -339,10 +358,22 @@ codebergCloneAndLinkTask() {
   try task.GitUpdate ~/projects/$repo
 }
 
+eraScaffoldTask() {
+  ProjectDirW=~/projects/era
+  source ~/dotfiles/scripts/scaffold
+  scaffold.NixWrapperTask
+  scaffold.EnvrcTask
+  each task.Ln <<'  END'
+    nix-wrapper ~/projects/era/bin/go
+    nix-wrapper ~/projects/era/bin/node
+    nix-wrapper ~/projects/era/bin/npx
+  END
+}
+
 eraBuildTask() {
   desc  'build era binaries'
   prog  on
-  exist ~/projects/era/bin/era-mcp
+  exist ~/projects/era/bin/era
 
   cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && ./mk build"'
 }
@@ -384,7 +415,7 @@ chromeDevtoolsMcpRegisterTask() {
 claudeProjectMemoryTask() {
   local dir=$1
   local resolved
-  resolved=$(cd "$dir" 2>/dev/null && pwd) || return
+  resolved=$(cd "$dir" 2>/dev/null && pwd) || return 0
   local claudeDir=~/.claude/projects/${resolved//\//-}/memory
   desc   "write Era memory redirect for $dir"
   exist  "$claudeDir/MEMORY.md"
@@ -442,6 +473,17 @@ stashCloneAndLinkTask() {
   cmd stashClone
 
   try task.GitUpdate ~/projects/$dir
+}
+
+gitExcludeTask() {
+  local repoDir=$1 pattern=$2
+  local excludeFile=$repoDir/.git/info/exclude
+
+  desc   "add $pattern to git exclude for $repoDir"
+  check  "[[ -d $repoDir/.git ]]"
+  ok     "grep -qxF $pattern $excludeFile 2>/dev/null"
+
+  cmd "echo $pattern >> $excludeFile"
 }
 
 githubCloneAndLinkTask() {
@@ -692,6 +734,7 @@ unset -v Here Lib
 return 2>/dev/null  # stop here if sourced, for interactive debugging
 
 IsShortRun=0
+Stage=all
 
 # parse options
 while [[ ${1:-} == -?* ]]; do
@@ -703,6 +746,9 @@ while [[ ${1:-} == -?* ]]; do
       task.SetShortRun on
       IsShortRun=1
       ;;
+
+    -1|--stage1 ) Stage=1;;
+    -2|--stage2 ) Stage=2;;
 
     -- ) shift; break;;
   esac
