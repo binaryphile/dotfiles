@@ -2,9 +2,9 @@
 
 ## Context
 
-This repo is Ted's shared user environment. It works on all hosts — NixOS and commodity Crostini VMs. System config and Sway live in nixos-config.
+This repo is a fleet configuration management system for Ted's user environment. It targets a heterogeneous fleet — NixOS workstations and disposable Crostini VMs on commodity Chromebooks. System-level config and Sway live in nixos-config; this repo owns everything from the user session down.
 
-Ted moves between Chromebooks freely. They're disposable. Goal: run one command, be productive.
+Ted moves between machines freely. Any machine is replaceable. Goal: run one command, be productive on any host.
 
 See [uc-init.md](uc-init.md) for use cases covering the bash init system's features.
 
@@ -12,11 +12,26 @@ See [uc-init.md](uc-init.md) for use cases covering the bash init system's featu
 
 ### Ted
 
-User across all machines. Development, browsing, communication, media.
+Senior software engineer. Uses the terminal as primary interface — CLI-first, not GUI. Operates across a heterogeneous fleet of NixOS workstations and disposable Crostini VMs. Expects the same tools, aliases, and workflows on every machine. Constraints: Chromebooks are wiped or replaced without notice; corporate resources require VPN; no admin access to ChromeOS host.
 
 ### Claude
 
-Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs across sessions.
+Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Has filesystem and git access but cannot apply nix changes (Ted must run `home-manager switch` or `update-env`). Constraints: no persistent state across sessions beyond CLAUDE.md, Era memory, and project docs; must re-orient on each launch (UC-6).
+
+## Actor-Goal List
+
+| Actor | Goal | UC | Level |
+|-------|------|----|-------|
+| Ted | Write, build, test, and version-control code on any host | UC-1 | User goal |
+| Ted | Have browsers, messaging, media, and productivity apps available | UC-2 | Subfunction |
+| Ted | Navigate, search, and organize files efficiently | UC-3 | Subfunction |
+| Ted | Complete, consistent environment on a new or rebuilt machine | UC-4 | User goal |
+| Claude | Deliver a validated change to packages, dotfiles, or configs | UC-5 | User goal |
+| Claude | Resume work with full context | UC-6 | Subfunction |
+| Ted | Reach work resources via corporate VPN | UC-7 | User goal |
+| Ted | Open VPN-only URLs in ChromeOS host Chrome | UC-8 | User goal |
+| Ted | Get phone push notifications from desktop tools | UC-9 | User goal |
+| Ted | See ambient system/service health in tmux status bar | UC-10 | User goal |
 
 ---
 
@@ -24,9 +39,9 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 
 ### UC-1: Software Development
 
-- **Actor:** Ted
+- **Primary Actor:** Ted
 - **Goal:** Write, build, test, and version-control code on any host
-- **Scope:** All hosts
+- **Scope:** Dotfiles environment (shell, tools, configs)
 - **Level:** User goal
 - **Trigger:** Ted starts work on a project
 - **Preconditions:** Terminal, editor, git available; VPN connected for work repos
@@ -43,108 +58,110 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   6. Ted builds and tests
   7. Ted commits and pushes
 - **Extensions:**
-  - 1a. VPN not connected → connect via UC-7
-  - 1b. VPN tools not installed → add to home.nix (UC-5)
-  - 3a. Git not available → add to home.nix (UC-5)
-  - 4a. Editor not installed → add to home.nix (UC-5)
-  - 4a. No .envrc → project doesn't use direnv; manual `nix develop` or system tools
-  - 6a. Toolchain missing → add a dev environment to that project
-  - 6a. Can't reach work git server → check VPN connection (UC-7)
-  - 6b. Hostname won't resolve → use dig to diagnose DNS
-  - 6c. Need to create PR or manage repo → use gh CLI
-- **Postconditions:**
-  - **Success:** Ted can clone, edit, build, test, and push on any host
-  - **Failure:** Key tools missing; Ted must install before proceeding
+  - 1a. VPN not connected → connect via UC-7; resume at step 1
+  - 1b. VPN tools not installed → add to home.nix (UC-5); resume at step 1
+  - 3a. Git not available → add to home.nix (UC-5); resume at step 3
+  - 4a. Editor not installed → add to home.nix (UC-5); resume at step 5
+  - 4b. No .envrc → project doesn't use direnv; manual `nix develop`; resume at step 5
+  - 6a. Toolchain missing → add a dev environment to that project; resume at step 6
+  - 6b. Can't reach work git server → check VPN connection (UC-7); resume at step 7
+  - 6c. Hostname won't resolve → use dig to diagnose DNS; resume at step 7
+  - 6d. Need to create PR or manage repo → use gh CLI; resume at step 7
+- **Minimal Guarantee:** Existing environment unchanged; failed tool installs don't break working config
+- **Success Guarantee:** Ted can clone, edit, build, test, and push on any host
 - **Technology:** neovim, Claude Code, direnv, Nix devShells, git, stgit, gh, tmux, jira-cli-go, dig, scc, pandoc
 
 ---
 
 ### UC-2: Application Access
 
-- **Actor:** Ted
+- **Primary Actor:** Ted
 - **Goal:** Browsers, messaging, media, and productivity apps available on any host
-- **Scope:** All hosts
-- **Level:** User goal
-- **Trigger:** Ted needs an app that should be declaratively installed
-- **Preconditions:** Home-manager configured
+- **Scope:** Dotfiles environment (home-manager package set)
+- **Level:** Subfunction (supports UC-1, UC-4)
+- **Trigger:** Ted launches an app after deployment (UC-4)
+- **Preconditions:** Home-manager configured; UC-4 completed
 - **Stakeholders:**
   - Ted — apps available immediately after setup
   - Future Ted on a new Chromebook — all apps come with the environment
 - **Main Success Scenario:**
   1. Ted launches an app
-  2. It works
+  2. App starts with declarative config applied
+  3. App functions correctly
 - **Extensions:**
-  - 1a. Not installed → add to home.nix (UC-5)
-  - 1b. Installed imperatively → promote to home.nix (UC-5)
-  - 2a. Misbehaves → check config or system-level deps
-  - 2b. Wrong version or broken build → pin version or find alternative
-  - 2c. Firefox policies not applied → ensure Nix Firefox is running, not an apt-installed one
-- **Postconditions:**
-  - **Success:** All expected apps declaratively installed and working
-  - **Failure:** App needs manual install or has unresolved issues
+  - 1a. App not installed → add to home.nix (UC-5); resume at step 1
+  - 1b. App installed imperatively → promote to home.nix (UC-5); resume at step 1
+  - 2a. Firefox policies not applied → ensure Nix Firefox is running, not an apt-installed one; resume at step 2
+  - 3a. App misbehaves → check config or system-level deps; fail
+  - 3b. Wrong version or broken build → pin version or find alternative; resume at step 1
+- **Minimal Guarantee:** Other apps unaffected by a single app's failure
+- **Success Guarantee:** All expected apps declaratively installed and working
 - **Technology:** Firefox (declarative policies: DuckDuckGo, uBlock Origin, Privacy Badger, Vimium), Obsidian, signal-desktop, bottom, highlight, wl-clipboard, cliphist, asciinema. notify-send is wrapped to also push to ntfy.sh (UC-9).
 
 ---
 
 ### UC-3: File Management
 
-- **Actor:** Ted
+- **Primary Actor:** Ted
 - **Goal:** Navigate, search, and organize files efficiently
-- **Scope:** All hosts
-- **Level:** User goal
-- **Trigger:** Ted needs to find, move, or manage files
-- **Preconditions:** Filesystem accessible, tools available
+- **Scope:** Dotfiles environment (CLI tools and configs)
+- **Level:** Subfunction (supports UC-1)
+- **Trigger:** Ted needs to find, move, or manage files during development
+- **Preconditions:** Filesystem accessible; UC-4 completed
 - **Stakeholders:**
   - Ted — fast operations from terminal
   - Project repos — files must be findable for development (UC-1)
 - **Main Success Scenario:**
-  1. Ted navigates to a directory
-  2. Ted searches by name or content
-  3. Ted moves, copies, renames, or deletes
-  4. Ted archives or extracts
+  1. Ted opens ranger or a search tool
+  2. Ted locates the target file by name or content
+  3. Ted performs the file operation
 - **Extensions:**
-  - 1a. File manager not installed → add via UC-5
-  - 2a. Search tools missing → add via UC-5
-  - 4a. Archive format unsupported → add support via UC-5
-- **Postconditions:**
-  - **Success:** Ted finds, organizes, and transfers files without friction
-  - **Failure:** Basic `ls`/`cp`/`mv` work but search is tedious
+  - 1a. File manager not installed → add via UC-5; resume at step 1
+  - 2a. Search tools missing → add via UC-5; resume at step 2
+  - 3a. Archive format unsupported → add support via UC-5; resume at step 3
+- **Minimal Guarantee:** Basic `ls`/`cp`/`mv` always work (coreutils)
+- **Success Guarantee:** Ted finds, organizes, and transfers files without friction
 - **Technology:** ranger, silver-searcher (ag), tree, ncdu, zip, rsync
 
 ---
 
 ### UC-4: User Environment Deployment
 
-- **Actor:** Ted
+- **Primary Actor:** Ted
 - **Goal:** Complete, consistent environment on a new or rebuilt machine in one step
-- **Scope:** All hosts
+- **Scope:** update-env (deployment script)
 - **Level:** User goal
 - **Trigger:** New Chromebook, rebuilt Crostini, or new host
-- **Preconditions:** Network connected
+- **Preconditions:** Network connected; SSH key available (crostini: on persistent mount)
 - **Stakeholders:**
   - Ted — minimal steps, reproducible
   - Future Ted — works without remembering steps
+  - UC-1, UC-2, UC-3 — depend on this for tool availability
 - **Main Success Scenario:**
   1. Ted runs `update-env`
-  2. Ted is productive immediately
-  3. update-env prints any platform-specific manual steps that cannot be automated (e.g., ChromeOS proxy setup for UC-8 on Crostini)
+  2. System detects the platform and converges each phase
+  3. System clones dotfiles, installs nix and home-manager, applies config
+  4. System clones dev tool and project repos, creates symlinks
+  5. System prints any platform-specific manual steps (e.g., ChromeOS proxy setup for UC-8)
+  6. Ted is productive immediately
 - **Extensions:**
-  - 1a. NixOS host → `update-env` skips apt and nix/home-manager phases (system-managed)
-  - 1b. New machine → create a machine-specific context with per-machine config
-  - 2a. A phase fails → script reports which; diagnose
-  - 2b. Package fails to build → nixpkgs compatibility issue
-  - 3a. Manual step missed → re-run update-env to see the reminders again, or check use-cases.md
-- **Postconditions:**
-  - **Success:** Git, neovim, tmux, shell, SSH keys, dev tools, project repos, packages, and dotfile symlinks all in place; user has been told about any remaining manual steps
-  - **Failure:** Partial deployment; re-run after fixing
+  - 1a. NixOS host → System skips apt and nix/home-manager phases; resume at step 2
+  - 1b. New machine → create a machine-specific context with per-machine config; resume at step 1
+  - 2a. Platform not recognized → System exits with diagnostic; fail
+  - 3a. Package fails to build → nixpkgs compatibility issue; fail
+  - 4a. VPN-dependent repo unreachable → `try` wrapper logs failure; resume at step 5
+  - 4b. Repo remote stale → System reports; fix remote manually; resume at step 4
+  - 5a. Manual step missed → re-run update-env to see reminders again
+- **Minimal Guarantee:** Phases are idempotent; partial deployment leaves no broken state; re-run converges
+- **Success Guarantee:** Git, neovim, tmux, shell, SSH keys, dev tools, project repos, packages, and dotfile symlinks all in place; user has been told about any remaining manual steps
 
 ---
 
 ### UC-5: Make a Configuration Change
 
-- **Actor:** Claude
+- **Primary Actor:** Claude
 - **Goal:** Deliver a validated change to packages, dotfiles, or configs
-- **Scope:** This repo
+- **Scope:** Dotfiles repo
 - **Level:** User goal
 - **Trigger:** Ted requests a change, or Claude spots a gap
 - **Preconditions:** Claude Code running, repo accessible
@@ -155,30 +172,29 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
   1. Ted describes a need, or Claude spots a gap
   2. Claude reads the relevant files
   3. Claude writes the change
-  4. Claude verifies the change builds or parses correctly
-  5. Ted applies
+  4. Claude validates the change (nix-instantiate, home-manager build, tesht)
+  5. Ted applies the change
   6. Ted confirms it works
   7. Claude commits
 - **Extensions:**
-  - 1a. Ambiguous → Claude asks first
-  - 1b. Belongs in nixos-config → Claude flags it
-  - 3a. Affects all hosts → Claude considers NixOS and Crostini
-  - 4a. Validation fails → Claude fixes and re-verifies
-  - 5a. Apply fails → Claude diagnoses
-  - 6a. Misbehaves → Claude investigates
-- **Postconditions:**
-  - **Success:** Applied, working, committed
-  - **Failure:** Previous environment intact; broken change not committed
+  - 1a. Ambiguous request → Claude asks first; resume at step 1
+  - 1b. Change belongs in nixos-config → Claude flags it; fail (out of scope)
+  - 3a. Change affects all hosts → Claude considers NixOS and Crostini; resume at step 4
+  - 4a. Validation fails → Claude fixes and re-validates; resume at step 4
+  - 5a. Apply fails → Claude diagnoses; resume at step 3
+  - 6a. Change misbehaves → Claude investigates; resume at step 3
+- **Minimal Guarantee:** Previous environment intact; broken change not committed
+- **Success Guarantee:** Change applied, working, committed, docs updated
 
 ---
 
 ### UC-6: Start a New Session
 
-- **Actor:** Claude
+- **Primary Actor:** Claude
 - **Goal:** Resume work with full context
-- **Scope:** This repo
-- **Level:** Subfunction
-- **Trigger:** Ted launches Claude Code here
+- **Scope:** Dotfiles repo
+- **Level:** Subfunction (supports UC-5)
+- **Trigger:** Ted launches Claude Code in this repo
 - **Preconditions:** CLAUDE.md exists
 - **Stakeholders:**
   - Ted — no re-explaining
@@ -186,157 +202,159 @@ Ted's agent. Changes packages, configs, and dotfiles. Maintains project docs acr
 - **Main Success Scenario:**
   1. Ted launches Claude Code
   2. Claude reads CLAUDE.md
-  3. Claude reads memories
+  3. Claude searches Era memory for relevant context
   4. Claude reads use-cases.md and design.md
-  5. Claude is ready
+  5. Claude is ready to act
 - **Extensions:**
-  - 2a. CLAUDE.md missing → Claude explores and reconstructs
-  - 3a. Memory stale → Claude trusts current state, updates
-  - 3b. No memory → Claude explores and builds context
-  - 4a. Docs outdated → Claude updates
-  - 5a. Ted expects Claude to know something → Claude checks docs first
-- **Postconditions:**
-  - **Success:** Claude acts without Ted re-explaining
-  - **Failure:** Claude asks targeted questions, not "what is this project?"
+  - 2a. CLAUDE.md missing → Claude explores and reconstructs; resume at step 3
+  - 3a. Memory stale → Claude trusts current state, updates memory; resume at step 4
+  - 3b. No relevant memory → Claude explores and builds context; resume at step 4
+  - 4a. Docs outdated → Claude updates docs; resume at step 5
+  - 5a. Ted expects Claude to know something → Claude checks docs first; resume at step 5
+- **Minimal Guarantee:** Claude reads CLAUDE.md and has basic orientation
+- **Success Guarantee:** Claude acts without Ted re-explaining
 
 ---
 
 ### UC-7: Connect to Corporate VPN
 
-- **Actor:** Ted
+- **Primary Actor:** Ted
+- **Secondary Actors:** SAML IdP, GlobalProtect gateway
 - **Goal:** Reach work resources (git, build artifacts, internal services) from any host
-- **Scope:** Linux + Crostini hosts
+- **Scope:** vpn-connect wrapper (Nix-managed script)
 - **Level:** User goal
-- **Trigger:** Ted needs to access a host that lives behind the corporate VPN
+- **Trigger:** Ted needs to access a host behind the corporate VPN
 - **Preconditions:** Network connected; VPN credentials valid; SAML SSO active in the default browser
 - **Stakeholders:**
-  - Ted — wants tunnel up with a single command, no manual cookie copying
+  - Ted — tunnel up with a single command, no manual cookie copying
   - UC-1 — depends on this for any task that touches a corporate repo or service
   - UC-8 — depends on this; VPN must be up before host-browser proxy access works
 - **Main Success Scenario:**
-  1. Ted runs `vpn-connect` in a terminal
-  2. The default browser opens a SAML auth page
-  3. Browser auto-completes (Ted is already signed in via SSO)
-  4. Tunnel comes up; reconnect-loop keeps it alive until Ctrl-C
-  5. Ted reaches `stash.digi.com`, `gitlab.drm.ninja`, etc. via in-container shells
+  1. Ted runs `vpn-connect`
+  2. gpauth opens a SAML auth page in the default browser
+  3. Browser completes SSO authentication
+  4. gpauth captures the auth cookie and passes it to gpclient
+  5. gpclient brings up the tunnel; reconnect-loop keeps it alive
+  6. Ted reaches `stash.digi.com`, `gitlab.drm.ninja`, etc.
 - **Extensions:**
-  - 1a. `vpn-connect` not on PATH → re-run `home-manager switch`; `vpn-connect` is a Nix-managed wrapper
-  - 2a. Browser doesn't open → check `xdg-open` and the registered URL scheme handler (see [docs/vpn.md](vpn.md))
-  - 3a. SAML times out or fails → re-authenticate to the IdP, re-run
-  - 4a. Pipeline exits silently after browser shows "authenticated" → URL scheme handler isn't dispatching back to the in-container helper; on Crostini, verify the `gpgui.desktop` symlink in `~/.local/share/applications/` exists (see [docs/vpn.md](vpn.md))
-  - 4b. Reconnect loop hammers a dead gateway → Ctrl-C, diagnose
-- **Postconditions:**
-  - **Success:** `tun0` interface up, split-tunnel routes installed for the configured hosts only, normal traffic stays on LAN
-  - **Failure:** No tunnel; previous network state intact
+  - 1a. `vpn-connect` not on PATH → re-run `home-manager switch`; resume at step 1
+  - 2a. Browser doesn't open → check `xdg-open` and URL scheme handler (see [docs/vpn.md](vpn.md)); resume at step 1
+  - 3a. SAML times out → re-authenticate to the IdP; resume at step 1
+  - 4a. Callback not dispatched → URL scheme handler isn't routing back to gpauth; on Crostini, verify `gpgui.desktop` symlink exists (see [docs/vpn.md](vpn.md)); resume at step 1
+  - 5a. Reconnect loop hammers a dead gateway → Ctrl-C, diagnose; fail
+- **Minimal Guarantee:** No tunnel; previous network state intact
+- **Success Guarantee:** `tun0` interface up, split-tunnel routes installed for configured hosts only, normal traffic stays on LAN
 - **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite — `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel — wrapped by `scripts/vpn-connect`. Split-horizon DNS via `vpn-slice`. See [design.md § VPN](design.md#vpn--uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
 
 ---
 
 ### UC-8: Access VPN Resources from Host Browser
 
-- **Actor:** Ted
-- **Goal:** Open VPN-only URLs (stash, gitlab, internal Jira, etc.) in ChromeOS host Chrome, not just in-container browsers
-- **Scope:** Crostini host
+- **Primary Actor:** Ted
+- **Secondary Actors:** ChromeOS Chrome, tinyproxy, darkhttpd
+- **Goal:** Open VPN-only URLs in ChromeOS host Chrome, not just in-container browsers
+- **Scope:** Crostini proxy stack (tinyproxy + PAC)
 - **Level:** User goal
 - **Trigger:** Ted clicks a `stash.digi.com` link from an email, chat, or another browser tab
 - **Preconditions:** UC-7 satisfied — VPN tunnel up in the container; ChromeOS Chrome configured with the PAC URL
 - **Stakeholders:**
-  - Ted — wants seamless link clicking from host Chrome without copying URLs into a separate browser
+  - Ted — seamless link clicking from host Chrome without copying URLs into a separate browser
   - Normal browsing — must NOT pay any container-hop cost; only VPN-bound hosts traverse the proxy
 - **Main Success Scenario:**
   1. Ted clicks a corporate URL in host Chrome
-  2. Chrome consults the PAC file; matches a VPN host; routes through the in-container proxy
-  3. The in-container proxy forwards via tun0 over the VPN
-  4. Page loads in host Chrome
+  2. Chrome consults the PAC file and matches a VPN host
+  3. Chrome routes the request through the in-container proxy
+  4. tinyproxy forwards via tun0 over the VPN
+  5. Page loads in host Chrome
 - **Extensions:**
-  - 1a. Host Chrome PAC not configured → set ChromeOS Network → Proxy → Automatic configuration to `http://127.0.0.1:8120/proxy.pac`. `update-env` prints these instructions on Crostini after each run as a reminder (UC-4 step 3).
-  - 2a. Host doesn't match → URL is not in the VPN host list → Chrome connects directly (correct, expected)
-  - 2b. Host should match but PAC list is stale → edit `contexts/crostini/home.nix` to add the host, re-activate
-  - 3a. Proxy unreachable → check `systemctl --user status tinyproxy proxy-pac-server`
-  - 3b. VPN tunnel down → see UC-7
-- **Postconditions:**
-  - **Success:** VPN-bound URLs work in host Chrome with no per-click setup; non-VPN URLs are unaffected
-  - **Failure:** Host Chrome cannot reach VPN URLs; Ted falls back to in-container Firefox or terminal tools
+  - 1a. Host Chrome PAC not configured → set ChromeOS Network → Proxy → Automatic configuration to `http://127.0.0.1:8120/proxy.pac` (UC-4 step 5 prints reminders); resume at step 1
+  - 2a. Host not in PAC list → Chrome connects directly (correct, expected); separate success
+  - 2b. Host should match but PAC list is stale → edit `contexts/crostini/home.nix`, re-activate; resume at step 1
+  - 4a. Proxy unreachable → check `systemctl --user status tinyproxy proxy-pac-server`; fail
+  - 4b. VPN tunnel down → see UC-7; resume at step 1
+- **Minimal Guarantee:** Non-VPN URLs always work (PAC returns DIRECT); proxy failure doesn't break normal browsing
+- **Success Guarantee:** VPN-bound URLs work in host Chrome with no per-click setup; non-VPN URLs unaffected
 - **Technology:** `tinyproxy` (forward HTTP proxy in container), `darkhttpd` (serves the PAC file over HTTP), Chrome's PAC mechanism. Crostini-specific. See [design.md § Browser VPN access](design.md#browser-vpn-access--uc-8).
 
 ---
 
 ### UC-9: Phone Notifications from Desktop Tools
 
-- **Actor:** Ted
+- **Primary Actor:** Ted
+- **Secondary Actors:** ntfy.sh, notification daemon
 - **Goal:** Get push notifications on the phone when desktop tools fire local notifications, without each tool needing to know about the phone
-- **Scope:** Linux + Crostini hosts
+- **Scope:** notify-send wrapper (Nix-managed script)
 - **Level:** User goal
-- **Trigger:** A desktop tool calls `notify-send` (e.g., calendar reminder, build complete, alert)
+- **Trigger:** Ted triggers an action that calls `notify-send` (e.g., calendar reminder fires, build completes)
 - **Preconditions:** ntfy app installed on phone; phone subscribed to a private topic; topic name in `~/secrets/ntfy-topic`
 - **Stakeholders:**
-  - Ted — wants reliable phone reminders for time-sensitive events even when away from the laptop
-  - Calendar reminders (UC-1's khal-notify integration) — depends on this for phone delivery
+  - Ted — reliable phone reminders for time-sensitive events even when away from the laptop
+  - Calendar reminders (khal-notify) — depends on this for phone delivery
   - Future tools — get phone push for free without modification
 - **Main Success Scenario:**
-  1. A desktop tool fires a `notify-send` call
-  2. The local desktop notification appears immediately
-  3. A push notification appears on Ted's phone within a few seconds
+  1. Ted's action triggers a `notify-send` call (e.g., calendar reminder fires)
+  2. System forwards to libnotify; local notification appears
+  3. System POSTs the notification to ntfy.sh in the background
+  4. A push notification appears on Ted's phone
 - **Extensions:**
-  - 1a. Tool doesn't use `notify-send` → wrap it or have it call notify-send too
-  - 2a. Local notification doesn't appear → notification daemon issue, unrelated to phone push
-  - 3a. Phone push doesn't arrive → check `~/secrets/ntfy-topic` exists and is readable; check phone is subscribed to the matching topic; check ntfy.sh is reachable
-  - 3b. Network slow → push is fire-and-forget in the background; local notification is unaffected
-- **Postconditions:**
-  - **Success:** Both local popup and phone push, with no blocking on the network call
-  - **Failure:** Local popup still works; phone push silently dropped
+  - 1a. Tool doesn't use `notify-send` → wrap it or have it call notify-send; resume at step 1
+  - 2a. Local notification daemon missing → desktop popup fails; resume at step 3
+  - 3a. `~/secrets/ntfy-topic` missing → phone push skipped silently; separate success (local only)
+  - 3b. Network unreachable → push is fire-and-forget; local notification unaffected; separate success (local only)
+  - 4a. Phone not subscribed → notification lost; fail (phone delivery)
+- **Minimal Guarantee:** Local notification always works; phone push failure never blocks the caller
+- **Success Guarantee:** Both local popup and phone push, with no blocking on the network call
 - **Technology:** ntfy.sh (third-party push service); a `notify-send` wrapper script (`scripts/notify-send`) installed via Nix that shadows libnotify's `notify-send` and tees the notification to `https://ntfy.sh/<topic>`. See [design.md § Phone notification bridge](design.md#phone-notification-bridge--uc-9).
 
 ---
 
 ### UC-10: Tmux Status Bar Widgets
 
-This use case mirrors nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State) for headless sessions — Crostini (where ChromeOS's locked-down shelf doesn't allow custom widgets) and SSH into NixOS (where waybar isn't available). The widget contracts match waybar so the user gets the same ambient experience on either platform.
+Mirrors nixos-config UC-1a/UC-1b for headless sessions — Crostini and SSH into NixOS. Widget contracts match waybar so the user gets the same ambient experience on either platform.
 
-- **Actor:** Ted
-- **Goal:** See ambient health for the same set of systems and services that the NixOS+Sway waybar shows — work VPN, work hosts behind that VPN, public dev forges, communication tools, the era memory store, system load, and resource exhaustion alerts — at a glance from any tmux pane on Crostini or headless Linux
-- **Scope:** Crostini and headless Linux (SSH without desktop)
+- **Primary Actor:** Ted
+- **Secondary Actors:** probe-lib.bash (shared probes), external service APIs
+- **Goal:** See ambient system and service health at a glance from any tmux session
+- **Scope:** panel script + probe-lib.bash
 - **Level:** User goal
-- **Trigger:** Ted runs a tmux session
+- **Trigger:** Ted opens a tmux session
 - **Preconditions:** tmux 3.2+ (for `display-popup`), `panel` script on PATH
 - **Stakeholders:**
-  - Ted — wants the same ambient awareness as on NixOS, with the same "quiet by default, loud when something needs attention" contract
-  - VPN ergonomics (UC-7) — VPN status is always shown; VPN-gated widgets are hidden when the tunnel is down
-  - nixos-config UC-1a/UC-1b — sibling use cases on the other platform; this UC mirrors them
-- **Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
-  - **Hidden when healthy** (quiet-by-default): health monitor widgets (dm1, stash, nexus, gitlab, remotemanager, codeberg, bitbucket, teams, ntfy) vanish when state is `on`. They appear only for `partial` (mid-gray) or `off` (dark-gray) or `unknown` (amber) — surfacing information only when something needs attention. The separator between vpn and the health group collapses when all health widgets are hidden.
-  - **Always shown**: vpn, era, load — infrastructure status and service toggles that are always meaningful. vpn and era are interactive controls (click to toggle); load shows a sparkline (click opens top).
-  - **Hidden when VPN down** (VPN-gated, mirrors nixos-config UC-1a): dm1, stash, nexus, gitlab — nothing to probe without `tun0`
-  - **Hidden under 90% usage** (mirrors nixos-config UC-1b): cpu, mem, disk — appear in default text color (white) when threshold crossed, not styled as a warning
-  - **Hidden when no inbound connections** (mirrors nixos-config UC-1b "SSH connection indicator: visible only when connections exist"): ssh — Crostini doesn't run sshd by default so this is normally invisible there; on NixOS SSH the host does run sshd, so this widget shows inbound connection count
-  - **Battery** (hidden above 10%): warning [10,5%) shows "H:MM" in partial color (dimmer than clock); critical [5,0%] shows "N% bat" in white
-  - **Always shown (non-widget)**: clock (`MM/DD HH:MM`), hostname (reads from `~/crostini/hostname` on Crostini, system hostname elsewhere) — follow the hardware group
-  - **Not present in tmux panel** (desktop-only widgets handled by waybar):
-    - backlight, vol, temp — hardware controls with no headless equivalent
-    - tray — handled by ChromeOS shelf on Crostini, desktop tray on NixOS
-    - fw — firewall status shown by waybar only
-- **State coloring** (mirrors waybar.css from nixos-config):
-  - on = hidden (health widget vanishes; vpn/era/load always visible in white), light gray = degraded/partial, dark gray = off, amber = unknown
+  - Ted — same ambient awareness as NixOS waybar, "quiet by default, loud when something needs attention"
+  - UC-7 — VPN status always shown; VPN-gated widgets hidden when tunnel is down
+  - nixos-config UC-1a/UC-1b — sibling use cases; behavioral changes must be mirrored
 - **Main Success Scenario:**
   1. Ted opens a tmux session
-  2. The status bar dynamically uses 1 or 2 rows depending on terminal width: when the window list + widgets fit on one line, everything is on row 0 (window list left, widgets + clock + hostname right); when they don't fit, row 0 has the window list and row 1 has the widgets + clock + hostname, right-aligned. `panel layout` toggles between modes on resize, window add/remove, and every 5-second refresh.
-  3. The widget bar is quiet by default — health widgets are hidden when everything is healthy, showing only vpn and load as always-visible anchors. Degraded or down services surface automatically.
-  3a. Widget order is the same as waybar on NixOS (left-to-right: infrastructure, VPN-gated hosts, public services, system monitors), minus desktop-only widgets (backlight, vol, temp, tray, fw)
-  4. VPN-gated widgets (dm1, stash, nexus, gitlab) appear only when `tun0` is up
-  5. cpu, mem, disk appear only when usage is at 90% or above
-  6. Segments refresh every 5 seconds; expensive probes (curl, ssh) are cached for 30 seconds and refreshed asynchronously so the bar never stalls
-  7. Ted clicks a segment; a relevant inspector pops up (top for load/cpu/mem/disk drilldown, the URL for forge widgets, status info for vpn/era)
+  2. panel loads and renders the status bar (1 or 2 rows based on terminal width)
+  3. Health widgets are hidden — bar is quiet, showing only always-visible anchors (vpn, era, load)
+  4. Ted glances at the bar and sees no health widgets — everything is healthy
+  5. A service degrades; the health widget appears automatically on the next refresh
+  6. Ted clicks a segment; a relevant inspector pops up
 - **Extensions:**
-  - 1a. Not in tmux → run `tmux` first; the bar lives in the status line
-  - 2a. Ted resizes terminal to full-width → `panel layout` detects room and collapses to 1-line mode on the next tick (≤5s) or immediately via `client-resized` hook
-  - 2b. Ted opens several tabs on a half-width terminal → bar switches to 2-line mode
-  - 4a. VPN comes up after tmux session started → next refresh tick (≤5s) the VPN-gated widgets appear
-  - 5a. CPU spikes above 90% → cpu segment appears in white, vanishes again on the next tick once usage drops
-  - 7a. Underlying inspector tool not installed → click handler falls back to a basic `ip -s addr` or status echo
-- **Postconditions:**
-  - **Success:** Ted's bar is quiet most of the time, surfaces information only when meaningful, and matches the waybar contract on the NixOS side
-  - **Failure:** Bar is cluttered with always-visible "off" indicators OR misses important state changes
-- **Sibling implementation:** This UC describes the same observable widget contract as nixos-config UC-1a (Connect VPN) and UC-1b (Monitor and Adjust System State). On NixOS+Sway, waybar renders the widgets; on Crostini and headless Linux (SSH without desktop), the tmux status bar substitutes for waybar. On NixOS, both renderers can be active on the same machine — waybar on desktop sessions, panel on SSH sessions. Behavioral changes must be mirrored across both UCs. The implementations are independent rendering wrappers around a shared probe library — see [design.md § Status widgets](design.md#status-widgets--uc-10) for how that works and which files are shared.
+  - 1a. Not in tmux → start tmux; resume at step 1
+  - 2a. Terminal resized → panel layout adjusts within 5s or immediately via client-resized hook; resume at step 3
+  - 3a. VPN-gated widgets (dm1, stash, nexus, gitlab) hidden when tun0 is down; resume at step 4
+  - 3b. Threshold widgets (cpu, mem, disk) hidden below 90% usage; resume at step 4
+  - 5a. VPN comes up after session start → VPN-gated widgets appear on next tick (≤5s); resume at step 4
+  - 6a. Inspector tool not installed → click handler falls back to basic status echo; separate success
+- **Minimal Guarantee:** tmux session works normally; broken probes produce empty segments, not errors
+- **Success Guarantee:** Bar is quiet when healthy, surfaces degraded/down services automatically, matches waybar contract
+- **Sibling implementation:** On NixOS+Sway, waybar renders the same widgets; on headless sessions, tmux panel substitutes. Both renderers can be active on the same machine. Implementations are independent rendering wrappers around shared probe-lib.bash. See [design.md § Status widgets](design.md#status-widgets--uc-10).
+
+**Widget visibility contract** (must match nixos-config UC-1a/UC-1b):
+
+| Category | Widgets | Visibility rule |
+|----------|---------|-----------------|
+| Always shown | vpn, era, load | Visible in white; vpn and era are interactive (click to toggle); load shows sparkline |
+| Hidden when healthy | dm1, stash, nexus, gitlab, remotemanager, codeberg, bitbucket, teams, ntfy | Appear only for partial (light gray), off (dark gray), or unknown (amber) |
+| VPN-gated | dm1, stash, nexus, gitlab | Hidden when tun0 is down |
+| Threshold (≥90%) | cpu, mem, disk | Appear in white when threshold crossed |
+| SSH connections | ssh | Hidden when no inbound connections |
+| Battery | bat | Hidden above 10%; warning [10,5%) shows "H:MM" in partial color; critical [5,0%] shows "N% bat" in white |
+| Always shown (non-widget) | clock, hostname | Follow hardware group |
+| Desktop-only (not in panel) | backlight, vol, temp, tray, fw | Handled by waybar on NixOS |
+
+**State coloring** (mirrors waybar.css): on = hidden (health) or white (always-shown); light gray = partial; dark gray = off; amber = unknown.
 
 ---
 

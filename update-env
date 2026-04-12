@@ -185,6 +185,22 @@ main() {
   eraMcpRegisterTask
   chromeDevtoolsMcpRegisterTask
 
+  # Write Era memory redirects for all projects Claude may visit
+  each claudeProjectMemoryTask <<'  END'
+    ~/dotfiles
+    ~/projects/era
+    ~/projects/fp.bash
+    ~/projects/mk.bash
+    ~/projects/task.bash
+    ~/projects/tesht
+    ~/projects/jeeves
+    ~/projects/sofdevsim-2026
+    ~/projects/binaryphile.github.io
+    ~/projects/tandem-protocol
+    ~/projects/urma
+    ~/projects/share
+  END
+
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 5b: Work Projects (VPN-dependent, graceful failure)   │
   #  │   ├─> urma-next        - main application (+ MCP)            │
@@ -363,6 +379,27 @@ chromeDevtoolsMcpRegisterTask() {
       mv ~/.claude.json.tmp ~/.claude.json
   }
   cmd chromeDevtoolsMcpRegister
+}
+
+claudeProjectMemoryTask() {
+  local dir=$1
+  local resolved
+  resolved=$(cd "$dir" 2>/dev/null && pwd) || return
+  local claudeDir=~/.claude/projects/${resolved//\//-}/memory
+  desc   "write Era memory redirect for $dir"
+  exist  "$claudeDir/MEMORY.md"
+
+  writeMemoryRedirect() {
+    mkdir -p "$claudeDir"
+    cat >"$claudeDir/MEMORY.md" <<'EOF'
+# Memory
+
+DO NOT STORE ANYTHING IN THIS FILE. All memories go to Era via
+`mcp__era__store`. Search Era with `mcp__era__search` to recall information.
+This file exists only to hold this directive.
+EOF
+  }
+  cmd writeMemoryRedirect
 }
 
 writeMcpJsonTask() {
