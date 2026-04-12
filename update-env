@@ -263,18 +263,30 @@ stage2() {
   #  │       All from stash.digi.com, require VPN                  │
   #  └─────────────────────────────────────────────────────────────┘
 
-  section stash
-  each 'try stashCloneAndLinkTask' <<'  END'
-    pepin
-    cloud-services
-    urma-next urma
-    accelerated-linux dal acl
-    urma-obsidian urma/obsidian ~tlilley
-    dal-obsidian dal/obsidian ~tlilley
-  END
+  section urma
+  try stashCloneAndLinkTask urma-next urma
+  try scaffoldTask ~/projects/urma
   try gitExcludeTask ~/projects/urma /obsidian
-  try gitExcludeTask ~/projects/dal /obsidian
   try writeMcpJsonTask ~/projects/urma
+
+  section pepin
+  try stashCloneAndLinkTask pepin
+  try scaffoldTask ~/projects/pepin
+
+  section cloud-services
+  try stashCloneAndLinkTask cloud-services
+  try scaffoldTask ~/projects/cloud-services
+
+  section dal
+  try stashCloneAndLinkTask accelerated-linux dal acl
+  try scaffoldTask ~/projects/dal
+  try gitExcludeTask ~/projects/dal /obsidian
+
+  section urma-obsidian
+  try stashCloneAndLinkTask urma-obsidian urma/obsidian ~tlilley
+
+  section dal-obsidian
+  try stashCloneAndLinkTask dal-obsidian dal/obsidian ~tlilley
 
   section share
   try stashCloneAndLinkTask share share ~tlilley
