@@ -130,6 +130,8 @@ stage1() {
   section mk.bash
   githubCloneAndLinkTask mk.bash
   scaffoldTask ~/projects/mk.bash
+  task.Ln nix-wrapper ~/projects/mk.bash/bin/node
+  task.Ln nix-wrapper ~/projects/mk.bash/bin/npx
   task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
   task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
 
@@ -202,18 +204,29 @@ stage2() {
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try scaffoldTask ~/projects/jeeves
+  try task.Ln nix-wrapper ~/projects/jeeves/bin/go
+  try task.Ln nix-wrapper ~/projects/jeeves/bin/node
+  try task.Ln nix-wrapper ~/projects/jeeves/bin/npx
 
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
   try scaffoldTask ~/projects/sofdevsim-2026
+  try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/go
+  try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/node
+  try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/npx
 
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
   try scaffoldTask ~/projects/binaryphile.github.io
+  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/ruby
+  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/bundler
+  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/node
+  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/npx
 
   section tandem-protocol
   try codebergCloneAndLinkTask tandem-protocol
   try scaffoldTask ~/projects/tandem-protocol
+  try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
   glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
     map path '$path ~/.claude/commands/$(basename $path)' |
