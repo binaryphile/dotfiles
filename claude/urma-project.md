@@ -55,7 +55,10 @@ Key abstractions: **Rest** (HTTP singleton with tenant headers), **SCI/RCI**
 - SWR + Formik tension: revalidateOnFocus returns new refs that reset forms.
 - Errors: no global interceptor. Save failures → visible FlashMessage.
   Background revalidation failures → silent stale data.
-- Tenant headers: Account-Filter scopes reads, Actor scopes writes. Wrong
-  headers = silent cross-tenant data. Account switch invalidates cache.
+- Tenant headers: GETs get Account-Filter, writes get Actor (edge-case
+  overrides exist). Wrong headers = silent cross-tenant data. Account
+  switch invalidates cache.
+- Server traffic splits: middleware proxies /api/ws/* to DRM; route
+  handlers under _common/api/ serve MongoDB/uploads/auth separately.
 - Authorization: four layers — middleware, DRM, provider role gating, flags.
 - Releases: release/YY.MM.DD, GitLab CI → Docker → FluxCD → K8s.
