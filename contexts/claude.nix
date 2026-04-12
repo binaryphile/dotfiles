@@ -49,5 +49,9 @@ in
       source = ../claude/dal-project.md;
       force = true;
     };
+    ".claude/projects/-home-ted-projects-urma/CLAUDE.md" = {
+      source = ../claude/urma-project.md;
+      force = true;
+    };
   };
 }
