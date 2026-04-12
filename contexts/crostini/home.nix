@@ -1,39 +1,9 @@
 { config, pkgs, ... }:
 
 let
-  inherit (pkgs) lib;
-
   # Live symlink helper, mirroring linux-base.nix's pattern.
   linkDotfile = path:
     config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/${path}";
-
-  homeDir = config.home.homeDirectory;
-
-  # Encode an absolute path the way Claude Code does for project directories
-  encodePath = path: builtins.replaceStrings ["/"] ["-"] path;
-
-  # All projects get an Era memory redirect
-  eraProjects = [
-    "${homeDir}/dotfiles"
-    "${homeDir}/projects/era"
-    "${homeDir}/projects/fp.bash"
-    "${homeDir}/projects/mk.bash"
-    "${homeDir}/projects/task.bash"
-    "${homeDir}/projects/tesht"
-    "${homeDir}/projects/jeeves"
-    "${homeDir}/projects/sofdevsim-2026"
-    "${homeDir}/projects/binaryphile.github.io"
-    "${homeDir}/projects/tandem-protocol"
-    "${homeDir}/projects/urma"
-    "${homeDir}/projects/share"
-    "${homeDir}/projects/dal"
-  ];
-
-  memoryRedirects = lib.listToAttrs (map (dir:
-    lib.nameValuePair
-      ".claude/projects/${encodePath dir}/memory/MEMORY.md"
-      { source = ../../claude/era-memory-redirect.md; force = true; }
-  ) eraProjects);
 
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
   # it via garcon's container->host localhost forwarding. Selectively used
@@ -73,7 +43,7 @@ let
   '';
 in
 {
-  imports = [ ../linux-base.nix ];
+  imports = [ ../linux-base.nix ../claude.nix ];
 
   home.username = "ted";
   home.homeDirectory = "/home/ted";
@@ -91,19 +61,7 @@ in
     xmlstarlet
   ];
 
-  home.file = memoryRedirects // {
-    ".claude/settings.json" = {
-      source = ../../claude/settings.json;
-      force = true;
-    };
-    ".claude/CLAUDE.md" = {
-      source = ../../claude/CLAUDE.md;
-      force = true;
-    };
-    ".claude/projects/-home-ted-projects-dal/CLAUDE.md" = {
-      source = ../../claude/dal-project.md;
-      force = true;
-    };
+  home.file = {
     # PAC file served by darkhttpd. Lives in its own directory so the
     # static server can be pointed at the directory and only serve this.
     ".local/share/proxy-pac/proxy.pac".source = proxyPac;
