@@ -243,8 +243,8 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 4a. Callback not dispatched → URL scheme handler isn't routing back to gpauth; on Crostini, verify `gpgui.desktop` symlink exists (see [docs/vpn.md](vpn.md)); resume at step 1
   - 5a. Reconnect loop hammers a dead gateway → Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
-- **Success Guarantee:** `tun0` interface up, split-tunnel routes installed for corporate subnets (`10.0.0.0/8`, `172.26.0.0/16`) and configured AWS-hosted services, `*.digi.com` DNS resolved via VPN nameserver, normal traffic stays on LAN
-- **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite — `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel — wrapped by `scripts/vpn-connect`. vpn-slice handles split-tunnel routing (CIDR ranges + per-host routes) and split-horizon DNS (`--domains-vpn-dns digi.com`). See [design.md § VPN](design.md#vpn--uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
+- **Success Guarantee:** `tun0` interface up, split-tunnel routes installed for corporate subnets (`10.0.0.0/8`, `172.26.0.0/16`) and configured AWS-hosted services, split-horizon `*.digi.com` hosts resolved to internal IPs via `/etc/hosts`, normal traffic stays on LAN
+- **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite — `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel — wrapped by `scripts/vpn-connect`. vpn-slice handles split-tunnel routing (CIDR ranges + per-host routes) and split-horizon DNS (positional hostnames → `/etc/hosts` entries). See [design.md § VPN](design.md#vpn--uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
 
 ---
 
