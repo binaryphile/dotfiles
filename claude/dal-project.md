@@ -5,6 +5,25 @@ work. It covers the software stack, config/schema system, feature gating, modem
 subsystem, testing, release process, product diversity, and a change impact
 checklist.
 
+## Where to look first
+
+| Area | Path |
+|---|---|
+| Board/product packaging | `vendors/<Vendor>/<Product>/` |
+| Digi daemons and schemas | `prop/config/` |
+| Upstream/forked packages | `user/` |
+| Local patches to upstream | `user/<package>/patches/` |
+| Modem backends | `prop/config/modem/modemd/src/backend/` |
+| Modem driver scripts | `prop/config/modem/drivers/` |
+| Serial daemon | `prop/config/seriald/` |
+| Web UI pages | `prop/config/webui/` |
+| Build/CI scripts | `bin/` |
+
+Key daemons: **configd** (config persistence/validation), **actiond** (action
+script dispatch), **runtd** (manages runt store, exposes over ubus),
+**modemd** (cellular modem lifecycle), **linkd** (interface management, SIM
+selection), **seriald** (serial port protocols), **firewalld** (firewall rules).
+
 ## Change impact checklist
 
 - **Changing a config path?** Check: schema definition, migration entries,
@@ -27,7 +46,7 @@ checklist.
 - Foundation is OpenWrt: ubus (IPC), procd (init), netifd (network). Digi's
   proprietary layer lives in `prop/`.
 - **runt** publishes state (runt_set/get). **ubus methods** send commands.
-- Config changes flow: configd -> action.d -> daemon -> runt -> CLI/web/DRM.
+- Config changes flow: configd → action.d → daemon → runt → CLI/web/DRM.
 - 309 schema files with versioned migrations. Schema shape is cpp-conditional
   per product.
 - Classify a subsystem before changing it: upstream (user/), Digi fork, or
