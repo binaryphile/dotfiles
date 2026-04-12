@@ -13,15 +13,15 @@
 # Modules:
 #   era       era-mcp systemd service status         (click: toggle service)
 #   vpn       gpclient connect process state         (click: toggle vpn)
-#   dm1            dm1.devdevicecloud.com health (VPN)    (click: status)
-#   stash          stash.digi.com ssh probe       (VPN)   (click: status)
-#   gitlab         gitlab.drm.ninja health        (VPN)   (click: status)
-#   nexus          nexus.digi.com health          (VPN)   (click: status)
-#   remotemanager  remotemanager.digi.com health          (click: status)
-#   codeberg       codeberg ssh status (status API)       (click: status)
-#   bitbucket      bitbucket ssh status (status API)      (click: status)
-#   teams          teams.microsoft.com health              (click: status)
-#   ntfy           ntfy.sh health                          (click: status)
+#   dm1            dm1.devdevicecloud.com health (VPN)    (click: open url)
+#   stash          stash.digi.com ssh probe       (VPN)   (click: open url)
+#   gitlab         gitlab.drm.ninja health        (VPN)   (click: open url)
+#   nexus          nexus.digi.com health          (VPN)   (click: open url)
+#   remotemanager  remotemanager.digi.com health          (click: open url)
+#   codeberg       codeberg ssh status (status API)       (click: open url)
+#   bitbucket      bitbucket ssh status (status API)      (click: open url)
+#   teams          teams.microsoft.com health              (click: open url)
+#   ntfy           ntfy.sh health                          (click: open url)
 #   ssh       inbound ssh connection count            (click: ss popup)
 #   load      1/5/15-min loadavg sparkline            (click: top popup)
 #   cpu       CPU usage, visible at 90%+              (no click)
@@ -404,30 +404,9 @@ canLoadCmd() {
     ! tmux show-env WAYLAND_DISPLAY 2>/dev/null | grep -q '=.'
 }
 
-# widgetStatusMessage builds a human-readable status string from cached
-# sub-states for a health widget. Example: "stash: ssh=ok ping=ok → on"
-widgetStatusMessage() {
-  local key=$1
-  local parts=() overall
-
-  if [[ ${WidgetPingOnly[$key]:-} == yes ]]; then
-    parts+=("ping=$(readState "${key}-ping")")
-    overall=$(cachedPingState "$key")
-  else
-    if [[ ${WidgetNoSsh[$key]:-no} != yes ]]; then
-      parts+=("ssh=$(readState "${key}-ssh")")
-    fi
-    parts+=("ping=$(readState "${key}-ping")")
-    if [[ -n ${WidgetApiFn[$key]:-} ]]; then
-      parts+=("api=$(readState "${key}-api")")
-    fi
-    overall=$(cachedHealthState "$key")
-  fi
-  echo "$key: ${parts[*]} → $overall"
-}
-
 # Click handlers. Toggling services for era and vpn matches the waybar
-# on-click bindings. Health widgets show cached status for 2s.
+# on-click bindings. URL-bound widgets open the URL in the default
+# browser via xdg-open (which on Crostini routes to ChromeOS Chrome).
 
 clickModule() {
   local m=${1:-}
@@ -446,9 +425,15 @@ clickModule() {
         vpn up
       fi
       ;;
-    dm1|stash|gitlab|nexus|remotemanager|codeberg|bitbucket|teams|ntfy)
-      tmux display-message -d 2000 "$(widgetStatusMessage "$m")" ;;
-    clock)     tmux display-message -d 2000 "$(date '+%A %B %-d, %Y')" ;;
+    dm1)       xdg-open https://dm1.devdevicecloud.com/ui/ ;;
+    stash)     xdg-open https://stash.digi.com/ ;;
+    gitlab)    xdg-open https://gitlab.drm.ninja/ ;;
+    nexus)     xdg-open https://nexus.digi.com/ ;;
+    remotemanager) xdg-open https://remotemanager.digi.com/ ;;
+    codeberg)  xdg-open https://codeberg.org/ ;;
+    bitbucket) xdg-open https://bitbucket.org/ ;;
+    teams)     xdg-open https://teams.microsoft.com/ ;;
+    ntfy)      xdg-open https://ntfy.sh/ ;;
     ssh)       tmux display-popup -E -h 60% -w 80% 'ss -tn sport = :22; echo; read -n1 -p "press any key "' ;;
     load)      tmux display-popup -E -h 60% -w 80% 'top -b -n1 | head -30; echo; read -n1 -p "press any key "' ;;
     *)         tmux display-message "panel: unknown click target '${m}'" ;;
@@ -501,8 +486,8 @@ layoutCmd() {
     done
   fi
   local nSeps=$(( healthVisible ? 3 : 2 ))
-  # clock: " HH:MM" = 6, hostname: " name" = 1 + length
-  local rightWidth=$(( nWidgets * 4 + nSeps * 2 + 6 + ${#hostname} + 1 ))
+  # clock: " MM/DD HH:MM" = 12, hostname: " name" = 1 + length
+  local rightWidth=$(( nWidgets * 4 + nSeps * 2 + 12 + ${#hostname} + 1 ))
 
   local current
   current=$(tmux show-option -v status 2>/dev/null)

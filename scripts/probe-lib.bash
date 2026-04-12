@@ -211,10 +211,6 @@ declare -A WidgetApiFn=(
   [dm1]=digiApiProbe
   [remotemanager]=digiApiProbe
 )
-declare -A WidgetPingOnly=(
-  [teams]=yes
-  [ntfy]=yes
-)
 
 # widgetHost prints the configured host for a widget, or empty if
 # unknown. Helper so callers don't have to know about the array name.
