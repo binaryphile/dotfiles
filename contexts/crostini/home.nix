@@ -23,13 +23,23 @@ let
 
   # PAC file routes only VPN hosts through tinyproxy. Everything else
   # returns DIRECT — Chrome connects without involving the container.
-  # Keep this list in sync with vpn-connect's vpn-slice host list.
+  # vpn-connect routes 10.0.0.0/8 and 172.26.0.0/16 via CIDRs and uses
+  # --domains-vpn-dns for *.digi.com split-horizon DNS. This PAC list
+  # covers the same set: internal *.digi.com hosts plus the external
+  # AWS-hosted services whose traffic must traverse the tunnel.
   proxyPac = pkgs.writeText "proxy.pac" ''
     function FindProxyForURL(url, host) {
+      // Public *.digi.com sites — access externally, not via tunnel
+      if (host == "remotemanager.digi.com" || host == "www.digi.com" || host == "digi.com") {
+        return "DIRECT";
+      }
+      // Internal *.digi.com services resolved via VPN DNS (--domains-vpn-dns digi.com)
+      if (dnsDomainIs(host, ".digi.com")) {
+        return "PROXY 127.0.0.1:${toString tinyproxyPort}";
+      }
+      // AWS-hosted services that require VPN source IP
       var vpnHosts = [
-        "stash.digi.com",
         "dm1.devdevicecloud.com",
-        "nexus.digi.com",
         "gitlab.drm.ninja",
         "3.16.193.243"
       ];

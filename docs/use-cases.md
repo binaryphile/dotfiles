@@ -243,8 +243,8 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 4a. Callback not dispatched → URL scheme handler isn't routing back to gpauth; on Crostini, verify `gpgui.desktop` symlink exists (see [docs/vpn.md](vpn.md)); resume at step 1
   - 5a. Reconnect loop hammers a dead gateway → Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
-- **Success Guarantee:** `tun0` interface up, split-tunnel routes installed for configured hosts only, normal traffic stays on LAN
-- **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite — `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel — wrapped by `scripts/vpn-connect`. Split-horizon DNS via `vpn-slice`. See [design.md § VPN](design.md#vpn--uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
+- **Success Guarantee:** `tun0` interface up, split-tunnel routes installed for corporate subnets (`10.0.0.0/8`, `172.26.0.0/16`) and configured AWS-hosted services, `*.digi.com` DNS resolved via VPN nameserver, normal traffic stays on LAN
+- **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite — `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel — wrapped by `scripts/vpn-connect`. vpn-slice handles split-tunnel routing (CIDR ranges + per-host routes) and split-horizon DNS (`--domains-vpn-dns digi.com`). See [design.md § VPN](design.md#vpn--uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
 
 ---
 
@@ -269,7 +269,8 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Extensions:**
   - 1a. Host Chrome PAC not configured → set ChromeOS Network → Proxy → Automatic configuration to `http://127.0.0.1:8120/proxy.pac` (UC-4 step 5 prints reminders); resume at step 1
   - 2a. Host not in PAC list → Chrome connects directly (correct, expected); separate success
-  - 2b. Host should match but PAC list is stale → edit `contexts/crostini/home.nix`, re-activate; resume at step 1
+  - 2b. New `*.digi.com` host → already matched by `dnsDomainIs`; no PAC change needed
+  - 2c. New non-digi VPN host → add to PAC's `vpnHosts` array in `contexts/crostini/home.nix`, re-activate; resume at step 1
   - 4a. Proxy unreachable → check `systemctl --user status tinyproxy proxy-pac-server`; fail
   - 4b. VPN tunnel down → see UC-7; resume at step 1
 - **Minimal Guarantee:** Non-VPN URLs always work (PAC returns DIRECT); proxy failure doesn't break normal browsing
@@ -333,7 +334,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions — Crostini and SSH into
 - **Extensions:**
   - 1a. Not in tmux → start tmux; resume at step 1
   - 2a. Terminal resized → panel layout adjusts within 5s or immediately via client-resized hook; resume at step 3
-  - 3a. VPN-gated widgets (dm1, stash, nexus, gitlab) hidden when tun0 is down; resume at step 4
+  - 3a. VPN-gated widgets (dm1, stash, nexus, gitlab) hidden when tun0 is down; remotemanager is public and always probed; resume at step 4
   - 3b. Threshold widgets (cpu, mem, disk) hidden below 90% usage; resume at step 4
   - 5a. VPN comes up after session start → VPN-gated widgets appear on next tick (≤5s); resume at step 4
   - 6a. Inspector tool not installed → click handler falls back to basic status echo; separate success
