@@ -369,6 +369,8 @@ test_installKey() {
   local -A case1=([name]='install private key and pub')
   local -A case2=([name]='install private key without pub')
   local -A case3=([name]='fail on missing source')
+  local -A case4=([name]='overwrite preserves existing on source-no-pub')
+  local -A case5=([name]='removes stale dst.pub when source has no pub')
 
   subtest() {
     local casename=$1
@@ -400,6 +402,32 @@ test_installKey() {
         installKey "$dir/nonexistent" "$dir/dst" && rc=$? || rc=$?
         (( rc != 0 ))            || { echo "${NL}should fail for missing src"; return 1; }
         [[ ! -f "$dir/dst" ]]    || { echo "${NL}dst should not exist"; return 1; }
+        ;;
+      case4)
+        # Existing dst key should be preserved when overwriting with source that has no .pub
+        ssh-keygen -t ed25519 -f "$dir/old" -N "" -q
+        installKey "$dir/old" "$dir/dst" && rc=$? || rc=$?
+        (( rc == 0 )) || { echo "${NL}initial install failed"; return 1; }
+        # Now overwrite with a new key that has no .pub
+        ssh-keygen -t ed25519 -f "$dir/new" -N "" -q
+        rm -f "$dir/new.pub"
+        installKey "$dir/new" "$dir/dst" && rc=$? || rc=$?
+        (( rc == 0 )) || { echo "${NL}overwrite failed"; return 1; }
+        [[ -f "$dir/dst" ]] || { echo "${NL}dst missing after overwrite"; return 1; }
+        # Stale .pub from old key should be removed
+        [[ ! -f "$dir/dst.pub" ]] || { echo "${NL}stale dst.pub should have been removed"; return 1; }
+        ;;
+      case5)
+        # Existing dst.pub should be removed when new source has no .pub
+        ssh-keygen -t ed25519 -f "$dir/src" -N "" -q
+        installKey "$dir/src" "$dir/dst" && rc=$? || rc=$?
+        (( rc == 0 )) || return 1
+        [[ -f "$dir/dst.pub" ]] || return 1
+        # Install again without .pub
+        rm -f "$dir/src.pub"
+        installKey "$dir/src" "$dir/dst" && rc=$? || rc=$?
+        (( rc == 0 )) || return 1
+        [[ ! -f "$dir/dst.pub" ]] || { echo "${NL}dst.pub should be removed"; return 1; }
         ;;
     esac
   }

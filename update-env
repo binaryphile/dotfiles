@@ -94,6 +94,8 @@ stage1() {
   #  └─────────────────────────────────────────────────────────────┘
   section dotfiles
   task.GitClone https://github.com/binaryphile/dotfiles ~/dotfiles main
+  try git -C ~/dotfiles remote set-url origin https://github.com/binaryphile/dotfiles.git
+  try git -C ~/dotfiles remote set-url --push origin git@github.com:binaryphile/dotfiles.git
   try task.GitUpdate ~/dotfiles
   # Bootstrap-only symlinks. The rest are managed by home-manager via
   # contexts/linux-base.nix once nix and home-manager are installed.
@@ -995,6 +997,11 @@ restoreSshKeyImpl() {
       SshKeyStatus=missing_noninteractive
       return 0
       ;;
+
+    *)
+      echo "ERROR: unexpected sshKeyAction result: $action"
+      return 1
+      ;;
   esac
 }
 
@@ -1046,23 +1053,27 @@ sshKeyDecryptAndInstall() {
   fi
 }
 
-# sshKeyEncryptToRepo — encrypt local key pair to repo.
+# sshKeyEncryptToRepo — encrypt local key pair to repo. Writes both .age and
+# .pub atomically (stage both temps, then commit both — neither on failure).
 sshKeyEncryptToRepo() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4
   echo "Local key exists but no repo backup for $hostname. Encrypting..."
   mkdir -p "$(dirname "$repoAge")"
-  local agetmp stageDir
+  local stageDir agetmp pubtmp
   stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
   cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
   cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
   echo "(Repo encryption passphrase)"
   agetmp=$(mktemp "$repoAge.XXXXXX")
+  pubtmp=$(mktemp "$repoPub.XXXXXX")
   if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
-    mv "$agetmp" "$repoAge"
-    cp "$localKey.pub" "$repoPub"
+    cp "$localKey.pub" "$pubtmp" && chmod 644 "$pubtmp" || { rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed."; rm -rf "$stageDir"; SshStageDir=""; return; }
+    # Commit both
+    mv "$agetmp" "$repoAge" || { rm -f "$agetmp" "$pubtmp"; echo "WARNING: .age commit failed."; rm -rf "$stageDir"; SshStageDir=""; return; }
+    mv "$pubtmp" "$repoPub" || { rm -f "$pubtmp" "$repoAge"; echo "WARNING: .pub commit failed, rolling back .age."; rm -rf "$stageDir"; SshStageDir=""; return; }
     echo "Backed up. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
   else
-    rm -f "$agetmp"
+    rm -f "$agetmp" "$pubtmp"
     echo "WARNING: encryption failed. Key not backed up to repo."
   fi
   rm -rf "$stageDir"; SshStageDir=""
@@ -1075,28 +1086,13 @@ sshKeyGenerate() {
   echo "No SSH key for $hostname. Generating..."
   echo "(SSH key passphrase — protects the key on disk)"
   if ! sshKeygenTask "$localKey"; then
-    SshKeyStatus=missing_noninteractive
+    echo "ERROR: key generation failed."
     return 1
   fi
   chmod 644 "$localKey.pub"
 
-  mkdir -p "$(dirname "$repoAge")"
   if command -v age >/dev/null; then
-    echo "(Repo encryption passphrase — protects the key in git)"
-    local stageDir agetmp
-    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
-    cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
-    cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
-    agetmp=$(mktemp "$repoAge.XXXXXX")
-    if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
-      mv "$agetmp" "$repoAge"
-      cp "$localKey.pub" "$repoPub"
-      echo "Key encrypted. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
-    else
-      rm -f "$agetmp"
-      echo "WARNING: encryption failed. Key NOT in repo. Will be LOST on wipe."
-    fi
-    rm -rf "$stageDir"; SshStageDir=""
+    sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"
   fi
 
   if [[ -d "$CrostiniDir" ]]; then
@@ -1187,26 +1183,49 @@ pubFingerprint() {
 }
 
 installKey() {
-  local src=$1 dst=$2 tmpPriv tmpPub=""
+  local src=$1 dst=$2 tmpPriv tmpPub="" bakPriv="" bakPub=""
 
-  # Stage private key
+  # Stage new private key
   tmpPriv=$(mktemp "$dst.XXXXXX")       || return 1
   cp "$src" "$tmpPriv"                  || { rm -f "$tmpPriv"; return 1; }
   chmod 600 "$tmpPriv"                  || { rm -f "$tmpPriv"; return 1; }
 
-  # Stage .pub if present
+  # Stage new .pub if source has one
   if [[ -f "$src.pub" ]]; then
     tmpPub=$(mktemp "$dst.pub.XXXXXX")  || { rm -f "$tmpPriv"; return 1; }
     cp "$src.pub" "$tmpPub"             || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
     chmod 644 "$tmpPub"                 || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
   fi
 
-  # Commit: per-file rename is atomic, but the pair is not — if .pub mv fails
-  # after private mv succeeds, roll back the private key to restore consistency.
-  mv "$tmpPriv" "$dst"                  || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
-  if [[ -n "$tmpPub" ]]; then
-    mv "$tmpPub" "$dst.pub"             || { rm -f "$tmpPub" "$dst"; return 1; }
+  # Back up existing destination for rollback (best-effort, may not exist)
+  if [[ -f "$dst" ]]; then
+    bakPriv=$(mktemp "$dst.rollback.XXXXXX") && cp "$dst" "$bakPriv" || bakPriv=""
   fi
+  if [[ -f "$dst.pub" ]]; then
+    bakPub=$(mktemp "$dst.pub.rollback.XXXXXX") && cp "$dst.pub" "$bakPub" || bakPub=""
+  fi
+
+  # Commit private key
+  mv "$tmpPriv" "$dst" || {
+    rm -f "$tmpPriv" "$tmpPub" "$bakPriv" "$bakPub"
+    return 1
+  }
+
+  # Commit .pub — rollback private on failure
+  if [[ -n "$tmpPub" ]]; then
+    mv "$tmpPub" "$dst.pub" || {
+      # Restore prior private key if we had one, otherwise remove the new one
+      if [[ -n "$bakPriv" ]]; then mv "$bakPriv" "$dst"; else rm -f "$dst"; fi
+      rm -f "$tmpPub" "$bakPub"
+      return 1
+    }
+  elif [[ -f "$dst.pub" && ! -f "$src.pub" ]]; then
+    # Source has no .pub but destination does — remove stale .pub for consistency
+    rm -f "$dst.pub"
+  fi
+
+  # Success — clean up rollback backups
+  rm -f "$bakPriv" "$bakPub"
 }
 
 isDir() { [[ -d "$1" ]]; }
