@@ -731,6 +731,53 @@ test_restoreSecretsTierSelection() {
   tesht.Run ${!case@}
 }
 
+# test_secretsArchiveValidation tests that the allowlist validator accepts
+# normal tar entries and rejects unsafe ones.
+test_secretsArchiveValidation() {
+  local -A case1=(
+    [name]='accept normal ./filename entries'
+    [members]='.\n./stash.key\n./confluence.key'
+    [wantPass]=1
+  )
+  local -A case2=(
+    [name]='reject path traversal'
+    [members]='.\n../etc/passwd'
+    [wantPass]=0
+  )
+  local -A case3=(
+    [name]='reject absolute path'
+    [members]='.\n/etc/passwd'
+    [wantPass]=0
+  )
+  local -A case4=(
+    [name]='reject dotfile in archive'
+    [members]='.\n./.secret'
+    [wantPass]=0
+  )
+  local -A case5=(
+    [name]='reject leading dash'
+    [members]='.\n./-rf'
+    [wantPass]=0
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    # Test the grep pattern directly (same as restoreSecrets uses)
+    local bad
+    bad=$(echo -e "$members" | grep -vE '^\.$|^\./[a-zA-Z0-9][a-zA-Z0-9._-]*$' || true)
+
+    if (( wantPass )); then
+      [[ -z "$bad" ]] || { echo "should pass but rejected: $bad"; return 1; }
+    else
+      [[ -n "$bad" ]] || { echo "should reject but passed"; return 1; }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecret tests the with-secret wrapper.
 test_withSecret() {
   local dir
