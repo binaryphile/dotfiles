@@ -408,120 +408,169 @@ test_installKey() {
 }
 
 # test_sshKeyAction tests the pure decision function for SSH key restore.
-# This is the core business logic — no I/O, no filesystem, just decisions.
+# Each test builds a state associative array and asserts the returned action.
+# No I/O, no filesystem — pure decision logic in Khorikov's "valuable" quadrant.
 test_sshKeyAction() {
+  # Helper: build state array from test case, call sshKeyAction
+  # Test cases use lowercase keys matching the state array contract.
   local -A case1=(
     [name]='local key matches repo — present'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=1 [LocalFp]='SHA256:abc'
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]='SHA256:abc'
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='present'
   )
   local -A case2=(
     [name]='local key mismatches repo — collision'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=1 [LocalFp]='SHA256:xyz'
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]='SHA256:xyz'
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='collision'
   )
   local -A case3=(
-    [name]='local key exists but no pub — backup and restore'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=1 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='backup_and_restore'
+    [name]='unverifiable local + cache available — backup then cache'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]=''
+    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
+    [want]='backup_then_cache'
   )
   local -A case4=(
-    [name]='local key exists, no repo pair — capture'
-    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
-    [LocalExists]=1 [LocalFp]='SHA256:abc'
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='capture_to_repo'
+    [name]='unverifiable local + no cache, has age — backup then age'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='backup_then_age'
   )
   local -A case5=(
-    [name]='no local, cache matches repo — restore from cache'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=1 [CacheFp]='SHA256:abc' [HasTty]=1 [HasAge]=1
-    [want]='restore_from_cache'
+    [name]='unverifiable local + no cache, no age — backup then fail'
+    [repoHasAge]=0 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='error_pub_without_age'
   )
   local -A case6=(
-    [name]='no local, stale cache — restore from age'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=1 [CacheFp]='SHA256:old' [HasTty]=1 [HasAge]=1
-    [want]='restore_from_age'
+    [name]='local key exists, no repo pair — capture'
+    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [localExists]=1 [localFp]='SHA256:abc'
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='capture_to_repo'
   )
   local -A case7=(
-    [name]='no local, no cache, has age — restore from age'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='restore_from_age'
+    [name]='no local, cache matches repo — restore from cache'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
+    [want]='restore_from_cache'
   )
   local -A case8=(
-    [name]='nothing anywhere, has tty — generate'
-    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='generate'
+    [name]='no local, stale cache — restore from age'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1 [hasAge]=1
+    [want]='restore_from_age'
   )
   local -A case9=(
-    [name]='nothing anywhere, no tty — missing noninteractive'
-    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=0 [HasAge]=1
-    [want]='missing_noninteractive'
+    [name]='no local, no cache, has age — restore from age'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='restore_from_age'
   )
   local -A case10=(
-    [name]='age without pub — error'
-    [RepoHasAge]=1 [RepoHasPub]=0 [RepoFp]=''
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='error:repo has .age but no .pub'
+    [name]='nothing anywhere, has tty — generate'
+    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='generate'
   )
   local -A case11=(
-    [name]='pub without age — error'
-    [RepoHasAge]=0 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='error:repo has .pub but no .age'
-  )
-  local -A case12=(
-    [name]='malformed repo pub — error'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]=''
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
-    [want]='error:repo .pub is malformed'
-  )
-  local -A case13=(
-    [name]='repo has age, no tty — missing noninteractive'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=0 [HasAge]=1
+    [name]='nothing anywhere, no tty — missing noninteractive'
+    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
     [want]='missing_noninteractive'
   )
+  local -A case12=(
+    [name]='age without pub — error'
+    [repoHasAge]=1 [repoHasPub]=0 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='error_age_without_pub'
+  )
+  local -A case13=(
+    [name]='pub without age — error'
+    [repoHasAge]=0 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='error_pub_without_age'
+  )
   local -A case14=(
-    [name]='repo has age, no age command — error'
-    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=0
-    [want]='error:age not found'
+    [name]='malformed repo pub — error'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='error_malformed_pub'
   )
   local -A case15=(
+    [name]='repo has age, no tty — missing noninteractive'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
+    [want]='missing_noninteractive'
+  )
+  local -A case16=(
+    [name]='repo has age, no age command — error'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=0
+    [want]='error_age_not_found'
+  )
+  local -A case17=(
     [name]='cache valid, no repo — restore from cache'
-    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
-    [LocalExists]=0 [LocalFp]=''
-    [CacheExists]=1 [CacheFp]='SHA256:abc' [HasTty]=1 [HasAge]=1
+    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
     [want]='restore_from_cache'
+  )
+  # Boundary: cache exists but fingerprint empty — should not use cache
+  local -A case18=(
+    [name]='cache exists but empty fingerprint — fall through to age'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=1 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [want]='restore_from_age'
+  )
+  # Boundary: unverifiable local, stale cache, has age — backup then age
+  local -A case19=(
+    [name]='unverifiable local + stale cache — backup then age'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]=''
+    [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1 [hasAge]=1
+    [want]='backup_then_age'
+  )
+  # Boundary: unverifiable local, no tty — missing noninteractive
+  local -A case20=(
+    [name]='unverifiable local + no tty — missing noninteractive'
+    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=1 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
+    [want]='missing_noninteractive'
   )
 
   subtest() {
     local casename=$1
     eval "$(tesht.Inherit "$casename")"
 
+    # Build state array from test case keys
+    local -A testState=(
+      [repoHasAge]=$repoHasAge [repoHasPub]=$repoHasPub [repoFp]=$repoFp
+      [localExists]=$localExists [localFp]=$localFp
+      [cacheExists]=$cacheExists [cacheFp]=$cacheFp
+      [hasTty]=$hasTty [hasAge]=$hasAge
+    )
+
     local got
-    got=$(sshKeyAction)
+    got=$(sshKeyAction testState)
 
     tesht.AssertGot "$got" "$want"
   }

@@ -800,50 +800,78 @@ withCleanupTrap() {
 }
 
 # sshKeyAction — pure decision function for SSH key restore.
-# Inputs via named variables (caller sets before calling):
-#   RepoHasAge RepoHasPub RepoFp LocalExists LocalFp
-#   CacheExists CacheFp HasTty HasAge
-# Output: prints one of:
-#   present | collision | backup_and_restore | capture_to_repo
+#
+# Takes a nameref to an associative array with keys:
+#   repoHasAge repoHasPub repoFp localExists localFp
+#   cacheExists cacheFp hasTty hasAge
+# All values are 0/1 (booleans) or strings (fingerprints, "" if absent).
+#
+# Returns 0 always. Prints exactly one action from this closed set:
+#   present | collision | capture_to_repo
+#   backup_then_cache | backup_then_age | backup_then_fail
 #   restore_from_cache | restore_from_age | generate
-#   missing_noninteractive | error:<message>
+#   missing_noninteractive
+#   error_age_without_pub | error_pub_without_age | error_malformed_pub
+#   error_age_not_found
+#
+# Decision table (abbreviated, see tests for full coverage):
+#   local exists + repo match       → present
+#   local exists + repo mismatch    → collision
+#   local exists + repo unverifiable → backup_then_{cache|age|fail}
+#   local exists + no repo          → capture_to_repo
+#   cache valid + repo match/absent → restore_from_cache
+#   repo age available + tty + age  → restore_from_age
+#   nothing + tty                   → generate
+#   nothing + no tty                → missing_noninteractive
 sshKeyAction() {
+  local -n STATE=$1
+
   # Pair invariant
-  if (( RepoHasAge && !RepoHasPub )); then echo "error:repo has .age but no .pub"; return; fi
-  if (( RepoHasPub && !RepoHasAge )); then echo "error:repo has .pub but no .age"; return; fi
-  if (( RepoHasPub )) && [[ -z "$RepoFp" ]]; then echo "error:repo .pub is malformed"; return; fi
+  if (( STATE[repoHasAge] && !STATE[repoHasPub] )); then echo error_age_without_pub; return 0; fi
+  if (( STATE[repoHasPub] && !STATE[repoHasAge] )); then echo error_pub_without_age; return 0; fi
+  if (( STATE[repoHasPub] )) && [[ -z "${STATE[repoFp]}" ]]; then echo error_malformed_pub; return 0; fi
 
   # Tier 1: local key exists
-  if (( LocalExists )); then
-    if [[ -n "$RepoFp" ]]; then
-      if [[ -n "$LocalFp" && "$LocalFp" == "$RepoFp" ]]; then echo present; return; fi
-      if [[ -n "$LocalFp" && "$LocalFp" != "$RepoFp" ]]; then echo collision; return; fi
-      # LocalFp empty = unverifiable
-      echo backup_and_restore; return
+  if (( STATE[localExists] )); then
+    if [[ -n "${STATE[repoFp]}" ]]; then
+      if [[ -n "${STATE[localFp]}" && "${STATE[localFp]}" == "${STATE[repoFp]}" ]]; then echo present; return 0; fi
+      if [[ -n "${STATE[localFp]}" && "${STATE[localFp]}" != "${STATE[repoFp]}" ]]; then echo collision; return 0; fi
+      # localFp empty = unverifiable — backup, then try cache/age/fail
+      if (( STATE[cacheExists] )) && [[ -n "${STATE[cacheFp]}" ]]; then
+        if [[ -z "${STATE[repoFp]}" || "${STATE[cacheFp]}" == "${STATE[repoFp]}" ]]; then
+          echo backup_then_cache; return 0
+        fi
+      fi
+      if (( STATE[repoHasAge] )); then
+        if (( !STATE[hasTty] )); then echo missing_noninteractive; return 0; fi
+        if (( !STATE[hasAge] )); then echo error_age_not_found; return 0; fi
+        echo backup_then_age; return 0
+      fi
+      echo backup_then_fail; return 0
     else
-      echo capture_to_repo; return
+      echo capture_to_repo; return 0
     fi
   fi
 
   # Tier 2: mount cache
-  if (( CacheExists )) && [[ -n "$CacheFp" ]]; then
-    if [[ -n "$RepoFp" && "$CacheFp" != "$RepoFp" ]]; then
+  if (( STATE[cacheExists] )) && [[ -n "${STATE[cacheFp]}" ]]; then
+    if [[ -n "${STATE[repoFp]}" && "${STATE[cacheFp]}" != "${STATE[repoFp]}" ]]; then
       : # stale, fall through
     else
-      echo restore_from_cache; return
+      echo restore_from_cache; return 0
     fi
   fi
 
   # Tier 3: age decrypt
-  if (( RepoHasAge )); then
-    if (( !HasTty )); then echo missing_noninteractive; return; fi
-    if (( !HasAge )); then echo "error:age not found"; return; fi
-    echo restore_from_age; return
+  if (( STATE[repoHasAge] )); then
+    if (( !STATE[hasTty] )); then echo missing_noninteractive; return 0; fi
+    if (( !STATE[hasAge] )); then echo error_age_not_found; return 0; fi
+    echo restore_from_age; return 0
   fi
 
   # Tier 4: generate
-  if (( !HasTty )); then echo missing_noninteractive; return; fi
-  echo generate
+  if (( !STATE[hasTty] )); then echo missing_noninteractive; return 0; fi
+  echo generate; return 0
 }
 
 restoreSshKeyImpl() {
@@ -860,29 +888,31 @@ restoreSshKeyImpl() {
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   rm -f "$CrostiniDir/np_id_ed25519" "$CrostiniDir/np_id_ed25519.pub"
 
-  # Classify state for decision function
-  local RepoHasAge=0 RepoHasPub=0 RepoFp=""
-  local LocalExists=0 LocalFp=""
-  local CacheExists=0 CacheFp=""
-  local HasTty=0 HasAge=0
+  # Classify filesystem state into decision inputs
+  local -A state=(
+    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=""
+    [localExists]=0 [localFp]=""
+    [cacheExists]=0 [cacheFp]=""
+    [hasTty]=0 [hasAge]=0
+  )
 
-  [[ -f "$repoAge" ]] && RepoHasAge=1
-  [[ -f "$repoPub" ]] && RepoHasPub=1
-  (( RepoHasPub )) && RepoFp=$(pubFingerprint "$repoPub")
-  [[ -f "$localKey" && -s "$localKey" ]] && LocalExists=1
-  (( LocalExists )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]] && LocalFp=$(pubFingerprint "$localKey.pub")
-  [[ -f "$cacheKey" && -f "$cacheKey.pub" ]] && CacheExists=1
-  (( CacheExists )) && CacheFp=$(pubFingerprint "$cacheKey.pub")
-  [[ -t 0 ]] && HasTty=1
-  command -v age >/dev/null && HasAge=1
+  [[ -f "$repoAge" ]] && state[repoHasAge]=1
+  [[ -f "$repoPub" ]] && state[repoHasPub]=1
+  (( state[repoHasPub] )) && state[repoFp]=$(pubFingerprint "$repoPub")
+  [[ -f "$localKey" && -s "$localKey" ]] && state[localExists]=1
+  (( state[localExists] )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]] && state[localFp]=$(pubFingerprint "$localKey.pub")
+  [[ -f "$cacheKey" && -f "$cacheKey.pub" ]] && state[cacheExists]=1
+  (( state[cacheExists] )) && state[cacheFp]=$(pubFingerprint "$cacheKey.pub")
+  [[ -t 0 ]] && state[hasTty]=1
+  command -v age >/dev/null && state[hasAge]=1
 
   local action
-  action=$(sshKeyAction)
+  action=$(sshKeyAction state)
 
-  # Execute the action
+  # Dispatch — each case is mechanical, no further decisions
   case $action in
-    error:*)
-      echo "ERROR: ${action#error:}"
+    error_*)
+      echo "ERROR: ${action#error_}"
       return 1
       ;;
 
@@ -893,44 +923,41 @@ restoreSshKeyImpl() {
         installKey "$localKey" "$cacheKey"
       fi 2>/dev/null || true
       SshKeyStatus=present
+      return 0
       ;;
 
     collision)
-      echo "ERROR: hostname collision — local ($LocalFp) != repo ($RepoFp)."
+      echo "ERROR: hostname collision — local (${state[localFp]}) != repo (${state[repoFp]})."
       SshKeyStatus=collision
       return 1
       ;;
 
-    backup_and_restore)
-      echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
-      local bakFile
-      bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; SshKeyStatus=present; return 1; }
-      echo "  Backing up to $bakFile before restoring from repo."
-      if ! cp "$localKey" "$bakFile" || ! chmod 600 "$bakFile"; then
-        echo "ERROR: backup failed. Will not overwrite local key."
-        SshKeyStatus=present
+    backup_then_cache)
+      sshKeyBackupLocal "$localKey" || return 1
+      echo "Restoring SSH key from mount cache ($hostname)..."
+      if ! installKey "$cacheKey" "$localKey"; then
+        echo "ERROR: cache restore failed after backup."
         return 1
       fi
-      [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
-      # Re-evaluate: try cache, then age, then fail
-      if (( CacheExists )) && [[ -n "$CacheFp" ]] && { [[ -z "$RepoFp" ]] || [[ "$CacheFp" == "$RepoFp" ]]; }; then
-        echo "Restoring SSH key from mount cache ($hostname)..."
-        if installKey "$cacheKey" "$localKey"; then
-          SshKeyStatus=restored
-          return
-        fi
-      fi
-      if (( RepoHasAge && HasTty && HasAge )); then
-        sshKeyDecryptAndInstall "$repoAge" "$repoPub" "$RepoFp" "$localKey" "$cacheDir" "$cacheKey"
-        return
-      fi
+      SshKeyStatus=restored
+      return 0
+      ;;
+
+    backup_then_age)
+      sshKeyBackupLocal "$localKey" || return 1
+      sshKeyDecryptAndInstall "$repoAge" "$repoPub" "${state[repoFp]}" "$localKey" "$cacheDir" "$cacheKey"
+      return
+      ;;
+
+    backup_then_fail)
+      sshKeyBackupLocal "$localKey" || return 1
       echo "ERROR: cannot restore key (no cache or age available after backup)."
       return 1
       ;;
 
     capture_to_repo)
       chmod 600 "$localKey"
-      if (( HasTty && HasAge )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
+      if (( state[hasTty] && state[hasAge] )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
         local pubFp
         pubFp=$(pubFingerprint "$localKey.pub")
         if [[ -z "$pubFp" ]]; then
@@ -941,24 +968,20 @@ restoreSshKeyImpl() {
         fi
       fi
       SshKeyStatus=present
+      return 0
       ;;
 
     restore_from_cache)
       echo "Restoring SSH key from mount cache ($hostname)..."
       if ! installKey "$cacheKey" "$localKey"; then
-        echo "WARNING: cache restore failed. Falling through to age decrypt."
-        if (( RepoHasAge && HasTty && HasAge )); then
-          sshKeyDecryptAndInstall "$repoAge" "$repoPub" "$RepoFp" "$localKey" "$cacheDir" "$cacheKey"
-          return
-        fi
-        echo "ERROR: no fallback available."
+        echo "ERROR: cache restore failed."
         return 1
       fi
       SshKeyStatus=restored
       ;;
 
     restore_from_age)
-      sshKeyDecryptAndInstall "$repoAge" "$repoPub" "$RepoFp" "$localKey" "$cacheDir" "$cacheKey"
+      sshKeyDecryptAndInstall "$repoAge" "$repoPub" "${state[repoFp]}" "$localKey" "$cacheDir" "$cacheKey"
       return
       ;;
 
@@ -970,8 +993,24 @@ restoreSshKeyImpl() {
     missing_noninteractive)
       echo "No SSH key available and no TTY. Run update-env interactively."
       SshKeyStatus=missing_noninteractive
+      return 0
       ;;
   esac
+}
+
+# sshKeyBackupLocal — back up local key before overwriting. Returns 1 on failure.
+sshKeyBackupLocal() {
+  local localKey=$1
+  echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
+  local bakFile
+  bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; return 1; }
+  echo "  Backing up to $bakFile before restoring from repo."
+  if ! cp "$localKey" "$bakFile" || ! chmod 600 "$bakFile"; then
+    echo "ERROR: backup failed. Will not overwrite local key."
+    return 1
+  fi
+  [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
+  return 0
 }
 
 # sshKeyDecryptAndInstall — tier 3 implementation: decrypt .age, validate, install, cache.
