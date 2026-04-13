@@ -919,6 +919,8 @@ restoreSshKeyImpl() {
       ;;
 
     present)
+      # Trust: local .pub fingerprint matches repo .pub. Private key is trusted
+      # to match .pub if the pair was produced by ssh-keygen or installKey.
       chmod 600 "$localKey"
       if [[ -d "$CrostiniDir" ]]; then
         mkdir -p "$cacheDir" 2>/dev/null
@@ -974,6 +976,8 @@ restoreSshKeyImpl() {
       ;;
 
     restore_from_cache)
+      # Trust: cache .pub fingerprint matches repo .pub. Private key trusted
+      # to match .pub — pair was installed together by installKey.
       echo "Restoring SSH key from mount cache ($hostname)..."
       if ! installKey "$cacheKey" "$localKey"; then
         echo "ERROR: cache restore failed."
@@ -983,6 +987,9 @@ restoreSshKeyImpl() {
       ;;
 
     restore_from_age)
+      # Trust: age bundle contains both private + public from same generation.
+      # Bundled .pub fingerprint is validated against repo .pub sidecar after
+      # decryption — strongest verification path.
       sshKeyDecryptAndInstall "$repoAge" "$repoPub" "${state[repoFp]}" "$localKey" "$cacheDir" "$cacheKey"
       return
       ;;
@@ -1053,13 +1060,13 @@ sshKeyDecryptAndInstall() {
   fi
 }
 
-# sshKeyEncryptToRepo — encrypt local key pair to repo. Writes both .age and
-# .pub atomically (stage both temps, then commit both — neither on failure).
+# sshKeyEncryptToRepo — encrypt local key pair to repo. Preserves prior repo
+# state on partial failure. Not atomic (two renames), but best-effort consistent.
 sshKeyEncryptToRepo() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4
   echo "Local key exists but no repo backup for $hostname. Encrypting..."
   mkdir -p "$(dirname "$repoAge")"
-  local stageDir agetmp pubtmp
+  local stageDir agetmp pubtmp bakAge="" bakPub=""
   stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
   cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
   cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
@@ -1067,10 +1074,27 @@ sshKeyEncryptToRepo() {
   agetmp=$(mktemp "$repoAge.XXXXXX")
   pubtmp=$(mktemp "$repoPub.XXXXXX")
   if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
-    cp "$localKey.pub" "$pubtmp" && chmod 644 "$pubtmp" || { rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed."; rm -rf "$stageDir"; SshStageDir=""; return; }
+    cp "$localKey.pub" "$pubtmp" && chmod 644 "$pubtmp" || {
+      rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed."
+      rm -rf "$stageDir"; SshStageDir=""; return 1
+    }
+    # Back up existing repo files for rollback
+    [[ -f "$repoAge" ]] && { bakAge=$(mktemp "$repoAge.bak.XXXXXX") && cp "$repoAge" "$bakAge" || bakAge=""; }
+    [[ -f "$repoPub" ]] && { bakPub=$(mktemp "$repoPub.bak.XXXXXX") && cp "$repoPub" "$bakPub" || bakPub=""; }
     # Commit both
-    mv "$agetmp" "$repoAge" || { rm -f "$agetmp" "$pubtmp"; echo "WARNING: .age commit failed."; rm -rf "$stageDir"; SshStageDir=""; return; }
-    mv "$pubtmp" "$repoPub" || { rm -f "$pubtmp" "$repoAge"; echo "WARNING: .pub commit failed, rolling back .age."; rm -rf "$stageDir"; SshStageDir=""; return; }
+    mv "$agetmp" "$repoAge" || {
+      rm -f "$agetmp" "$pubtmp" "$bakAge" "$bakPub"
+      echo "WARNING: .age commit failed."
+      rm -rf "$stageDir"; SshStageDir=""; return 1
+    }
+    mv "$pubtmp" "$repoPub" || {
+      # Restore prior .age if we had one, otherwise remove the new one
+      if [[ -n "$bakAge" ]]; then mv "$bakAge" "$repoAge" 2>/dev/null; else rm -f "$repoAge"; fi
+      rm -f "$pubtmp" "$bakPub"
+      echo "WARNING: .pub commit failed. Rolled back .age."
+      rm -rf "$stageDir"; SshStageDir=""; return 1
+    }
+    rm -f "$bakAge" "$bakPub"
     echo "Backed up. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
   else
     rm -f "$agetmp" "$pubtmp"
@@ -1182,8 +1206,15 @@ pubFingerprint() {
   ssh-keygen -lf "$1" 2>/dev/null | awk '{print $2}'
 }
 
+# installKey SRC DST — install key pair from SRC to DST.
+# Contract: destination reflects source pair state exactly.
+# If source has .pub, destination gets it. If not, stale dst.pub is removed.
+# On partial failure, prior destination state is restored (best-effort).
+# Private key trust model: we trust .pub matches private key if they were
+# produced together by ssh-keygen or extracted from the same age bundle.
+# Manual .pub replacement is unsupported. See design docs.
 installKey() {
-  local src=$1 dst=$2 tmpPriv tmpPub="" bakPriv="" bakPub=""
+  local src=$1 dst=$2 tmpPriv tmpPub="" bakPriv=""
 
   # Stage new private key
   tmpPriv=$(mktemp "$dst.XXXXXX")       || return 1
@@ -1197,35 +1228,46 @@ installKey() {
     chmod 644 "$tmpPub"                 || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
   fi
 
-  # Back up existing destination for rollback (best-effort, may not exist)
+  # Back up existing private key for rollback
   if [[ -f "$dst" ]]; then
     bakPriv=$(mktemp "$dst.rollback.XXXXXX") && cp "$dst" "$bakPriv" || bakPriv=""
-  fi
-  if [[ -f "$dst.pub" ]]; then
-    bakPub=$(mktemp "$dst.pub.rollback.XXXXXX") && cp "$dst.pub" "$bakPub" || bakPub=""
   fi
 
   # Commit private key
   mv "$tmpPriv" "$dst" || {
-    rm -f "$tmpPriv" "$tmpPub" "$bakPriv" "$bakPub"
+    rm -f "$tmpPriv" "$tmpPub" "$bakPriv"
     return 1
   }
 
   # Commit .pub — rollback private on failure
   if [[ -n "$tmpPub" ]]; then
-    mv "$tmpPub" "$dst.pub" || {
-      # Restore prior private key if we had one, otherwise remove the new one
-      if [[ -n "$bakPriv" ]]; then mv "$bakPriv" "$dst"; else rm -f "$dst"; fi
-      rm -f "$tmpPub" "$bakPub"
+    if ! mv "$tmpPub" "$dst.pub"; then
+      # Restore prior private key or remove new one
+      if [[ -n "$bakPriv" ]]; then
+        mv "$bakPriv" "$dst" 2>/dev/null || rm -f "$dst"
+      else
+        rm -f "$dst"
+      fi
+      rm -f "$tmpPub" "$bakPriv"
       return 1
-    }
+    fi
   elif [[ -f "$dst.pub" && ! -f "$src.pub" ]]; then
-    # Source has no .pub but destination does — remove stale .pub for consistency
-    rm -f "$dst.pub"
+    # Source has no .pub — remove stale dst.pub for pair consistency
+    if ! rm -f "$dst.pub"; then
+      # Can't remove stale .pub — rollback private key
+      if [[ -n "$bakPriv" ]]; then
+        mv "$bakPriv" "$dst" 2>/dev/null || rm -f "$dst"
+      else
+        rm -f "$dst"
+      fi
+      rm -f "$bakPriv"
+      return 1
+    fi
   fi
 
-  # Success — clean up rollback backups
-  rm -f "$bakPriv" "$bakPub"
+  # Success — clean up rollback backup
+  rm -f "$bakPriv"
+  return 0
 }
 
 isDir() { [[ -d "$1" ]]; }
