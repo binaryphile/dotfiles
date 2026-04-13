@@ -559,19 +559,11 @@ test_sshKeyAction() {
 
   subtest() {
     local casename=$1
-    eval "$(tesht.Inherit "$casename")"
-
-    # Build state array from test case keys
-    local -A testState=(
-      [repoHasAge]=$repoHasAge [repoHasPub]=$repoHasPub [repoFp]=$repoFp
-      [localExists]=$localExists [localFp]=$localFp
-      [cacheExists]=$cacheExists [cacheFp]=$cacheFp
-      [hasTty]=$hasTty [hasAge]=$hasAge
-    )
 
     local got
-    got=$(sshKeyAction testState)
+    got=$(sshKeyAction "$casename")
 
+    eval "$(tesht.Inherit "$casename")"
     tesht.AssertGot "$got" "$want"
   }
 
