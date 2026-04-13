@@ -9,10 +9,10 @@
 # Local variable names begin with lowercase letters, e.g. localVariable.
 # Global variable names begin with uppercase letters, e.g. GlobalVariable.
 #
-# Injectable dependency variables use the command name directly, with
-# underscores replacing hyphens: e.g. ssh_keygen=${ssh_keygen:-ssh-keygen}.
-# They are lowercase because callers override them with local declarations
-# in tests: local ssh_keygen=mockSshKeygen. See bash style guide.
+# Injectable dependency variables use the command name directly (snake_case,
+# underscores replacing hyphens): e.g. ssh_keygen. Lowercase despite being
+# global — designed to be shadowed by local declarations in tests via bash
+# dynamic scoping. See bash style guide § Injectable dependencies.
 #
 # Variable declarations that are name references borrow the environment namespace, e.g.
 # "local -n ARRAY=$1".
@@ -794,14 +794,26 @@ sshKeygenTask() {
 
 # Injectable dependencies for credential bootstrap.
 # Override before calling restoreSshKey to substitute test doubles.
-# Injectable dependencies for credential bootstrap. camelCase because they are
-# designed to be overridden with local declarations in tests (see bash style guide).
-age=${age:-age}
-ssh_keygen=${ssh_keygen:-ssh-keygen}
-keychain=${keychain:-keychain}
-tar=${tar:-tar}
-ssh=${ssh:-ssh}
-ip=${ip:-ip}
+# Injectable command dependencies for credential bootstrap.
+# Lowercase despite being global — designed to be shadowed by local
+# declarations in tests (bash dynamic scoping). Not user-configurable:
+# sourced from environment only when DOTFILES_TEST=1, otherwise hardcoded.
+# See bash style guide § Injectable dependencies.
+if [[ ${DOTFILES_TEST:-} == 1 ]]; then
+  age=${age:-age}
+  ssh_keygen=${ssh_keygen:-ssh-keygen}
+  keychain=${keychain:-keychain}
+  tar=${tar:-tar}
+  ssh=${ssh:-ssh}
+  ip=${ip:-ip}
+else
+  age=age
+  ssh_keygen=ssh-keygen
+  keychain=keychain
+  tar=tar
+  ssh=ssh
+  ip=ip
+fi
 
 SshKeyStatus=present
 SshStageDir=""  # tracked for signal cleanup
@@ -936,7 +948,7 @@ restoreSshKeyImpl() {
   [[ -f "$cacheKey" && -f "$cacheKey.pub" ]] && state[cacheExists]=1
   (( state[cacheExists] )) && state[cacheFp]=$(pubFingerprint "$cacheKey.pub")
   [[ -t 0 ]] && state[hasTty]=1
-  command -v $age >/dev/null && state[hasAge]=1
+  command -v -- "$age" >/dev/null 2>&1 && state[hasAge]=1
 
   local action
   action=$(sshKeyAction state)
@@ -1142,7 +1154,7 @@ sshKeyEncryptToRepo() {
 # sshKeyGenerate — tier 4 implementation: generate new key, encrypt to repo, cache.
 sshKeyGenerate() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4 cacheDir=$5 cacheKey=$6
-  command -v $ssh_keygen >/dev/null || { echo "$ssh_keygen not found"; return 1; }
+  command -v -- "$ssh_keygen" >/dev/null 2>&1 || { echo "$ssh_keygen not found"; return 1; }
   echo "No SSH key for $hostname. Generating..."
   echo "(SSH key passphrase — protects the key on disk)"
   if ! sshKeygenTask "$localKey"; then
@@ -1152,7 +1164,7 @@ sshKeyGenerate() {
   chmod 644 "$localKey.pub"
 
   local backedUp=0
-  if command -v $age >/dev/null; then
+  if command -v -- "$age" >/dev/null 2>&1; then
     if sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
       backedUp=1
     else
@@ -1176,7 +1188,7 @@ restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
 
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
-  command -v $keychain >/dev/null || { echo "WARNING: $keychain not found"; return 0; }
+  command -v -- "$keychain" >/dev/null 2>&1 || { echo "WARNING: $keychain not found"; return 0; }
   eval "$($keychain --eval --agents ssh id_ed25519)" || {
     echo "WARNING: keychain failed to load SSH key."
   }
@@ -1248,7 +1260,7 @@ validateHostname() {
 
 pubFingerprint() {
   [[ -f "$1" && -s "$1" ]] || return 0
-  ssh-keygen -lf "$1" 2>/dev/null | awk '{print $2}'
+  $ssh_keygen -lf "$1" 2>/dev/null | awk '{print $2}'
 }
 
 # installKey SRC DST — install key pair from SRC to DST.
