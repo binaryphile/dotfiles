@@ -60,24 +60,26 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 `update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages, nine phases:
 
-**Stage 1** (critical path — working shell):
+**Stage 1** (critical path — working shell, HTTPS only):
 
 0. Git repo updates (conditional, subsequent runs)
-1. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
-2. Clone this repo, install **bootstrap-only** symlinks (`.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `~/dotfiles/context` → active context). The rest of the dotfile symlinks (gitconfig, tmux.conf, ssh, ranger, liquidprompt, etc.) are managed declaratively by home-manager via `linux-base.nix` once nix and HM are installed.
-3. Install Nix + home-manager (crostini/debian/linux/macos only — skipped on NixOS, system-managed there). On Crostini, sets `DOTFILES_STAGE1=1` so home-manager switch skips VPN packages (gpoc Rust compilation) to keep the critical path fast.
-5a. Clone and link core dev tools (fp.bash, mk.bash, task.bash, tesht)
+1. System upgrades (apt: crostini/debian only)
+2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `~/dotfiles/context` → active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
+3. Install Nix + home-manager (crostini/debian/linux/macos — skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation).
+5a. Clone and link core dev tools via HTTPS (fp.bash, mk.bash, task.bash, tesht)
 
-**Stage 2** (projects, builds, VPN):
+**Stage 2** (credentials, projects, VPN):
 
-3b. Re-run home-manager with full config (VPN packages included). No-op if stage 1 already had them or platform skips HM.
+3b. Re-run home-manager with full config (VPN packages). Installs `age`.
+Credential restore (Crostini only): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `loadSshKey` loads key into agent via keychain. `authPreflight` tests SSH auth to each provider.
 4. Platform-specific setup (crostini only)
 5b. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
 5c. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`): urma-next, pepin, cloud-services, accelerated-linux, urma-obsidian, share
 6. Neovim plugins, daily notes
-7. SSH key generation (crostini/linux only)
 
 Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages.
+
+All public repo clones use HTTPS fetch with SSH push URLs (idempotent remote migration on every run). Private repos use SSH with `try` wrappers.
 
 Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debian → linux.
 
@@ -271,6 +273,31 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 - All extensions enabled in private browsing (`private_browsing = true`)
 - Uses policies instead of per-profile config — policies apply to all profiles regardless of profile path, which varies per machine
 - Works on both NixOS (home-manager as NixOS module) and Debian/Crostini (standalone home-manager) — policies are baked into the wrapped Firefox package at build time
+
+### SSH Key Bootstrap — UC-4
+
+Per-machine SSH keys stored in the repo as age-encrypted bundles with plaintext `.pub` sidecars:
+
+```
+ssh/
+  id_ed25519_calumny.age      # encrypted tarball (private + public key)
+  id_ed25519_calumny.pub      # plaintext public key (sidecar for validation)
+```
+
+**Three-tier restore** (stage 2, after `age` is installed by home-manager):
+1. **Local** — if `~/.ssh/id_ed25519` exists and `.pub` fingerprint matches repo `.pub`, accept
+2. **Mount cache** — `$CrostiniDir/ssh/<hostname>/id_ed25519` with `.pub` fingerprint matching repo `.pub`
+3. **Age decrypt** — decrypt `.age` bundle, validate bundled `.pub` against repo sidecar, install
+
+On first-time machine setup (no `.age` in repo), generates a new passphrase-protected key, bundles private + public into an encrypted tarball, and commits `.age` + `.pub` to repo.
+
+**Trust model:** Private key is trusted to match `.pub` if the pair was produced together by `ssh-keygen` or extracted from the same age bundle. Manual `.pub` replacement is unsupported. Passphrase-protected private keys cannot be verified non-interactively — this is an accepted design limitation. See `installKey` comments.
+
+**Hostname as machine identity:** Admin-assigned, stored in `$CrostiniDir/hostname` on Crostini, `$HOSTNAME` on NixOS. `penguin` (Crostini default) is rejected. Collision guard: repo `.pub` fingerprint vs local `.pub` fingerprint — mismatch = collision error. Hostname validated with `[a-z0-9][a-z0-9-]*`.
+
+**Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines. Prevents interactive prompts during bootstrap while rejecting changed host keys on subsequent connections.
+
+**Auth preflight** (stage 2): Tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
 
 ### VPN — UC-7
 

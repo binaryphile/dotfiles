@@ -125,35 +125,41 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 
 ---
 
-### UC-4: User Environment Deployment
+### UC-4: Deploy User Environment
 
 - **Primary Actor:** Ted
-- **Goal:** Complete, consistent environment on a new or rebuilt machine in one step
+- **Goal:** Working development environment on a new or rebuilt machine
 - **Scope:** update-env (deployment script)
 - **Level:** User goal
-- **Trigger:** New Chromebook, rebuilt Crostini, or new host
-- **Preconditions:** Network connected; SSH key available (crostini: on persistent mount)
+- **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, or new NixOS host
+- **Preconditions:** Network connected. NixOS: SSH keys pre-existing.
 - **Stakeholders:**
-  - Ted — minimal steps, reproducible
-  - Future Ted — works without remembering steps
-  - UC-1, UC-2, UC-3 — depend on this for tool availability
+  - Ted — minimal manual steps; same tools and identity on every machine
+  - Future Ted — works without remembering steps; idempotent re-runs fix drift
+  - Security — keys encrypted at rest in repo; passphrase on generated keys; TOFU host-key model
+  - UC-1 (development) — depends on git, editor, tmux, dev tool repos
+  - UC-7 (VPN) — depends on SSH keys registered with providers and gpoc installed
 - **Main Success Scenario:**
-  1. Ted runs `update-env` (or `update-env -1` then `-2` for staged deployment)
-  2. Stage 1: System detects platform, clones dotfiles, installs nix and home-manager, applies core config (VPN packages deferred on Crostini to avoid gpoc compilation on the critical path)
-  3. Stage 1 complete: Ted has a working shell with liquidprompt, git, tmux, core dev tools
-  4. Stage 2: System re-runs home-manager with full config (VPN packages), clones project repos, installs remaining tools
-  5. System prints any platform-specific manual steps (e.g., ChromeOS proxy setup for UC-8)
-  6. Ted is productive immediately
+  1. Ted runs `update-env` (or `-1` / `-2` for individual stages)
+  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and home-manager
+  3. System restores SSH key from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset)
+  4. System loads SSH key into agent, validates provider auth
+  5. System clones project repos and prints remaining manual steps
 - **Extensions:**
-  - 1a. NixOS host → System skips apt and nix/home-manager phases; resume at step 2
-  - 1b. New machine → create a machine-specific context with per-machine config; resume at step 1
-  - 2a. Platform not recognized → System exits with diagnostic; fail
-  - 3a. Package fails to build → nixpkgs compatibility issue; fail
-  - 4a. VPN-dependent repo unreachable → `try` wrapper with `ConnectTimeout` fails fast; resume at step 5
-  - 4b. Repo remote stale → System reports; fix remote manually; resume at step 4
-  - 5a. Manual step missed → re-run update-env to see reminders again
-- **Minimal Guarantee:** Phases are idempotent; partial deployment leaves no broken state; re-run converges
-- **Success Guarantee:** Git, neovim, tmux, shell, SSH keys, dev tools, project repos, packages, and dotfile symlinks all in place; user has been told about any remaining manual steps
+  - 2a. apt lock held → waits up to 60s; resume at step 2
+  - 3a. Key already exists locally, matches repo → no decrypt needed; resume at step 4
+  - 3b. Mount cache valid → restore without passphrase; resume at step 4
+  - 3c. No TTY → skip credentials; HTTPS clones still work; separate success
+  - 3d. No credentials in repo → generate, encrypt, prompt to commit; resume at step 4
+  - 3e. Hostname is "penguin" → fail with instructions
+  - 3f. Local key mismatches repo → collision error; fail
+  - 4a. NixOS host → system skips nix/home-manager and credential restore; resume at step 5
+  - 4b. Agent load fails → warn; preflight may report false negatives
+  - 5a. Provider auth fails → reports per provider; private repos skipped; separate success
+  - 5b. VPN-dependent repo unreachable → fails fast; resume at next repo
+  - *a. Any phase fails partway → re-run converges (idempotent)
+- **Minimal Guarantee:** Partial deployment leaves no broken state; idempotent re-run converges
+- **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
 
 ---
 
