@@ -2,6 +2,7 @@
 
 {
   home.packages = with pkgs; [
+    age
     bottom
     claude-code
     coreutils

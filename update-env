@@ -33,7 +33,31 @@ main() {
   esac
 
   task.Summarize
+  sshKeyEpilogue
   postInstallMessages
+}
+
+sshKeyEpilogue() {
+  case $SshKeyStatus in
+    generated)
+      echo
+      echo "=== NEW SSH KEY GENERATED ==="
+      echo "Public key: ~/.ssh/id_ed25519.pub"
+      [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
+      echo
+      echo "Register this key with: GitHub, Codeberg, Bitbucket"
+      echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(host)' && git push"
+      echo "Until registered, private repos will be skipped."
+      ;;
+    restored)
+      echo
+      echo "SSH key restored for $(host)."
+      ;;
+    missing_noninteractive)
+      echo
+      echo "WARNING: No SSH key available. Run update-env interactively to set up."
+      ;;
+  esac
 }
 
 # Stage 1: critical path — working shell after completion + exec bash
@@ -57,17 +81,7 @@ stage1() {
   ;; esac
 
   case $Platform in crostini )
-    local keyDir=$CrostiniDir
-    if [[ -e $keyDir/np_id_ed25519.pub ]]; then
-      section credential
-      task.Install 600 $keyDir/np_id_ed25519 ~/.ssh/id_ed25519
-      task.Install 644 $keyDir/np_id_ed25519.pub ~/.ssh/id_ed25519.pub
-    elif [[ -e $keyDir/id_ed25519.pub ]]; then
-      section credential
-      task.Install 600 $keyDir/id_ed25519 ~/.ssh/id_ed25519
-      task.Install 644 $keyDir/id_ed25519.pub ~/.ssh/id_ed25519.pub
-    fi
-
+    # SSH key restore moved to stage 2 (restoreSshKey, after age is installed)
     task.Ln $CrostiniDir/repos ~/repos
     task.Ln $CrostiniDir/secrets ~/secrets
     ;;
@@ -176,6 +190,16 @@ stage2() {
   case $Platform in crostini|debian|linux|macos )
     section home-manager-full
     homeManagerSwitchTask
+    ;;
+  esac
+
+  # SSH key restore + agent load + auth preflight (after age is installed)
+  case $Platform in crostini )
+    section credential
+    try restoreSshKey
+    try loadSshKey
+    section auth-preflight
+    try authPreflight
     ;;
   esac
 
@@ -320,7 +344,9 @@ stage2() {
   #  └─────────────────────────────────────────────────────────────┘
 
   section neovim
-  task.GitClone git@github.com:binaryphile/dot_vim ~/.config/nvim master
+  try task.GitClone https://github.com/binaryphile/dot_vim ~/.config/nvim master
+  try git -C ~/.config/nvim remote set-url origin https://github.com/binaryphile/dot_vim.git
+  try git -C ~/.config/nvim remote set-url --push origin git@github.com:binaryphile/dot_vim.git
   try task.GitUpdate ~/.config/nvim
   curlTask https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim ~/.local/share/nvim/site/autoload/plug.vim
   nvimHeadlessPlugInstallTask
@@ -335,19 +361,7 @@ stage2() {
   #  │       • Remove non-passphrase key if it was copied          │
   #  │       • Generate new passphrase-protected key               │
   #  └─────────────────────────────────────────────────────────────┘
-  case $Platform in crostini )
-    local keyDir=$CrostiniDir
-    section unique_credential
-    if [[ -e $keyDir/np_id_ed25519.pub ]]; then
-      removeMatchingFileTask ~/.ssh/id_ed25519.pub $keyDir/np_id_ed25519.pub
-      removeMatchingFileTask ~/.ssh/id_ed25519 $keyDir/np_id_ed25519
-      rm $keyDir/np_id_ed25519{,.pub}
-    fi
-    sshKeygenTask $keyDir/id_ed25519
-    task.Install 600 $keyDir/id_ed25519 ~/.ssh/id_ed25519
-    task.Install 644 $keyDir/id_ed25519.pub ~/.ssh/id_ed25519.pub
-    ;;
-  esac
+  # Phase 7 (SSH key generation) removed — handled by restoreSshKey in stage 2
 
 }
 
@@ -395,25 +409,15 @@ full story. Delete this file to have update-env regenerate it.
 # system
 
 # aptUpgradeTask upgrades all apt packages to latest.
-# It first does an apt update. Waits up to 60s for any existing apt
-# lock to be released (e.g. unattended-upgrades on fresh containers).
+# Uses DPkg::Lock::Timeout to wait for any held locks (covers all lock
+# files: lists, dpkg, dpkg-frontend, archives). Available on Bullseye+.
 aptUpgradeTask() {
   desc   'apt upgrade'
   prog   on
   runas  root
   unchg  '0 upgraded, 0 newly installed'
 
-  aptUpgrade() {
-    local i=0
-    while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
-      (( i == 0 )) && echo "waiting for apt lock to be released..."
-      (( i++ < 12 )) || { echo "apt lock held for 60s, giving up"; return 1; }
-      echo "  still locked (${i}/12)..."
-      sleep 5
-    done
-    apt update -qq && apt upgrade -y
-  }
-  cmd aptUpgrade
+  cmd 'DEBIAN_FRONTEND=noninteractive apt-get update -o DPkg::Lock::Timeout=60 -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o DPkg::Lock::Timeout=60'
 }
 
 bitbucketCloneAndLinkTask() {
@@ -424,8 +428,10 @@ bitbucketCloneAndLinkTask() {
 
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
-  task.GitClone git@codeberg.org:binaryphile/$repo ~/projects/$repo $branch
-  try task.GitUpdate ~/projects/$repo
+  task.GitClone "https://codeberg.org/binaryphile/$repo" ~/projects/"$repo" "$branch"
+  try git -C ~/projects/"$repo" remote set-url origin "https://codeberg.org/binaryphile/$repo.git"
+  try git -C ~/projects/"$repo" remote set-url --push origin "git@codeberg.org:binaryphile/$repo.git"
+  try task.GitUpdate ~/projects/"$repo"
 }
 
 scaffoldTask() {
@@ -602,7 +608,7 @@ stashCloneAndLinkTask() {
   check  'ping -c 1 -W 2 stash.digi.com'
 
   stashClone() {
-    GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" ~/projects/"$dir"
+    GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" ~/projects/"$dir"
   }
   cmd stashClone
 
@@ -622,8 +628,10 @@ gitExcludeTask() {
 
 githubCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
-  task.GitClone git@github.com:binaryphile/$repo ~/projects/$repo $branch
-  try task.GitUpdate ~/projects/$repo
+  task.GitClone "https://github.com/binaryphile/$repo" ~/projects/"$repo" "$branch"
+  try git -C ~/projects/"$repo" remote set-url origin "https://github.com/binaryphile/$repo.git"
+  try git -C ~/projects/"$repo" remote set-url --push origin "git@github.com:binaryphile/$repo.git"
+  try task.GitUpdate ~/projects/"$repo"
 }
 
 installGlobalProtectClient() {
@@ -751,13 +759,232 @@ sshKeygenTask() {
   generateKey() {
     local passphrase passphrase2
     read -sp 'generating ssh key.  passphrase: ' passphrase
+    [[ -n $passphrase ]] || { echo "${NL}passphrase required"; return 1; }
     read -sp "${NL}again: " passphrase2
-    [[ $passphrase == $passphrase2 ]] || { echo "${NL}passphrase did not match"; exit 1; }
+    [[ $passphrase == $passphrase2 ]] || { echo "${NL}passphrase did not match"; return 1; }
     echo
     ssh-keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(host)"
     cat "$keyFilename.pub"
   }
   cmd generateKey
+}
+
+## credential bootstrap
+
+SshKeyStatus=present
+
+restoreSshKey() {
+  local hostname
+  hostname=$(host)
+  validateHostname "$hostname" || return 1
+
+  local repoAge="$HOME/dotfiles/ssh/id_ed25519_${hostname}.age"
+  local repoPub="$HOME/dotfiles/ssh/id_ed25519_${hostname}.pub"
+  local localKey="$HOME/.ssh/id_ed25519"
+  local cacheDir="$CrostiniDir/ssh/$hostname"
+  local cacheKey="$cacheDir/id_ed25519"
+
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  rm -f "$CrostiniDir/np_id_ed25519" "$CrostiniDir/np_id_ed25519.pub"
+
+  # Pair invariant: both or neither in repo
+  if [[ -f "$repoAge" && ! -f "$repoPub" ]]; then
+    echo "ERROR: repo has .age but no .pub for $hostname."; return 1
+  fi
+  if [[ -f "$repoPub" && ! -f "$repoAge" ]]; then
+    echo "ERROR: repo has .pub but no .age for $hostname."; return 1
+  fi
+
+  local repoFp=""
+  if [[ -f "$repoPub" ]]; then
+    repoFp=$(pubFingerprint "$repoPub")
+    [[ -n "$repoFp" ]] || { echo "ERROR: repo .pub is malformed: $repoPub"; return 1; }
+  fi
+
+  # Tier 1: local key exists
+  if [[ -f "$localKey" && -s "$localKey" ]]; then
+    local localFp=""
+    [[ -f "$localKey.pub" && -s "$localKey.pub" ]] && localFp=$(pubFingerprint "$localKey.pub")
+
+    if [[ -n "$repoFp" ]]; then
+      if [[ -n "$localFp" && "$localFp" == "$repoFp" ]]; then
+        chmod 600 "$localKey"
+        if [[ -d "$CrostiniDir" ]]; then
+          mkdir -p "$cacheDir" 2>/dev/null
+          installKey "$localKey" "$cacheKey"
+        fi 2>/dev/null || true
+        SshKeyStatus=present
+        return
+      elif [[ -n "$localFp" && "$localFp" != "$repoFp" ]]; then
+        echo "ERROR: hostname collision — local ($localFp) != repo ($repoFp)."
+        SshKeyStatus=collision
+        return 1
+      else
+        echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
+        echo "  Backing up to $localKey.bak before restoring from repo."
+        cp "$localKey" "$localKey.bak" && chmod 600 "$localKey.bak"
+        [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$localKey.pub.bak"
+        # Fall through to tier 2/3
+      fi
+    else
+      # No repo pair — local key not backed up yet
+      chmod 600 "$localKey"
+      if [[ -t 0 ]] && command -v age >/dev/null && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
+        local pubFp
+        pubFp=$(pubFingerprint "$localKey.pub")
+        if [[ -n "$pubFp" ]]; then
+          echo "Local key exists but no repo backup for $hostname. Encrypting..."
+          mkdir -p "$(dirname "$repoAge")"
+          local agetmp stageDir
+          stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX")
+          cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
+          cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
+          echo "(Repo encryption passphrase)"
+          agetmp=$(mktemp "$repoAge.XXXXXX")
+          if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
+            mv "$agetmp" "$repoAge"
+            cp "$localKey.pub" "$repoPub"
+            echo "Backed up. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
+          else
+            rm -f "$agetmp"
+            echo "WARNING: encryption failed. Key not backed up to repo."
+          fi
+          rm -rf "$stageDir"
+        fi
+      fi
+      SshKeyStatus=present
+      return
+    fi
+  fi
+
+  # Tier 2: mount cache (namespaced by hostname)
+  if [[ -f "$cacheKey" && -f "$cacheKey.pub" ]]; then
+    local cacheFp
+    cacheFp=$(pubFingerprint "$cacheKey.pub")
+    if [[ -n "$cacheFp" ]]; then
+      if [[ -n "$repoFp" && "$cacheFp" != "$repoFp" ]]; then
+        echo "Mount cache stale. Falling through to age decrypt."
+      else
+        echo "Restoring SSH key from mount cache ($hostname)..."
+        installKey "$cacheKey" "$localKey"
+        SshKeyStatus=restored
+        return
+      fi
+    fi
+  fi
+
+  # Tier 3: age decrypt (powerwash recovery)
+  if [[ -f "$repoAge" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "SSH key encrypted in repo but no TTY."
+      SshKeyStatus=missing_noninteractive
+      return 0
+    fi
+    command -v age >/dev/null || { echo "age not found"; return 1; }
+    echo "Decrypting SSH key for $hostname..."
+    local stageDir
+    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX")
+    chmod 700 "$stageDir"
+    if age --decrypt "$repoAge" | tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
+      local stagedFp
+      stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
+      if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
+        rm -rf "$stageDir"
+        echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair."
+        return 1
+      fi
+      chmod 600 "$stageDir/id_ed25519"
+      mv "$stageDir/id_ed25519" "$localKey"
+      mv "$stageDir/id_ed25519.pub" "$localKey.pub" && chmod 644 "$localKey.pub"
+      rm -rf "$stageDir"
+      if [[ -d "$CrostiniDir" ]]; then
+        mkdir -p "$cacheDir" 2>/dev/null
+        installKey "$localKey" "$cacheKey"
+      fi 2>/dev/null || echo "WARNING: mount cache write failed"
+      SshKeyStatus=restored
+    else
+      rm -rf "$stageDir"
+      echo "ERROR: age decryption failed."
+      return 1
+    fi
+    return
+  fi
+
+  # Tier 4: generate (first-time machine)
+  if [[ ! -t 0 ]]; then
+    echo "No SSH key for $hostname and no TTY."
+    SshKeyStatus=missing_noninteractive
+    return 0
+  fi
+  command -v ssh-keygen >/dev/null || { echo "ssh-keygen not found"; return 1; }
+  echo "No SSH key for $hostname. Generating..."
+  echo "(SSH key passphrase — protects the key on disk)"
+  if ! sshKeygenTask "$localKey"; then
+    SshKeyStatus=missing_noninteractive
+    return 1
+  fi
+  chmod 644 "$localKey.pub"
+
+  mkdir -p "$(dirname "$repoAge")"
+  if command -v age >/dev/null; then
+    echo "(Repo encryption passphrase — protects the key in git)"
+    local stageDir agetmp
+    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX")
+    cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
+    cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
+    agetmp=$(mktemp "$repoAge.XXXXXX")
+    if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
+      mv "$agetmp" "$repoAge"
+      cp "$localKey.pub" "$repoPub"
+      echo "Key encrypted. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
+    else
+      rm -f "$agetmp"
+      echo "WARNING: encryption failed. Key NOT in repo. Will be LOST on wipe."
+    fi
+    rm -rf "$stageDir"
+  fi
+
+  if [[ -d "$CrostiniDir" ]]; then
+    mkdir -p "$cacheDir" 2>/dev/null
+    installKey "$localKey" "$cacheKey"
+  fi 2>/dev/null || echo "WARNING: mount cache write failed"
+
+  SshKeyStatus=generated
+}
+
+loadSshKey() {
+  [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
+  command -v keychain >/dev/null || { echo "WARNING: keychain not found"; return 0; }
+  eval "$(keychain --eval --agents ssh id_ed25519)" || {
+    echo "WARNING: keychain failed to load SSH key."
+  }
+}
+
+authPreflight() {
+  local keyFile="$HOME/.ssh/id_ed25519"
+  local -a sshopts=(-o BatchMode=yes -o PreferredAuthentications=publickey
+    -o IdentitiesOnly=yes -i "$keyFile" -o ConnectTimeout=10
+    -o StrictHostKeyChecking=accept-new)
+
+  [[ -f "$keyFile" ]] || { echo "  No SSH key — all private repos will be skipped"; return; }
+
+  local provider rc output
+  for provider in github.com codeberg.org bitbucket.org; do
+    if output=$(ssh -T "${sshopts[@]}" "git@$provider" 2>&1); then rc=0; else rc=$?; fi
+    if (( rc == 0 || rc == 1 )); then
+      :
+    elif echo "$output" | grep -qi 'permission denied\|publickey'; then
+      echo "  $provider: key not registered"
+      [[ -f "$keyFile.pub" ]] && echo "    Register: cat $keyFile.pub"
+    else
+      echo "  $provider: unreachable"
+    fi
+  done
+
+  if ip link show tun0 >/dev/null 2>&1; then
+    if output=$(ssh -T "${sshopts[@]}" git@stash.digi.com 2>&1); then rc=0; else rc=$?; fi
+    (( rc == 0 || rc == 1 )) || echo "  stash.digi.com: SSH auth failed"
+  fi
 }
 
 ## helpers
@@ -784,8 +1011,30 @@ glob() {
 }
 
 host() {
-  [[ $HOSTNAME == penguin && -e $CrostiniDir/hostname ]] && cat $CrostiniDir/hostname
-  echo $HOSTNAME
+  if [[ "${HOSTNAME:-}" == penguin && -e "$CrostiniDir/hostname" ]]; then
+    cat -- "$CrostiniDir/hostname"
+    return
+  fi
+  printf '%s\n' "${HOSTNAME:-}"
+}
+
+validateHostname() {
+  local h=$1
+  [[ $h != penguin ]] || { echo "ERROR: hostname is 'penguin'. Set \$CrostiniDir/hostname."; return 1; }
+  [[ $h =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: invalid hostname '$h'. Must be [a-z0-9][a-z0-9-]*."; return 1; }
+}
+
+pubFingerprint() {
+  [[ -f "$1" && -s "$1" ]] || return 0
+  ssh-keygen -lf "$1" 2>/dev/null | awk '{print $2}'
+}
+
+installKey() {
+  local src=$1 dst=$2 tmp
+  tmp=$(mktemp "$dst.XXXXXX") && cp "$src" "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$dst"
+  if [[ -f "$src.pub" ]]; then
+    tmp=$(mktemp "$dst.pub.XXXXXX") && cp "$src.pub" "$tmp" && chmod 644 "$tmp" && mv "$tmp" "$dst.pub"
+  fi
 }
 
 isDir() { [[ -d "$1" ]]; }
