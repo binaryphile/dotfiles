@@ -79,7 +79,7 @@ stage1() {
   #  │   └─> Create symlinks                                       │
   #  └─────────────────────────────────────────────────────────────┘
   section dotfiles
-  task.GitClone git@github.com:binaryphile/dotfiles ~/dotfiles main
+  task.GitClone https://github.com/binaryphile/dotfiles ~/dotfiles main
   try task.GitUpdate ~/dotfiles
   # Bootstrap-only symlinks. The rest are managed by home-manager via
   # contexts/linux-base.nix once nix and home-manager are installed.
@@ -395,14 +395,25 @@ full story. Delete this file to have update-env regenerate it.
 # system
 
 # aptUpgradeTask upgrades all apt packages to latest.
-# It first does an apt update.
+# It first does an apt update. Waits up to 60s for any existing apt
+# lock to be released (e.g. unattended-upgrades on fresh containers).
 aptUpgradeTask() {
   desc   'apt upgrade'
   prog   on
   runas  root
   unchg  '0 upgraded, 0 newly installed'
 
-  cmd 'apt update -qq && apt upgrade -y'
+  aptUpgrade() {
+    local i=0
+    while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+      (( i == 0 )) && echo "waiting for apt lock to be released..."
+      (( i++ < 12 )) || { echo "apt lock held for 60s, giving up"; return 1; }
+      echo "  still locked (${i}/12)..."
+      sleep 5
+    done
+    apt update -qq && apt upgrade -y
+  }
+  cmd aptUpgrade
 }
 
 bitbucketCloneAndLinkTask() {
