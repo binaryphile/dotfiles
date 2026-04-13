@@ -46,12 +46,12 @@ sshKeyEpilogue() {
       [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
       echo "Register this key with: GitHub, Codeberg, Bitbucket"
-      echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(host)' && git push"
+      echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(machineHostname)' && git push"
       echo "Until registered, private repos will be skipped."
       ;;
     restored)
       echo
-      echo "SSH key restored for $(host)."
+      echo "SSH key restored for $(machineHostname)."
       ;;
     missing_noninteractive)
       echo
@@ -763,7 +763,7 @@ sshKeygenTask() {
     read -sp "${NL}again: " passphrase2
     [[ $passphrase == $passphrase2 ]] || { echo "${NL}passphrase did not match"; return 1; }
     echo
-    ssh-keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(host)"
+    ssh-keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(machineHostname)"
     cat "$keyFilename.pub"
   }
   cmd generateKey
@@ -772,10 +772,18 @@ sshKeygenTask() {
 ## credential bootstrap
 
 SshKeyStatus=present
+SshStageDir=""  # tracked for signal cleanup
+
+cleanupSshStage() {
+  [[ -n "$SshStageDir" && -d "$SshStageDir" ]] && rm -rf "$SshStageDir"
+  SshStageDir=""
+}
+# Ensure plaintext stage dirs are cleaned up on interrupt
+trap cleanupSshStage INT TERM
 
 restoreSshKey() {
   local hostname
-  hostname=$(host)
+  hostname=$(machineHostname)
   validateHostname "$hostname" || return 1
 
   local repoAge="$HOME/dotfiles/ssh/id_ed25519_${hostname}.age"
@@ -821,9 +829,15 @@ restoreSshKey() {
         return 1
       else
         echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
-        echo "  Backing up to $localKey.bak before restoring from repo."
-        cp "$localKey" "$localKey.bak" && chmod 600 "$localKey.bak"
-        [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$localKey.pub.bak"
+        local bakSuffix
+        bakSuffix="bak.$(date +%s)"
+        echo "  Backing up to $localKey.$bakSuffix before restoring from repo."
+        if ! cp "$localKey" "$localKey.$bakSuffix" || ! chmod 600 "$localKey.$bakSuffix"; then
+          echo "ERROR: backup failed. Will not overwrite local key."
+          SshKeyStatus=present
+          return 1
+        fi
+        [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$localKey.pub.$bakSuffix" 2>/dev/null
         # Fall through to tier 2/3
       fi
     else
@@ -836,7 +850,7 @@ restoreSshKey() {
           echo "Local key exists but no repo backup for $hostname. Encrypting..."
           mkdir -p "$(dirname "$repoAge")"
           local agetmp stageDir
-          stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX")
+          stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
           cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
           cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
           echo "(Repo encryption passphrase)"
@@ -849,7 +863,7 @@ restoreSshKey() {
             rm -f "$agetmp"
             echo "WARNING: encryption failed. Key not backed up to repo."
           fi
-          rm -rf "$stageDir"
+          rm -rf "$stageDir"; SshStageDir=""
         fi
       fi
       SshKeyStatus=present
@@ -866,9 +880,12 @@ restoreSshKey() {
         echo "Mount cache stale. Falling through to age decrypt."
       else
         echo "Restoring SSH key from mount cache ($hostname)..."
-        installKey "$cacheKey" "$localKey"
-        SshKeyStatus=restored
-        return
+        if ! installKey "$cacheKey" "$localKey"; then
+          echo "WARNING: cache restore failed. Falling through to age decrypt."
+        else
+          SshKeyStatus=restored
+          return
+        fi
       fi
     fi
   fi
@@ -883,27 +900,27 @@ restoreSshKey() {
     command -v age >/dev/null || { echo "age not found"; return 1; }
     echo "Decrypting SSH key for $hostname..."
     local stageDir
-    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX")
+    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
     chmod 700 "$stageDir"
     if age --decrypt "$repoAge" | tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
       local stagedFp
       stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
       if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
-        rm -rf "$stageDir"
+        rm -rf "$stageDir"; SshStageDir=""
         echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair."
         return 1
       fi
       chmod 600 "$stageDir/id_ed25519"
       mv "$stageDir/id_ed25519" "$localKey"
       mv "$stageDir/id_ed25519.pub" "$localKey.pub" && chmod 644 "$localKey.pub"
-      rm -rf "$stageDir"
+      rm -rf "$stageDir"; SshStageDir=""
       if [[ -d "$CrostiniDir" ]]; then
         mkdir -p "$cacheDir" 2>/dev/null
         installKey "$localKey" "$cacheKey"
       fi 2>/dev/null || echo "WARNING: mount cache write failed"
       SshKeyStatus=restored
     else
-      rm -rf "$stageDir"
+      rm -rf "$stageDir"; SshStageDir=""
       echo "ERROR: age decryption failed."
       return 1
     fi
@@ -929,7 +946,7 @@ restoreSshKey() {
   if command -v age >/dev/null; then
     echo "(Repo encryption passphrase — protects the key in git)"
     local stageDir agetmp
-    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX")
+    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
     cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
     cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
     agetmp=$(mktemp "$repoAge.XXXXXX")
@@ -941,7 +958,7 @@ restoreSshKey() {
       rm -f "$agetmp"
       echo "WARNING: encryption failed. Key NOT in repo. Will be LOST on wipe."
     fi
-    rm -rf "$stageDir"
+    rm -rf "$stageDir"; SshStageDir=""
   fi
 
   if [[ -d "$CrostiniDir" ]]; then
@@ -1010,7 +1027,7 @@ glob() {
   (( ${#results[*]} == 0 )) || echo "${results[*]}"
 }
 
-host() {
+machineHostname() {
   if [[ "${HOSTNAME:-}" == penguin && -e "$CrostiniDir/hostname" ]]; then
     cat -- "$CrostiniDir/hostname"
     return
