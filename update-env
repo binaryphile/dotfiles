@@ -781,15 +781,19 @@ cleanupSshStage() {
   SshStageDir=""
 }
 
-# withTrap HANDLER FUNC [ARGS...] — call FUNC with INT/TERM trap set to HANDLER.
-# Saves and restores previous trap handlers so the caller's traps aren't clobbered.
-withTrap() {
-  local handler=$1 func=$2; shift 2
-  local prevInt prevTerm rc
+# withCleanupTrap CLEANUP FUNC [ARGS...] — call FUNC with INT/TERM trap that
+# runs CLEANUP then re-raises the signal (preserving abort semantics).
+# Saves and restores previous trap handlers. Does NOT suppress set -e inside
+# FUNC — the function runs under normal errexit behavior.
+withCleanupTrap() {
+  local cleanup=$1 func=$2; shift 2
+  local prevInt prevTerm
   prevInt=$(trap -p INT)
   prevTerm=$(trap -p TERM)
-  trap "$handler" INT TERM
-  "$func" "$@" && rc=$? || rc=$?
+  trap "$cleanup; trap - INT; kill -INT \$\$" INT
+  trap "$cleanup; trap - TERM; kill -TERM \$\$" TERM
+  "$func" "$@"
+  local rc=$?
   eval "${prevInt:-trap - INT}"
   eval "${prevTerm:-trap - TERM}"
   return $rc
@@ -988,7 +992,7 @@ restoreSshKeyImpl() {
   SshKeyStatus=generated
 }
 
-restoreSshKey() { withTrap cleanupSshStage restoreSshKeyImpl; }
+restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
 
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
@@ -1082,10 +1086,11 @@ installKey() {
     chmod 644 "$tmpPub"                 || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
   fi
 
-  # Commit both atomically (as close as POSIX allows)
+  # Commit: per-file rename is atomic, but the pair is not — if .pub mv fails
+  # after private mv succeeds, roll back the private key to restore consistency.
   mv "$tmpPriv" "$dst"                  || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
   if [[ -n "$tmpPub" ]]; then
-    mv "$tmpPub" "$dst.pub"             || { rm -f "$tmpPub"; return 1; }
+    mv "$tmpPub" "$dst.pub"             || { rm -f "$tmpPub" "$dst"; return 1; }
   fi
 }
 
