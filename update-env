@@ -911,7 +911,9 @@ restoreSshKeyImpl() {
   local action
   action=$(sshKeyAction state)
 
-  # Dispatch — each case is mechanical, no further decisions
+  # Dispatch — mostly mechanical. capture_to_repo has additional runtime
+  # checks (tty, age availability, .pub validity) that determine whether
+  # capture is attempted. Capture failure is non-fatal (key is local-only).
   case $action in
     error_*)
       echo "ERROR: ${action#error_}"
@@ -960,6 +962,8 @@ restoreSshKeyImpl() {
       ;;
 
     capture_to_repo)
+      # Local key usable regardless of capture outcome.
+      # Capture is best-effort — requires tty, age, and valid .pub.
       chmod 600 "$localKey"
       if (( state[hasTty] && state[hasAge] )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
         local pubFp
@@ -967,8 +971,8 @@ restoreSshKeyImpl() {
         if [[ -z "$pubFp" ]]; then
           echo "WARNING: local .pub is malformed. Cannot capture to repo."
           echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
-        else
-          sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"
+        elif ! sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
+          echo "WARNING: repo backup failed. Key is local-only — will be lost on wipe."
         fi
       fi
       SshKeyStatus=present
@@ -1099,6 +1103,8 @@ sshKeyEncryptToRepo() {
   else
     rm -f "$agetmp" "$pubtmp"
     echo "WARNING: encryption failed. Key not backed up to repo."
+    rm -rf "$stageDir"; SshStageDir=""
+    return 1
   fi
   rm -rf "$stageDir"; SshStageDir=""
 }
@@ -1116,7 +1122,9 @@ sshKeyGenerate() {
   chmod 644 "$localKey.pub"
 
   if command -v age >/dev/null; then
-    sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"
+    if ! sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
+      echo "WARNING: key generated locally but NOT backed up to repo. Will be lost on wipe."
+    fi
   fi
 
   if [[ -d "$CrostiniDir" ]]; then

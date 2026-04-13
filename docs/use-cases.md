@@ -158,7 +158,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 5a. Provider auth fails → reports per provider; private repos skipped; separate success
   - 5b. VPN-dependent repo unreachable → fails fast; resume at next repo
   - *a. Any phase fails partway → re-run converges (idempotent)
-- **Minimal Guarantee:** Partial deployment leaves no broken state; idempotent re-run converges
+- **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
 
 ---
