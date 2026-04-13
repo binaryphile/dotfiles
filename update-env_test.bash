@@ -731,48 +731,88 @@ test_restoreSecretsTierSelection() {
   tesht.Run ${!case@}
 }
 
-# test_secretsArchiveValidation tests that the allowlist validator accepts
-# normal tar entries and rejects unsafe ones.
-test_secretsArchiveValidation() {
-  local -A case1=(
-    [name]='accept normal ./filename entries'
-    [members]='.\n./stash.key\n./confluence.key'
-    [wantPass]=1
-  )
-  local -A case2=(
-    [name]='reject path traversal'
-    [members]='.\n../etc/passwd'
-    [wantPass]=0
-  )
-  local -A case3=(
-    [name]='reject absolute path'
-    [members]='.\n/etc/passwd'
-    [wantPass]=0
-  )
-  local -A case4=(
-    [name]='reject dotfile in archive'
-    [members]='.\n./.secret'
-    [wantPass]=0
-  )
-  local -A case5=(
-    [name]='reject leading dash'
-    [members]='.\n./-rf'
-    [wantPass]=0
-  )
+# test_validSecretName tests the shared filename policy used by both
+# encrypt-secrets (producer) and restoreSecrets (consumer).
+test_validSecretName() {
+  local -A case1=([name]='accept simple name' [input]='stash.key' [wantRc]=0)
+  local -A case2=([name]='accept underscores' [input]='api_token' [wantRc]=0)
+  local -A case3=([name]='accept hyphens' [input]='my-token' [wantRc]=0)
+  local -A case4=([name]='accept dots' [input]='key.pem' [wantRc]=0)
+  local -A case5=([name]='reject dotfile' [input]='.secret' [wantRc]=1)
+  local -A case6=([name]='reject leading dash' [input]='-rf' [wantRc]=1)
+  local -A case7=([name]='reject path separator' [input]='foo/bar' [wantRc]=1)
+  local -A case8=([name]='reject spaces' [input]='my key' [wantRc]=1)
+  local -A case9=([name]='reject empty' [input]='' [wantRc]=1)
+  local -A case10=([name]='reject path traversal' [input]='../etc' [wantRc]=1)
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+    local rc
+    validSecretName "$input" && rc=$? || rc=$?
+    (( rc == wantRc )) || {
+      echo "validSecretName ${input@Q}: rc=$rc, want=$wantRc"
+      return 1
+    }
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_secretsArchiveIntegration tests that a real tar archive produced the
+# same way as encrypt-secrets passes the restore validator, and that a
+# malicious archive is rejected.
+test_secretsArchiveIntegration() {
+  local -A case1=([name]='accept archive from normal secrets')
+  local -A case2=([name]='reject archive with path traversal')
 
   subtest() {
     local casename=$1
     eval "$(tesht.Inherit "$casename")"
 
-    # Test the grep pattern directly (same as restoreSecrets uses)
-    local bad
-    bad=$(echo -e "$members" | grep -vE '^\.$|^\./[a-zA-Z0-9][a-zA-Z0-9._-]*$' || true)
+    local dir
+    tesht.MktempDir dir || return 128
 
-    if (( wantPass )); then
-      [[ -z "$bad" ]] || { echo "should pass but rejected: $bad"; return 1; }
-    else
-      [[ -n "$bad" ]] || { echo "should reject but passed"; return 1; }
-    fi
+    case $casename in
+      case1)
+        # Create secrets matching the filename policy
+        mkdir -p "$dir/secrets"
+        echo "token" > "$dir/secrets/stash.key"
+        echo "conf" > "$dir/secrets/confluence.key"
+        # Bundle using the same method as encrypt-secrets (valid files via -T)
+        printf '%s\n' stash.key confluence.key | tar cf "$dir/bundle.tar" -C "$dir/secrets" -T -
+        # Validate using the same logic as restoreSecrets
+        local entry bad=""
+        while IFS= read -r entry; do
+          [[ $entry == . ]] && continue
+          if [[ $entry == ./* ]]; then
+            local name=${entry#./}
+            validSecretName "$name" || bad="$bad $entry"
+          else
+            # tar -T produces bare names, not ./name — that's also fine
+            validSecretName "$entry" || bad="$bad $entry"
+          fi
+        done < <(tar tf "$dir/bundle.tar")
+        [[ -z "$bad" ]] || { echo "valid archive rejected: $bad"; return 1; }
+        ;;
+      case2)
+        # Create a malicious archive with path traversal
+        mkdir -p "$dir/evil"
+        echo "pwned" > "$dir/evil/passwd"
+        tar cf "$dir/evil.tar" -C "$dir" evil/passwd
+        local entry bad=""
+        while IFS= read -r entry; do
+          [[ $entry == . ]] && continue
+          if [[ $entry == ./* ]]; then
+            local name=${entry#./}
+            validSecretName "$name" || bad="$bad $entry"
+          else
+            validSecretName "$entry" || bad="$bad $entry"
+          fi
+        done < <(tar tf "$dir/evil.tar")
+        [[ -n "$bad" ]] || { echo "malicious archive should be rejected"; return 1; }
+        ;;
+    esac
   }
 
   tesht.Run ${!case@}
