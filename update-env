@@ -781,16 +781,15 @@ cleanupSshStage() {
   SshStageDir=""
 }
 
-# withSshTrap FUNC [ARGS...] — call FUNC with INT/TERM trap for stage dir cleanup.
+# withTrap HANDLER FUNC [ARGS...] — call FUNC with INT/TERM trap set to HANDLER.
 # Saves and restores previous trap handlers so the caller's traps aren't clobbered.
-withSshTrap() {
-  local func=$1; shift
+withTrap() {
+  local handler=$1 func=$2; shift 2
   local prevInt prevTerm rc
   prevInt=$(trap -p INT)
   prevTerm=$(trap -p TERM)
-  trap cleanupSshStage INT TERM
+  trap "$handler" INT TERM
   "$func" "$@" && rc=$? || rc=$?
-  # Restore previous traps (eval empty string = reset to default)
   eval "${prevInt:-trap - INT}"
   eval "${prevTerm:-trap - TERM}"
   return $rc
@@ -989,7 +988,7 @@ restoreSshKeyImpl() {
   SshKeyStatus=generated
 }
 
-restoreSshKey() { withSshTrap restoreSshKeyImpl; }
+restoreSshKey() { withTrap cleanupSshStage restoreSshKeyImpl; }
 
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
