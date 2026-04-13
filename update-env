@@ -1053,7 +1053,7 @@ machineHostname() {
     cat -- "$CrostiniDir/hostname"
     return
   fi
-  printf '%s\n' "${HOSTNAME:-}"
+  echo "${HOSTNAME:-}"
 }
 
 validateHostname() {
