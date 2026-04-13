@@ -775,13 +775,14 @@ SshKeyStatus=present
 SshStageDir=""  # tracked for signal cleanup
 
 cleanupSshStage() {
-  [[ -n "$SshStageDir" && -d "$SshStageDir" ]] && rm -rf "$SshStageDir"
+  if [[ -n "$SshStageDir" && -d "$SshStageDir" ]]; then
+    rm -rf "$SshStageDir"
+  fi
   SshStageDir=""
 }
-# Ensure plaintext stage dirs are cleaned up on interrupt
-trap cleanupSshStage INT TERM
 
 restoreSshKey() {
+  trap cleanupSshStage INT TERM
   local hostname
   hostname=$(machineHostname)
   validateHostname "$hostname" || return 1
@@ -846,7 +847,10 @@ restoreSshKey() {
       if [[ -t 0 ]] && command -v age >/dev/null && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
         local pubFp
         pubFp=$(pubFingerprint "$localKey.pub")
-        if [[ -n "$pubFp" ]]; then
+        if [[ -z "$pubFp" ]]; then
+          echo "WARNING: local .pub is malformed. Cannot capture to repo."
+          echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
+        else
           echo "Local key exists but no repo backup for $hostname. Encrypting..."
           mkdir -p "$(dirname "$repoAge")"
           local agetmp stageDir
@@ -1048,9 +1052,19 @@ pubFingerprint() {
 
 installKey() {
   local src=$1 dst=$2 tmp
-  tmp=$(mktemp "$dst.XXXXXX") && cp "$src" "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$dst"
+  tmp=$(mktemp "$dst.XXXXXX")
+  if cp "$src" "$tmp" && chmod 600 "$tmp"; then
+    mv "$tmp" "$dst"
+  else
+    rm -f "$tmp"; return 1
+  fi
   if [[ -f "$src.pub" ]]; then
-    tmp=$(mktemp "$dst.pub.XXXXXX") && cp "$src.pub" "$tmp" && chmod 644 "$tmp" && mv "$tmp" "$dst.pub"
+    tmp=$(mktemp "$dst.pub.XXXXXX")
+    if cp "$src.pub" "$tmp" && chmod 644 "$tmp"; then
+      mv "$tmp" "$dst.pub"
+    else
+      rm -f "$tmp"; return 1
+    fi
   fi
 }
 
