@@ -9,6 +9,11 @@
 # Local variable names begin with lowercase letters, e.g. localVariable.
 # Global variable names begin with uppercase letters, e.g. GlobalVariable.
 #
+# Injectable dependency variables use the command name directly, with
+# underscores replacing hyphens: e.g. ssh_keygen=${ssh_keygen:-ssh-keygen}.
+# They are lowercase because callers override them with local declarations
+# in tests: local ssh_keygen=mockSshKeygen. See bash style guide.
+#
 # Variable declarations that are name references borrow the environment namespace, e.g.
 # "local -n ARRAY=$1".
 #
@@ -779,13 +784,24 @@ sshKeygenTask() {
     read -sp "${NL}again: " passphrase2
     [[ $passphrase == $passphrase2 ]] || { echo "${NL}passphrase did not match"; return 1; }
     echo
-    ssh-keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(machineHostname)"
+    $ssh_keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(machineHostname)"
     cat "$keyFilename.pub"
   }
   cmd generateKey
 }
 
 ## credential bootstrap
+
+# Injectable dependencies for credential bootstrap.
+# Override before calling restoreSshKey to substitute test doubles.
+# Injectable dependencies for credential bootstrap. camelCase because they are
+# designed to be overridden with local declarations in tests (see bash style guide).
+age=${age:-age}
+ssh_keygen=${ssh_keygen:-ssh-keygen}
+keychain=${keychain:-keychain}
+tar=${tar:-tar}
+ssh=${ssh:-ssh}
+ip=${ip:-ip}
 
 SshKeyStatus=present
 SshStageDir=""  # tracked for signal cleanup
@@ -920,7 +936,7 @@ restoreSshKeyImpl() {
   [[ -f "$cacheKey" && -f "$cacheKey.pub" ]] && state[cacheExists]=1
   (( state[cacheExists] )) && state[cacheFp]=$(pubFingerprint "$cacheKey.pub")
   [[ -t 0 ]] && state[hasTty]=1
-  command -v age >/dev/null && state[hasAge]=1
+  command -v $age >/dev/null && state[hasAge]=1
 
   local action
   action=$(sshKeyAction state)
@@ -1052,7 +1068,7 @@ sshKeyDecryptAndInstall() {
   local stageDir
   stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
   chmod 700 "$stageDir"
-  if age --decrypt "$repoAge" | tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
+  if $age --decrypt "$repoAge" | $tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
     local stagedFp
     stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
     if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
@@ -1091,7 +1107,7 @@ sshKeyEncryptToRepo() {
   echo "(Repo encryption passphrase)"
   agetmp=$(mktemp "$repoAge.XXXXXX")
   pubtmp=$(mktemp "$repoPub.XXXXXX")
-  if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
+  if $tar cf - -C "$stageDir" . | $age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
     cp "$localKey.pub" "$pubtmp" && chmod 644 "$pubtmp" || {
       rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed."
       rm -rf "$stageDir"; SshStageDir=""; return 1
@@ -1126,7 +1142,7 @@ sshKeyEncryptToRepo() {
 # sshKeyGenerate — tier 4 implementation: generate new key, encrypt to repo, cache.
 sshKeyGenerate() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4 cacheDir=$5 cacheKey=$6
-  command -v ssh-keygen >/dev/null || { echo "ssh-keygen not found"; return 1; }
+  command -v $ssh_keygen >/dev/null || { echo "$ssh_keygen not found"; return 1; }
   echo "No SSH key for $hostname. Generating..."
   echo "(SSH key passphrase — protects the key on disk)"
   if ! sshKeygenTask "$localKey"; then
@@ -1136,7 +1152,7 @@ sshKeyGenerate() {
   chmod 644 "$localKey.pub"
 
   local backedUp=0
-  if command -v age >/dev/null; then
+  if command -v $age >/dev/null; then
     if sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
       backedUp=1
     else
@@ -1160,8 +1176,8 @@ restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
 
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
-  command -v keychain >/dev/null || { echo "WARNING: keychain not found"; return 0; }
-  eval "$(keychain --eval --agents ssh id_ed25519)" || {
+  command -v $keychain >/dev/null || { echo "WARNING: $keychain not found"; return 0; }
+  eval "$($keychain --eval --agents ssh id_ed25519)" || {
     echo "WARNING: keychain failed to load SSH key."
   }
 }
@@ -1176,7 +1192,7 @@ authPreflight() {
 
   local provider rc output
   for provider in github.com codeberg.org bitbucket.org; do
-    if output=$(ssh -T "${sshopts[@]}" "git@$provider" 2>&1); then rc=0; else rc=$?; fi
+    if output=$($ssh -T "${sshopts[@]}" "git@$provider" 2>&1); then rc=0; else rc=$?; fi
     if (( rc == 0 || rc == 1 )); then
       :
     elif echo "$output" | grep -qi 'permission denied\|publickey'; then
@@ -1187,8 +1203,8 @@ authPreflight() {
     fi
   done
 
-  if ip link show tun0 >/dev/null 2>&1; then
-    if output=$(ssh -T "${sshopts[@]}" git@stash.digi.com 2>&1); then rc=0; else rc=$?; fi
+  if $ip link show tun0 >/dev/null 2>&1; then
+    if output=$($ssh -T "${sshopts[@]}" git@stash.digi.com 2>&1); then rc=0; else rc=$?; fi
     (( rc == 0 || rc == 1 )) || echo "  stash.digi.com: SSH auth failed"
   fi
 }
