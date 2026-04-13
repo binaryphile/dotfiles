@@ -110,7 +110,9 @@ stage1() {
     nixShellHomeManagerInstallTask
     loosely source ~/.nix-profile/etc/profile.d/hm-session-vars.sh
     task.Ln ~/dotfiles/home.nix ~/.config/home-manager/home.nix
+    export DOTFILES_STAGE1=1
     homeManagerSwitchTask
+    unset DOTFILES_STAGE1
     ;;
   esac
 
@@ -169,6 +171,14 @@ stage2Preflight() {
 
 # Stage 2: projects, builds, and config — all externals try-wrapped
 stage2() {
+  # Re-run home-manager with VPN packages (skipped in stage 1 to avoid
+  # gpoc Rust compilation on the critical path to a working shell).
+  case $Platform in crostini|debian|linux|macos )
+    section home-manager-full
+    homeManagerSwitchTask
+    ;;
+  esac
+
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 4: Platform-Specific Setup                            │
   #  │   └─> [crostini only]:                                      │
@@ -581,7 +591,7 @@ stashCloneAndLinkTask() {
   check  'ping -c 1 -W 2 stash.digi.com'
 
   stashClone() {
-    GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" ~/projects/"$dir"
+    GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" ~/projects/"$dir"
   }
   cmd stashClone
 
