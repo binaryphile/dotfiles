@@ -759,58 +759,56 @@ test_validSecretName() {
   tesht.Run ${!case@}
 }
 
-# test_secretsArchiveIntegration tests that a real tar archive produced the
-# same way as encrypt-secrets passes the restore validator, and that a
-# malicious archive is rejected.
-test_secretsArchiveIntegration() {
-  local -A case1=([name]='accept archive from normal secrets')
-  local -A case2=([name]='reject archive with path traversal')
+# test_validateSecretsArchive tests the production archive validator directly.
+test_validateSecretsArchive() {
+  local -A case1=([name]='accept archive with bare filenames (tar -T output)')
+  local -A case2=([name]='accept archive with ./ prefix (tar -C . output)')
+  local -A case3=([name]='reject archive with nested path')
+  local -A case4=([name]='reject archive with dotfile entry')
+  local -A case5=([name]='reject corrupt/non-tar file')
 
   subtest() {
     local casename=$1
     eval "$(tesht.Inherit "$casename")"
 
-    local dir
+    local dir rc
     tesht.MktempDir dir || return 128
 
     case $casename in
       case1)
-        # Create secrets matching the filename policy
         mkdir -p "$dir/secrets"
         echo "token" > "$dir/secrets/stash.key"
         echo "conf" > "$dir/secrets/confluence.key"
-        # Bundle using the same method as encrypt-secrets (valid files via -T)
         printf '%s\n' stash.key confluence.key | tar cf "$dir/bundle.tar" -C "$dir/secrets" -T -
-        # Validate using the same logic as restoreSecrets
-        local entry bad=""
-        while IFS= read -r entry; do
-          [[ $entry == . ]] && continue
-          if [[ $entry == ./* ]]; then
-            local name=${entry#./}
-            validSecretName "$name" || bad="$bad $entry"
-          else
-            # tar -T produces bare names, not ./name — that's also fine
-            validSecretName "$entry" || bad="$bad $entry"
-          fi
-        done < <(tar tf "$dir/bundle.tar")
-        [[ -z "$bad" ]] || { echo "valid archive rejected: $bad"; return 1; }
+        validateSecretsArchive "$dir/bundle.tar" >/dev/null 2>&1 && rc=$? || rc=$?
+        (( rc == 0 )) || { echo "valid bare-name archive rejected"; return 1; }
         ;;
       case2)
-        # Create a malicious archive with path traversal
-        mkdir -p "$dir/evil"
-        echo "pwned" > "$dir/evil/passwd"
-        tar cf "$dir/evil.tar" -C "$dir" evil/passwd
-        local entry bad=""
-        while IFS= read -r entry; do
-          [[ $entry == . ]] && continue
-          if [[ $entry == ./* ]]; then
-            local name=${entry#./}
-            validSecretName "$name" || bad="$bad $entry"
-          else
-            validSecretName "$entry" || bad="$bad $entry"
-          fi
-        done < <(tar tf "$dir/evil.tar")
-        [[ -n "$bad" ]] || { echo "malicious archive should be rejected"; return 1; }
+        mkdir -p "$dir/secrets"
+        echo "token" > "$dir/secrets/stash.key"
+        tar cf "$dir/bundle.tar" -C "$dir/secrets" .
+        validateSecretsArchive "$dir/bundle.tar" >/dev/null 2>&1 && rc=$? || rc=$?
+        (( rc == 0 )) || { echo "valid ./name archive rejected"; return 1; }
+        ;;
+      case3)
+        mkdir -p "$dir/nested/sub"
+        echo "pwned" > "$dir/nested/sub/file"
+        tar cf "$dir/evil.tar" -C "$dir" nested/sub/file
+        validateSecretsArchive "$dir/evil.tar" >/dev/null 2>&1 && rc=$? || rc=$?
+        (( rc != 0 )) || { echo "nested path should be rejected"; return 1; }
+        ;;
+      case4)
+        # Create archive with a dotfile
+        mkdir -p "$dir/secrets"
+        echo "hidden" > "$dir/secrets/.npmrc"
+        tar cf "$dir/evil.tar" -C "$dir/secrets" .npmrc
+        validateSecretsArchive "$dir/evil.tar" >/dev/null 2>&1 && rc=$? || rc=$?
+        (( rc != 0 )) || { echo "dotfile entry should be rejected"; return 1; }
+        ;;
+      case5)
+        echo "not a tar" > "$dir/garbage.tar"
+        validateSecretsArchive "$dir/garbage.tar" >/dev/null 2>&1 && rc=$? || rc=$?
+        (( rc != 0 )) || { echo "corrupt file should be rejected"; return 1; }
         ;;
     esac
   }

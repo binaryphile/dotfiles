@@ -1266,23 +1266,8 @@ restoreSecretsImpl() {
       echo "ERROR: secrets decryption failed."
       return 1
     fi
-    # Validate archive members before extraction.
-    # Each entry must be "." (root) or "./name" where name passes validSecretName.
-    local entry bad=""
-    while IFS= read -r entry; do
-      [[ $entry == . ]] && continue
-      if [[ $entry == ./* ]]; then
-        local name=${entry#./}
-        if ! validSecretName "$name"; then
-          bad="$bad$NL  $entry"
-        fi
-      else
-        bad="$bad$NL  $entry"
-      fi
-    done < <($tar tf "$tmpBundle")
-    if [[ -n "$bad" ]]; then
+    if ! validateSecretsArchive "$tmpBundle"; then
       rm -f "$tmpBundle"
-      echo "ERROR: secrets bundle contains invalid entries:$bad"
       return 1
     fi
     stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX"); SecretsTmpFiles="$tmpBundle $stageDir"
@@ -1406,6 +1391,34 @@ validateHostname() {
 # Shared between encrypt-secrets (producer) and restoreSecrets (consumer).
 validSecretName() {
   [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
+}
+
+# validateSecretsArchive TARFILE — validate archive member names before extraction.
+# Accepts: "." (root entry), "./name" or bare "name" where name passes validSecretName.
+# Rejects: paths, dotfiles, traversal, leading dashes, and anything else.
+# Returns 1 with error message on invalid entries or if tar listing fails.
+validateSecretsArchive() {
+  local tarfile=$1
+  local entries
+  if ! entries=$($tar tf "$tarfile" 2>/dev/null); then
+    echo "ERROR: failed to list secrets bundle contents (corrupt or not a tar)."
+    return 1
+  fi
+  local entry bad=""
+  while IFS= read -r entry; do
+    [[ -z $entry ]] && continue
+    [[ $entry == . || $entry == ./ ]] && continue
+    local name=$entry
+    [[ $name == ./* ]] && name=${name#./}
+    if ! validSecretName "$name"; then
+      bad="$bad$NL  $entry"
+    fi
+  done <<< "$entries"
+  if [[ -n "$bad" ]]; then
+    echo "ERROR: secrets bundle contains invalid entries:$bad"
+    return 1
+  fi
+  return 0
 }
 
 pubFingerprint() {
