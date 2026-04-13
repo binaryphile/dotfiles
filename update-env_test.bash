@@ -688,6 +688,49 @@ test_secretsRoundTrip() {
   [[ $(< "$dir/restored/confluence.key") == "conftoken" ]] || { echo "confluence.key content mismatch"; return 1; }
 }
 
+# test_restoreSecretsTierSelection tests that restoreSecrets skips restore
+# when local secrets exist, and prints setup message when nothing is available.
+# Cache and age tiers are covered by the secrets round-trip integration test.
+# Full tier logic integration testing requires DI for the filesystem layer,
+# which is deferred to a future phase.
+test_restoreSecretsTierSelection() {
+  local -A case1=(
+    [name]='local secrets exist — skip restore'
+  )
+  local -A case2=(
+    [name]='nothing available — print setup message'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    local dir
+    tesht.MktempDir dir || return 128
+    HOME=$dir
+    CrostiniDir="$dir/crostini"
+    mkdir -p "$dir/secrets" "$dir/dotfiles/secrets"
+    machineHostname() { echo testhost; }
+
+    local got rc
+    case $casename in
+      case1)
+        echo "token" > "$dir/secrets/stash.key"
+        got=$(restoreSecrets 2>&1) && rc=$? || rc=$?
+        (( rc == 0 )) || { echo "rc=$rc, want 0"; return 1; }
+        [[ "$got" != *"Restoring"* ]] || { echo "should not restore when local exists"; return 1; }
+        ;;
+      case2)
+        got=$(restoreSecrets 2>&1) && rc=$? || rc=$?
+        (( rc == 0 )) || { echo "rc=$rc, want 0"; return 1; }
+        [[ "$got" == *"No secrets for testhost"* ]] || { echo "should print setup message, got: $got"; return 1; }
+        ;;
+    esac
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecret tests the with-secret wrapper.
 test_withSecret() {
   local dir

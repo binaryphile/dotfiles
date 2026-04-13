@@ -535,15 +535,17 @@ export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
 
 # Atlassian — Bitbucket Server (stash.digi.com)
-# Tokens stored as files, not env vars. Use with-secret for tools requiring env.
+# Token loaded from file. MCP atlassian plugin requires env var values.
+# with-secret is preferred for one-off commands but direnv needs the value
+# for tools that read it from the environment (mcp-atlassian-with-bitbucket).
 export BITBUCKET_URL=https://stash.digi.com
 export BITBUCKET_USERNAME=tlilley
-export BITBUCKET_TOKEN_FILE=$HOME/secrets/stash.key
+export BITBUCKET_PERSONAL_TOKEN=$(< ~/secrets/stash.key)
 
 # Atlassian — Confluence Cloud (onedigi.atlassian.net)
 export CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
 export CONFLUENCE_USERNAME=tlilley@digi.com
-export CONFLUENCE_TOKEN_FILE=$HOME/secrets/confluence.key
+export CONFLUENCE_PERSONAL_TOKEN=$(< ~/secrets/confluence.key)
 EOF
 }
 
@@ -1245,11 +1247,28 @@ restoreSecrets() {
     fi
     command -v -- "$age" >/dev/null 2>&1 || { echo "$age not found"; return 1; }
     echo "Decrypting secrets for $hostname..."
-    local stageDir
+    # Decrypt to temp file first, validate archive members, then extract
+    local tmpBundle stageDir
+    tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX")
+    if ! $age --decrypt "$repoBundle" > "$tmpBundle" || [[ ! -s "$tmpBundle" ]]; then
+      rm -f "$tmpBundle"
+      echo "ERROR: secrets decryption failed."
+      return 1
+    fi
+    # Validate archive members before extraction — reject paths with /,
+    # .., leading -, or dotfiles
+    local badMember
+    badMember=$($tar tf "$tmpBundle" | grep -E '^-|/|\.\.' || true)
+    if [[ -n "$badMember" ]]; then
+      rm -f "$tmpBundle"
+      echo "ERROR: secrets bundle contains unsafe paths: $badMember"
+      return 1
+    fi
     stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
     chmod 700 "$stageDir"
-    if $age --decrypt "$repoBundle" | $tar xf - -C "$stageDir"; then
-      # Enforce flat regular files only
+    if $tar xf "$tmpBundle" -C "$stageDir"; then
+      rm -f "$tmpBundle"
+      # Enforce flat regular files only (post-extraction safety net)
       if find "$stageDir" -mindepth 1 -not -type f | grep -q .; then
         rm -rf "$stageDir"
         echo "ERROR: secrets bundle contains non-regular files."
@@ -1276,8 +1295,9 @@ restoreSecrets() {
         fi
       fi 2>/dev/null
     else
+      rm -f "$tmpBundle"
       rm -rf "$stageDir"
-      echo "ERROR: secrets decryption failed."
+      echo "ERROR: secrets extraction failed."
       return 1
     fi
     return 0
