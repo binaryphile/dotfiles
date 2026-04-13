@@ -263,3 +263,153 @@ test_stream() {
 
   tesht.Run "${!case@}"
 }
+
+## credential bootstrap helpers
+
+# test_validateHostname tests hostname validation rules.
+test_validateHostname() {
+  local -A case1=(
+    [name]='accept simple hostname'
+    [input]='calumny'
+    [wantRc]=0
+  )
+  local -A case2=(
+    [name]='accept hostname with hyphen'
+    [input]='my-host'
+    [wantRc]=0
+  )
+  local -A case3=(
+    [name]='reject penguin'
+    [input]='penguin'
+    [wantRc]=1
+  )
+  local -A case4=(
+    [name]='reject uppercase'
+    [input]='MyHost'
+    [wantRc]=1
+  )
+  local -A case5=(
+    [name]='reject special characters'
+    [input]='host/name'
+    [wantRc]=1
+  )
+  local -A case6=(
+    [name]='reject leading hyphen'
+    [input]='-badhost'
+    [wantRc]=1
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+    local rc
+    validateHostname "$input" >/dev/null 2>&1 && rc=$? || rc=$?
+    (( rc == wantRc )) || {
+      echo "${NL}validateHostname ${input@Q}: rc=$rc, want=$wantRc"
+      return 1
+    }
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_pubFingerprint tests fingerprint extraction from .pub files.
+test_pubFingerprint() {
+  local -A case1=(
+    [name]='extract fingerprint from valid pub file'
+    [wantNonEmpty]=1
+  )
+  local -A case2=(
+    [name]='return empty for missing file'
+    [wantNonEmpty]=0
+  )
+  local -A case3=(
+    [name]='return empty for empty file'
+    [wantNonEmpty]=0
+  )
+  local -A case4=(
+    [name]='return empty for malformed file'
+    [wantNonEmpty]=0
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+    local dir got
+    tesht.MktempDir dir || return 128
+    case $casename in
+      case1)
+        ssh-keygen -t ed25519 -f "$dir/key" -N "" -q
+        got=$(pubFingerprint "$dir/key.pub")
+        ;;
+      case2)
+        got=$(pubFingerprint "$dir/nonexistent.pub")
+        ;;
+      case3)
+        touch "$dir/empty.pub"
+        got=$(pubFingerprint "$dir/empty.pub")
+        ;;
+      case4)
+        echo "not a key" > "$dir/bad.pub"
+        got=$(pubFingerprint "$dir/bad.pub")
+        ;;
+    esac
+    if (( wantNonEmpty )); then
+      [[ -n "$got" ]] || { echo "${NL}pubFingerprint: got empty, want non-empty"; return 1; }
+    else
+      [[ -z "$got" ]] || { echo "${NL}pubFingerprint: got=$got, want empty"; return 1; }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_installKey tests atomic key pair installation.
+test_installKey() {
+  local -A case1=([name]='install private key and pub')
+  local -A case2=([name]='install private key without pub')
+  local -A case3=([name]='fail on missing source')
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+    local dir rc
+    tesht.MktempDir dir || return 128
+    case $casename in
+      case1)
+        ssh-keygen -t ed25519 -f "$dir/src" -N "" -q
+        installKey "$dir/src" "$dir/dst" && rc=$? || rc=$?
+        (( rc == 0 ))          || { echo "${NL}installKey failed: rc=$rc"; return 1; }
+        [[ -f "$dir/dst" ]]     || { echo "${NL}dst missing"; return 1; }
+        [[ -f "$dir/dst.pub" ]] || { echo "${NL}dst.pub missing"; return 1; }
+        local privPerms pubPerms
+        privPerms=$(stat -c %a "$dir/dst")
+        pubPerms=$(stat -c %a "$dir/dst.pub")
+        [[ $privPerms == 600 ]] || { echo "${NL}dst perms=$privPerms, want=600"; return 1; }
+        [[ $pubPerms == 644 ]]  || { echo "${NL}dst.pub perms=$pubPerms, want=644"; return 1; }
+        ;;
+      case2)
+        ssh-keygen -t ed25519 -f "$dir/src" -N "" -q
+        rm -f "$dir/src.pub"
+        installKey "$dir/src" "$dir/dst" && rc=$? || rc=$?
+        (( rc == 0 ))             || { echo "${NL}installKey failed: rc=$rc"; return 1; }
+        [[ -f "$dir/dst" ]]       || { echo "${NL}dst missing"; return 1; }
+        [[ ! -f "$dir/dst.pub" ]] || { echo "${NL}dst.pub should not exist"; return 1; }
+        ;;
+      case3)
+        installKey "$dir/nonexistent" "$dir/dst" && rc=$? || rc=$?
+        (( rc != 0 ))            || { echo "${NL}should fail for missing src"; return 1; }
+        [[ ! -f "$dir/dst" ]]    || { echo "${NL}dst should not exist"; return 1; }
+        ;;
+    esac
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_machineHostname tests hostname resolution returns a valid hostname.
+test_machineHostname() {
+  local got
+  got=$(machineHostname)
+  [[ -n "$got" ]] || { echo "machineHostname returned empty"; return 1; }
+}
