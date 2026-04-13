@@ -14,9 +14,8 @@
           config.allowUnfree = true;
         };
       in {
-        devShells.default = pkgs.mkShell {
+        devShells.default = pkgs.mkShellNoCC {
           buildInputs = with pkgs; [
-            bash
             coreutils
             git
             jq

@@ -63,6 +63,10 @@
   programs.firefox = {
     enable = true;
     policies = {
+      EncryptedMediaExtensions = {
+        Enabled = false;
+        Locked = true;
+      };
       SearchEngines = {
         Default = "DuckDuckGo";
       };

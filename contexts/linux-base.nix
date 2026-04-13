@@ -1,38 +1,13 @@
 { config, pkgs, ... }:
 
 let
-  inherit (pkgs) lib;
-
   # Live symlink to a path under $HOME, preserving edit-in-place semantics
   # for files we want to edit at the source rather than via home-manager
-  # rebuilds. Used for dotfiles (~/dotfiles/...) and the garcon discovery
-  # symlink (~/.nix-profile/...).
+  # rebuilds.
   linkHome = relPath: config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/${relPath}";
   linkDotfile = path: linkHome "dotfiles/${path}";
 
-  # Build a wrapped script binary from a file in scripts/. Substitutes
-  # `@key@` placeholders with the corresponding store paths and wraps the
-  # result with `runtimeInputs` on PATH. Use substitutions for things the
-  # script invokes under sudo (PATH is stripped) and runtimeInputs for
-  # things invoked normally.
-  mkScriptBin = { name, src, substitutions ? {}, runtimeInputs ? [] }:
-    pkgs.stdenv.mkDerivation {
-      inherit name src;
-      dontUnpack = true;
-      nativeBuildInputs = [ pkgs.makeWrapper ];
-      installPhase = let
-        subFlags = lib.concatStringsSep " \\\n        "
-          (lib.mapAttrsToList (k: v: "--replace-fail '@${k}@' '${v}'") substitutions);
-      in ''
-        install -Dm755 $src $out/bin/${name}
-        ${lib.optionalString (substitutions != {}) ''
-          substituteInPlace $out/bin/${name} \
-            ${subFlags}
-        ''}
-        wrapProgram $out/bin/${name} \
-          --prefix PATH : ${lib.makeBinPath runtimeInputs}
-      '';
-    };
+  mkScriptBin = import ./mkScriptBin.nix { inherit pkgs; };
 
   # Wrapper around notify-send that also pushes to ntfy.sh, providing
   # phone notifications for any tool that calls notify-send. The wrapper
@@ -45,28 +20,11 @@ let
     runtimeInputs = [ pkgs.curl pkgs.coreutils ];
   };
 
-  # Yuezk's Rust rewrite of GlobalProtect-openconnect, via upstream flake.
-  # Avoids nixpkgs' old C++/Qt 1.4.9 build that drags in qtwebengine.
-  # NOTE: unpinned because v2.4.4 tag fails to build; main works.
-  gpoc = (builtins.getFlake "github:yuezk/GlobalProtect-openconnect").packages.${pkgs.system}.default;
-
-  # vpn-connect script wrapped with vpn-slice and gpclient store paths
-  # baked in (sudo strips PATH so absolute paths are required) and gpoc
-  # on PATH for the unsudo'd gpauth invocation.
-  vpn-connect = mkScriptBin {
-    name = "vpn-connect";
-    src = ../scripts/vpn-connect;
-    substitutions = {
-      "vpn-slice" = "${pkgs.vpn-slice}/bin/vpn-slice";
-      "gpclient" = "${gpoc}/bin/gpclient";
-    };
-    runtimeInputs = [ gpoc ];
-  };
 in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ notify-send-bridge gpoc vpn-connect ];
+  home.packages = [ notify-send-bridge ];
 
   # Dotfile symlinks migrated from update-env. mkOutOfStoreSymlink keeps
   # them as live symlinks into ~/dotfiles so edits take effect immediately,
@@ -84,37 +42,11 @@ in
     ".config/ranger/rc.conf".source = linkDotfile "ranger/rc.conf";
     ".config/ranger/rifle.conf".source = linkDotfile "ranger/rifle.conf";
     ".config/ranger/scope.sh".source = linkDotfile "ranger/scope.sh";
-
-
-    # On Crostini, ChromeOS host Chrome dispatches custom URL schemes to
-    # in-container handlers via garcon, but garcon only scans the standard
-    # XDG user dir (~/.local/share/applications/), NOT ~/.nix-profile/share/.
-    # Symlink the home-manager-installed gpgui.desktop into the standard
-    # location so garcon picks it up.
-    ".local/share/applications/gpgui.desktop".source =
-      linkHome ".nix-profile/share/applications/gpgui.desktop";
-  };
-
-  # Register gpclient as the URL scheme handler for globalprotectcallback://.
-  # gpauth's external-browser SAML flow returns a globalprotectcallback: URL;
-  # the OS hands it to gpclient launch-gui, which TCP-connects to gpauth's
-  # listener via /tmp/gpcallback.port to deliver the cookie. Without this
-  # registration the browser silently drops the URL and gpauth hangs forever.
-  xdg.desktopEntries.gpgui = {
-    name = "GP Connect";
-    comment = "A GUI client for GlobalProtect VPN";
-    genericName = "GlobalProtect VPN Client";
-    categories = [ "Network" "Dialup" ];
-    exec = "${gpoc}/bin/gpclient launch-gui %u";
-    mimeType = [ "x-scheme-handler/globalprotectcallback" ];
-    icon = "gpgui";
-    terminal = false;
   };
 
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
       # Preserved from existing ~/.config/mimeapps.list (Claude Code deep links).
       "x-scheme-handler/claude-cli" = [ "claude-code-url-handler.desktop" ];
     };

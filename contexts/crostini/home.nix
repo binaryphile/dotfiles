@@ -1,9 +1,39 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 let
-  # Live symlink helper, mirroring linux-base.nix's pattern.
-  linkDotfile = path:
-    config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/${path}";
+  # Live symlink helpers, mirroring linux-base.nix's pattern.
+  linkHome = relPath:
+    config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/${relPath}";
+  linkDotfile = path: linkHome "dotfiles/${path}";
+
+  # Skip VPN packages during update-env stage 1 to avoid the gpoc Rust
+  # compilation on the critical path to a working shell. Stage 2 and
+  # normal `home-manager switch` include them. Requires --impure
+  # (already the case for crostini due to builtins.getFlake).
+  withVpn = builtins.getEnv "DOTFILES_STAGE1" != "1";
+
+  mkScriptBin = import ../mkScriptBin.nix { inherit pkgs; };
+
+  # Yuezk's Rust rewrite of GlobalProtect-openconnect, via upstream flake.
+  # Avoids nixpkgs' old C++/Qt 1.4.9 build that drags in qtwebengine.
+  # NOTE: unpinned because v2.4.4 tag fails to build; main works.
+  # Lives here (not linux-base) because builtins.getFlake requires --impure,
+  # which NixOS's nixos-rebuild doesn't use. Crostini's home-manager switch
+  # runs with --impure.
+  gpoc = (builtins.getFlake "github:yuezk/GlobalProtect-openconnect").packages.${pkgs.system}.default;
+
+  # vpn-connect script wrapped with vpn-slice and gpclient store paths
+  # baked in (sudo strips PATH so absolute paths are required) and gpoc
+  # on PATH for the unsudo'd gpauth invocation.
+  vpn-connect = mkScriptBin {
+    name = "vpn-connect";
+    src = ../scripts/vpn-connect;
+    substitutions = {
+      "vpn-slice" = "${pkgs.vpn-slice}/bin/vpn-slice";
+      "gpclient" = "${gpoc}/bin/gpclient";
+    };
+    runtimeInputs = [ gpoc ];
+  };
 
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
   # it via garcon's container->host localhost forwarding. Selectively used
@@ -70,7 +100,7 @@ in
     tinyproxy
     wl-clipboard
     xmlstarlet
-  ];
+  ] ++ lib.optionals withVpn [ gpoc vpn-connect ];
 
   home.file = {
     # PAC file served by darkhttpd. Lives in its own directory so the
@@ -83,6 +113,35 @@ in
     ".local/bin/panel".source                = linkDotfile "scripts/panel";
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
+
+  } // lib.optionalAttrs withVpn {
+    # ChromeOS host Chrome dispatches custom URL schemes to in-container
+    # handlers via garcon, but garcon only scans the standard XDG user dir
+    # (~/.local/share/applications/), NOT ~/.nix-profile/share/. Symlink the
+    # home-manager-installed gpgui.desktop into the standard location.
+    ".local/share/applications/gpgui.desktop".source =
+      linkHome ".nix-profile/share/applications/gpgui.desktop";
+  };
+
+  # Register gpclient as the URL scheme handler for globalprotectcallback://.
+  xdg.desktopEntries = lib.mkIf withVpn {
+    gpgui = {
+      name = "GP Connect";
+      comment = "A GUI client for GlobalProtect VPN";
+      genericName = "GlobalProtect VPN Client";
+      categories = [ "Network" "Dialup" ];
+      exec = "${gpoc}/bin/gpclient launch-gui %u";
+      mimeType = [ "x-scheme-handler/globalprotectcallback" ];
+      icon = "gpgui";
+      terminal = false;
+    };
+  };
+
+  xdg.mimeApps = {
+    enable = true;
+    defaultApplications = lib.optionalAttrs withVpn {
+      "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
+    };
   };
 
   # tinyproxy: forward HTTP proxy for VPN-bound traffic. Only invoked by
