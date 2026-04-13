@@ -1,0 +1,26 @@
+#!/usr/bin/awk -f
+
+# load-sparkline — render /proc/loadavg as a 3-bar sparkline (1m, 5m, 15m).
+#
+# Usage: awk -v nCpu=N -f load-sparkline /proc/loadavg
+#   nCpu: number of CPUs (from nproc). Required.
+#
+# Output: 3-character sparkline string, no newline prefix.
+# Bar 6 = 2×nCpu (concerned line). Bars 7-8 give headroom past that.
+#
+# Shared by: scripts/panel (tmux status bar) and
+#            nixos-config/home/sway/waybar.nix (waybar custom/load).
+
+{
+  bars[1]="▁"; bars[2]="▂"; bars[3]="▃"; bars[4]="▄"
+  bars[5]="▅"; bars[6]="▆"; bars[7]="▇"; bars[8]="█"
+  text = ""
+  scale = 2 * nCpu
+  for (i = 1; i <= 3; i++) {
+    idx = int($i * 5 / scale) + 1
+    if (idx > 8) idx = 8
+    if (idx < 1) idx = 1
+    text = text bars[idx]
+  }
+  print text
+}

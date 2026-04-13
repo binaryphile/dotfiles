@@ -3,34 +3,26 @@
 # Only settings that differ from the upstream defaults are listed.
 # See: https://liquidprompt.readthedocs.io/en/stable/config.html
 
-# Theme overrides (marks, layout — colors use defaults).
-# Sourced from init.bash AFTER liquidprompt because lp_activate()
-# applies the default theme, overriding variables set before it.
-
 # Behavior
 LP_USER_ALWAYS=0              # hide user when same as logged-in user (default: 1)
 LP_ENABLE_SUDO=1              # show sudo credential cache indicator (default: 0)
 LP_ENABLE_SSH_COLORS=1        # color hostname by connection type (default: 0)
 LP_ENABLE_VCS_ROOT=1          # show VCS info as root (default: 0)
-LP_RUNTIME_THRESHOLD=20       # seconds before showing runtime (default: 2)
-LP_DISPLAY_VALUES_AS_PERCENTS=1  # show temp as percentage (default: 0)
-
 # Load shown as percentage of nproc — see liquid.theme override.
 LP_ENABLE_LOAD=1
 
-# Disabled features — either unused VCS or not needed on Crostini.
+# Disabled — unused VCS backends.
 LP_ENABLE_SVN=0
 LP_ENABLE_HG=0
 LP_ENABLE_FOSSIL=0
 LP_ENABLE_BZR=0
+
+# Disabled — not needed.
 LP_ENABLE_RUNTIME=0
 
-# Disabled — /proc/meminfo unreliable on Crostini after ChromeOS
-# sleep/resume (division-by-zero). Panel monitors memory instead.
+# Disabled — status bar (waybar/panel) monitors these instead.
+LP_ENABLE_TEMP=0
 LP_ENABLE_RAM=0
-
-# Disabled — Crostini exposes ChromeOS battery via sysfs but reports
-# stale state. Panel has its own battery widget.
 LP_ENABLE_BATT=0
 
 # New-in-2.2.1 features disabled for version parity.
