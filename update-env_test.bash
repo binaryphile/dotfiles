@@ -598,6 +598,57 @@ test_sshKeyAction() {
   tesht.Run ${!case@}
 }
 
+# test_ageRoundTrip tests that a key pair can be encrypted to an age bundle
+# and decrypted back, with the public key fingerprint preserved.
+# Uses age recipient mode (not passphrase) to avoid TTY requirement.
+# This is the core recovery path — if this breaks, powerwash recovery fails.
+test_ageRoundTrip() {
+  command -v age >/dev/null || { echo "age not installed, skipping"; return 0; }
+  command -v age-keygen >/dev/null || { echo "age-keygen not installed, skipping"; return 0; }
+
+  local dir
+  tesht.MktempDir dir || return 128
+
+  # Generate an age keypair for test encryption (avoids TTY passphrase prompt)
+  age-keygen -o "$dir/age.key" 2>"$dir/age.pub.raw"
+  local ageRecipient
+  ageRecipient=$(grep '^age1' "$dir/age.pub.raw" || age-keygen -y "$dir/age.key")
+
+  # Generate an SSH key pair
+  ssh-keygen -t ed25519 -f "$dir/id_ed25519" -N "" -q
+
+  local origFp
+  origFp=$(pubFingerprint "$dir/id_ed25519.pub")
+  [[ -n "$origFp" ]] || { echo "failed to get original fingerprint"; return 1; }
+
+  # Bundle and encrypt (same flow as sshKeyEncryptToRepo, but recipient mode)
+  mkdir -p "$dir/stage"
+  cp "$dir/id_ed25519" "$dir/stage/id_ed25519"
+  cp "$dir/id_ed25519.pub" "$dir/stage/id_ed25519.pub"
+
+  tar cf - -C "$dir/stage" . | age -r "$ageRecipient" -o "$dir/bundle.age" || {
+    echo "age encryption failed"; return 1
+  }
+  [[ -s "$dir/bundle.age" ]] || { echo "empty age bundle"; return 1; }
+
+  # Decrypt and extract (same flow as sshKeyDecryptAndInstall)
+  mkdir -p "$dir/restored"
+  age -d -i "$dir/age.key" "$dir/bundle.age" | tar xf - -C "$dir/restored" || {
+    echo "age decryption failed"; return 1
+  }
+
+  # Verify restored key pair
+  [[ -f "$dir/restored/id_ed25519" ]]     || { echo "restored private key missing"; return 1; }
+  [[ -f "$dir/restored/id_ed25519.pub" ]] || { echo "restored public key missing"; return 1; }
+
+  local restoredFp
+  restoredFp=$(pubFingerprint "$dir/restored/id_ed25519.pub")
+  [[ "$origFp" == "$restoredFp" ]] || {
+    echo "fingerprint mismatch: orig=$origFp restored=$restoredFp"
+    return 1
+  }
+}
+
 # test_machineHostname tests hostname resolution returns a valid hostname.
 test_machineHostname() {
   local got

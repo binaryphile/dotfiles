@@ -41,13 +41,27 @@ sshKeyEpilogue() {
   case $SshKeyStatus in
     generated)
       echo
-      echo "=== NEW SSH KEY GENERATED ==="
+      echo "=== NEW SSH KEY GENERATED AND BACKED UP ==="
       echo "Public key: ~/.ssh/id_ed25519.pub"
       [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
       echo "Register this key with: GitHub, Codeberg, Bitbucket"
       echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(machineHostname)' && git push"
       echo "Until registered, private repos will be skipped."
+      ;;
+    generated_local_only)
+      echo
+      echo "=== NEW SSH KEY GENERATED (LOCAL ONLY — NOT BACKED UP) ==="
+      echo "Public key: ~/.ssh/id_ed25519.pub"
+      [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
+      echo
+      echo "WARNING: Key exists locally but is NOT encrypted in the repo."
+      echo "This key WILL BE LOST on wipe. To back up, run:"
+      echo "  age -p -o ~/dotfiles/ssh/id_ed25519_$(machineHostname).age ~/.ssh/id_ed25519"
+      echo "  cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$(machineHostname).pub"
+      echo "  cd ~/dotfiles && git add ssh/ && git commit && git push"
+      echo
+      echo "Register this key with: GitHub, Codeberg, Bitbucket"
       ;;
     restored)
       echo
@@ -1121,8 +1135,11 @@ sshKeyGenerate() {
   fi
   chmod 644 "$localKey.pub"
 
+  local backedUp=0
   if command -v age >/dev/null; then
-    if ! sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
+    if sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
+      backedUp=1
+    else
       echo "WARNING: key generated locally but NOT backed up to repo. Will be lost on wipe."
     fi
   fi
@@ -1132,7 +1149,11 @@ sshKeyGenerate() {
     installKey "$localKey" "$cacheKey"
   fi 2>/dev/null || echo "WARNING: mount cache write failed"
 
-  SshKeyStatus=generated
+  if (( backedUp )); then
+    SshKeyStatus=generated
+  else
+    SshKeyStatus=generated_local_only
+  fi
 }
 
 restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
