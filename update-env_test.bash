@@ -407,6 +407,128 @@ test_installKey() {
   tesht.Run ${!case@}
 }
 
+# test_sshKeyAction tests the pure decision function for SSH key restore.
+# This is the core business logic — no I/O, no filesystem, just decisions.
+test_sshKeyAction() {
+  local -A case1=(
+    [name]='local key matches repo — present'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=1 [LocalFp]='SHA256:abc'
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='present'
+  )
+  local -A case2=(
+    [name]='local key mismatches repo — collision'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=1 [LocalFp]='SHA256:xyz'
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='collision'
+  )
+  local -A case3=(
+    [name]='local key exists but no pub — backup and restore'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=1 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='backup_and_restore'
+  )
+  local -A case4=(
+    [name]='local key exists, no repo pair — capture'
+    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
+    [LocalExists]=1 [LocalFp]='SHA256:abc'
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='capture_to_repo'
+  )
+  local -A case5=(
+    [name]='no local, cache matches repo — restore from cache'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=1 [CacheFp]='SHA256:abc' [HasTty]=1 [HasAge]=1
+    [want]='restore_from_cache'
+  )
+  local -A case6=(
+    [name]='no local, stale cache — restore from age'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=1 [CacheFp]='SHA256:old' [HasTty]=1 [HasAge]=1
+    [want]='restore_from_age'
+  )
+  local -A case7=(
+    [name]='no local, no cache, has age — restore from age'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='restore_from_age'
+  )
+  local -A case8=(
+    [name]='nothing anywhere, has tty — generate'
+    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='generate'
+  )
+  local -A case9=(
+    [name]='nothing anywhere, no tty — missing noninteractive'
+    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=0 [HasAge]=1
+    [want]='missing_noninteractive'
+  )
+  local -A case10=(
+    [name]='age without pub — error'
+    [RepoHasAge]=1 [RepoHasPub]=0 [RepoFp]=''
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='error:repo has .age but no .pub'
+  )
+  local -A case11=(
+    [name]='pub without age — error'
+    [RepoHasAge]=0 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='error:repo has .pub but no .age'
+  )
+  local -A case12=(
+    [name]='malformed repo pub — error'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]=''
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=1
+    [want]='error:repo .pub is malformed'
+  )
+  local -A case13=(
+    [name]='repo has age, no tty — missing noninteractive'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=0 [HasAge]=1
+    [want]='missing_noninteractive'
+  )
+  local -A case14=(
+    [name]='repo has age, no age command — error'
+    [RepoHasAge]=1 [RepoHasPub]=1 [RepoFp]='SHA256:abc'
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=0 [CacheFp]='' [HasTty]=1 [HasAge]=0
+    [want]='error:age not found'
+  )
+  local -A case15=(
+    [name]='cache valid, no repo — restore from cache'
+    [RepoHasAge]=0 [RepoHasPub]=0 [RepoFp]=''
+    [LocalExists]=0 [LocalFp]=''
+    [CacheExists]=1 [CacheFp]='SHA256:abc' [HasTty]=1 [HasAge]=1
+    [want]='restore_from_cache'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    local got
+    got=$(sshKeyAction)
+
+    tesht.AssertGot "$got" "$want"
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_machineHostname tests hostname resolution returns a valid hostname.
 test_machineHostname() {
   local got

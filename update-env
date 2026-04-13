@@ -799,6 +799,53 @@ withCleanupTrap() {
   return $rc
 }
 
+# sshKeyAction — pure decision function for SSH key restore.
+# Inputs via named variables (caller sets before calling):
+#   RepoHasAge RepoHasPub RepoFp LocalExists LocalFp
+#   CacheExists CacheFp HasTty HasAge
+# Output: prints one of:
+#   present | collision | backup_and_restore | capture_to_repo
+#   restore_from_cache | restore_from_age | generate
+#   missing_noninteractive | error:<message>
+sshKeyAction() {
+  # Pair invariant
+  if (( RepoHasAge && !RepoHasPub )); then echo "error:repo has .age but no .pub"; return; fi
+  if (( RepoHasPub && !RepoHasAge )); then echo "error:repo has .pub but no .age"; return; fi
+  if (( RepoHasPub )) && [[ -z "$RepoFp" ]]; then echo "error:repo .pub is malformed"; return; fi
+
+  # Tier 1: local key exists
+  if (( LocalExists )); then
+    if [[ -n "$RepoFp" ]]; then
+      if [[ -n "$LocalFp" && "$LocalFp" == "$RepoFp" ]]; then echo present; return; fi
+      if [[ -n "$LocalFp" && "$LocalFp" != "$RepoFp" ]]; then echo collision; return; fi
+      # LocalFp empty = unverifiable
+      echo backup_and_restore; return
+    else
+      echo capture_to_repo; return
+    fi
+  fi
+
+  # Tier 2: mount cache
+  if (( CacheExists )) && [[ -n "$CacheFp" ]]; then
+    if [[ -n "$RepoFp" && "$CacheFp" != "$RepoFp" ]]; then
+      : # stale, fall through
+    else
+      echo restore_from_cache; return
+    fi
+  fi
+
+  # Tier 3: age decrypt
+  if (( RepoHasAge )); then
+    if (( !HasTty )); then echo missing_noninteractive; return; fi
+    if (( !HasAge )); then echo "error:age not found"; return; fi
+    echo restore_from_age; return
+  fi
+
+  # Tier 4: generate
+  if (( !HasTty )); then echo missing_noninteractive; return; fi
+  echo generate
+}
+
 restoreSshKeyImpl() {
   local hostname
   hostname=$(machineHostname)
@@ -813,149 +860,178 @@ restoreSshKeyImpl() {
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   rm -f "$CrostiniDir/np_id_ed25519" "$CrostiniDir/np_id_ed25519.pub"
 
-  # Pair invariant: both or neither in repo
-  if [[ -f "$repoAge" && ! -f "$repoPub" ]]; then
-    echo "ERROR: repo has .age but no .pub for $hostname."; return 1
-  fi
-  if [[ -f "$repoPub" && ! -f "$repoAge" ]]; then
-    echo "ERROR: repo has .pub but no .age for $hostname."; return 1
-  fi
+  # Classify state for decision function
+  local RepoHasAge=0 RepoHasPub=0 RepoFp=""
+  local LocalExists=0 LocalFp=""
+  local CacheExists=0 CacheFp=""
+  local HasTty=0 HasAge=0
 
-  local repoFp=""
-  if [[ -f "$repoPub" ]]; then
-    repoFp=$(pubFingerprint "$repoPub")
-    [[ -n "$repoFp" ]] || { echo "ERROR: repo .pub is malformed: $repoPub"; return 1; }
-  fi
+  [[ -f "$repoAge" ]] && RepoHasAge=1
+  [[ -f "$repoPub" ]] && RepoHasPub=1
+  (( RepoHasPub )) && RepoFp=$(pubFingerprint "$repoPub")
+  [[ -f "$localKey" && -s "$localKey" ]] && LocalExists=1
+  (( LocalExists )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]] && LocalFp=$(pubFingerprint "$localKey.pub")
+  [[ -f "$cacheKey" && -f "$cacheKey.pub" ]] && CacheExists=1
+  (( CacheExists )) && CacheFp=$(pubFingerprint "$cacheKey.pub")
+  [[ -t 0 ]] && HasTty=1
+  command -v age >/dev/null && HasAge=1
 
-  # Tier 1: local key exists
-  if [[ -f "$localKey" && -s "$localKey" ]]; then
-    local localFp=""
-    [[ -f "$localKey.pub" && -s "$localKey.pub" ]] && localFp=$(pubFingerprint "$localKey.pub")
+  local action
+  action=$(sshKeyAction)
 
-    if [[ -n "$repoFp" ]]; then
-      if [[ -n "$localFp" && "$localFp" == "$repoFp" ]]; then
-        chmod 600 "$localKey"
-        if [[ -d "$CrostiniDir" ]]; then
-          mkdir -p "$cacheDir" 2>/dev/null
-          installKey "$localKey" "$cacheKey"
-        fi 2>/dev/null || true
-        SshKeyStatus=present
-        return
-      elif [[ -n "$localFp" && "$localFp" != "$repoFp" ]]; then
-        echo "ERROR: hostname collision — local ($localFp) != repo ($repoFp)."
-        SshKeyStatus=collision
-        return 1
-      else
-        echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
-        local bakFile
-        bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; SshKeyStatus=present; return 1; }
-        echo "  Backing up to $bakFile before restoring from repo."
-        if ! cp "$localKey" "$bakFile" || ! chmod 600 "$bakFile"; then
-          echo "ERROR: backup failed. Will not overwrite local key."
-          SshKeyStatus=present
-          return 1
-        fi
-        [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
-        # Fall through to tier 2/3
-      fi
-    else
-      # No repo pair — local key not backed up yet
+  # Execute the action
+  case $action in
+    error:*)
+      echo "ERROR: ${action#error:}"
+      return 1
+      ;;
+
+    present)
       chmod 600 "$localKey"
-      if [[ -t 0 ]] && command -v age >/dev/null && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
+      if [[ -d "$CrostiniDir" ]]; then
+        mkdir -p "$cacheDir" 2>/dev/null
+        installKey "$localKey" "$cacheKey"
+      fi 2>/dev/null || true
+      SshKeyStatus=present
+      ;;
+
+    collision)
+      echo "ERROR: hostname collision — local ($LocalFp) != repo ($RepoFp)."
+      SshKeyStatus=collision
+      return 1
+      ;;
+
+    backup_and_restore)
+      echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
+      local bakFile
+      bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; SshKeyStatus=present; return 1; }
+      echo "  Backing up to $bakFile before restoring from repo."
+      if ! cp "$localKey" "$bakFile" || ! chmod 600 "$bakFile"; then
+        echo "ERROR: backup failed. Will not overwrite local key."
+        SshKeyStatus=present
+        return 1
+      fi
+      [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
+      # Re-evaluate: try cache, then age, then fail
+      if (( CacheExists )) && [[ -n "$CacheFp" ]] && { [[ -z "$RepoFp" ]] || [[ "$CacheFp" == "$RepoFp" ]]; }; then
+        echo "Restoring SSH key from mount cache ($hostname)..."
+        if installKey "$cacheKey" "$localKey"; then
+          SshKeyStatus=restored
+          return
+        fi
+      fi
+      if (( RepoHasAge && HasTty && HasAge )); then
+        sshKeyDecryptAndInstall "$repoAge" "$repoPub" "$RepoFp" "$localKey" "$cacheDir" "$cacheKey"
+        return
+      fi
+      echo "ERROR: cannot restore key (no cache or age available after backup)."
+      return 1
+      ;;
+
+    capture_to_repo)
+      chmod 600 "$localKey"
+      if (( HasTty && HasAge )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
         local pubFp
         pubFp=$(pubFingerprint "$localKey.pub")
         if [[ -z "$pubFp" ]]; then
           echo "WARNING: local .pub is malformed. Cannot capture to repo."
           echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
         else
-          echo "Local key exists but no repo backup for $hostname. Encrypting..."
-          mkdir -p "$(dirname "$repoAge")"
-          local agetmp stageDir
-          stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
-          cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
-          cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
-          echo "(Repo encryption passphrase)"
-          agetmp=$(mktemp "$repoAge.XXXXXX")
-          if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
-            mv "$agetmp" "$repoAge"
-            cp "$localKey.pub" "$repoPub"
-            echo "Backed up. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
-          else
-            rm -f "$agetmp"
-            echo "WARNING: encryption failed. Key not backed up to repo."
-          fi
-          rm -rf "$stageDir"; SshStageDir=""
+          sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"
         fi
       fi
       SshKeyStatus=present
-      return
-    fi
-  fi
+      ;;
 
-  # Tier 2: mount cache (namespaced by hostname)
-  if [[ -f "$cacheKey" && -f "$cacheKey.pub" ]]; then
-    local cacheFp
-    cacheFp=$(pubFingerprint "$cacheKey.pub")
-    if [[ -n "$cacheFp" ]]; then
-      if [[ -n "$repoFp" && "$cacheFp" != "$repoFp" ]]; then
-        echo "Mount cache stale. Falling through to age decrypt."
-      else
-        echo "Restoring SSH key from mount cache ($hostname)..."
-        if ! installKey "$cacheKey" "$localKey"; then
-          echo "WARNING: cache restore failed. Falling through to age decrypt."
-        else
-          SshKeyStatus=restored
+    restore_from_cache)
+      echo "Restoring SSH key from mount cache ($hostname)..."
+      if ! installKey "$cacheKey" "$localKey"; then
+        echo "WARNING: cache restore failed. Falling through to age decrypt."
+        if (( RepoHasAge && HasTty && HasAge )); then
+          sshKeyDecryptAndInstall "$repoAge" "$repoPub" "$RepoFp" "$localKey" "$cacheDir" "$cacheKey"
           return
         fi
-      fi
-    fi
-  fi
-
-  # Tier 3: age decrypt (powerwash recovery)
-  if [[ -f "$repoAge" ]]; then
-    if [[ ! -t 0 ]]; then
-      echo "SSH key encrypted in repo but no TTY."
-      SshKeyStatus=missing_noninteractive
-      return 0
-    fi
-    command -v age >/dev/null || { echo "age not found"; return 1; }
-    echo "Decrypting SSH key for $hostname..."
-    local stageDir
-    stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
-    chmod 700 "$stageDir"
-    if age --decrypt "$repoAge" | tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
-      local stagedFp
-      stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
-      if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
-        rm -rf "$stageDir"; SshStageDir=""
-        echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair."
+        echo "ERROR: no fallback available."
         return 1
       fi
-      if ! installKey "$stageDir/id_ed25519" "$localKey"; then
-        rm -rf "$stageDir"; SshStageDir=""
-        echo "ERROR: failed to install decrypted key."
-        return 1
-      fi
-      rm -rf "$stageDir"; SshStageDir=""
-      if [[ -d "$CrostiniDir" ]]; then
-        mkdir -p "$cacheDir" 2>/dev/null
-        installKey "$localKey" "$cacheKey"
-      fi 2>/dev/null || echo "WARNING: mount cache write failed"
       SshKeyStatus=restored
-    else
+      ;;
+
+    restore_from_age)
+      sshKeyDecryptAndInstall "$repoAge" "$repoPub" "$RepoFp" "$localKey" "$cacheDir" "$cacheKey"
+      return
+      ;;
+
+    generate)
+      sshKeyGenerate "$localKey" "$repoAge" "$repoPub" "$hostname" "$cacheDir" "$cacheKey"
+      return
+      ;;
+
+    missing_noninteractive)
+      echo "No SSH key available and no TTY. Run update-env interactively."
+      SshKeyStatus=missing_noninteractive
+      ;;
+  esac
+}
+
+# sshKeyDecryptAndInstall — tier 3 implementation: decrypt .age, validate, install, cache.
+sshKeyDecryptAndInstall() {
+  local repoAge=$1 repoPub=$2 repoFp=$3 localKey=$4 cacheDir=$5 cacheKey=$6
+  echo "Decrypting SSH key..."
+  local stageDir
+  stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
+  chmod 700 "$stageDir"
+  if age --decrypt "$repoAge" | tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
+    local stagedFp
+    stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
+    if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
       rm -rf "$stageDir"; SshStageDir=""
-      echo "ERROR: age decryption failed."
+      echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair."
       return 1
     fi
-    return
+    if ! installKey "$stageDir/id_ed25519" "$localKey"; then
+      rm -rf "$stageDir"; SshStageDir=""
+      echo "ERROR: failed to install decrypted key."
+      return 1
+    fi
+    rm -rf "$stageDir"; SshStageDir=""
+    if [[ -d "$CrostiniDir" ]]; then
+      mkdir -p "$cacheDir" 2>/dev/null
+      installKey "$localKey" "$cacheKey"
+    fi 2>/dev/null || echo "WARNING: mount cache write failed"
+    SshKeyStatus=restored
+  else
+    rm -rf "$stageDir"; SshStageDir=""
+    echo "ERROR: age decryption failed."
+    return 1
   fi
+}
 
-  # Tier 4: generate (first-time machine)
-  if [[ ! -t 0 ]]; then
-    echo "No SSH key for $hostname and no TTY."
-    SshKeyStatus=missing_noninteractive
-    return 0
+# sshKeyEncryptToRepo — encrypt local key pair to repo.
+sshKeyEncryptToRepo() {
+  local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4
+  echo "Local key exists but no repo backup for $hostname. Encrypting..."
+  mkdir -p "$(dirname "$repoAge")"
+  local agetmp stageDir
+  stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
+  cp "$localKey" "$stageDir/id_ed25519" && chmod 600 "$stageDir/id_ed25519"
+  cp "$localKey.pub" "$stageDir/id_ed25519.pub" && chmod 644 "$stageDir/id_ed25519.pub"
+  echo "(Repo encryption passphrase)"
+  agetmp=$(mktemp "$repoAge.XXXXXX")
+  if tar cf - -C "$stageDir" . | age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
+    mv "$agetmp" "$repoAge"
+    cp "$localKey.pub" "$repoPub"
+    echo "Backed up. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
+  else
+    rm -f "$agetmp"
+    echo "WARNING: encryption failed. Key not backed up to repo."
   fi
+  rm -rf "$stageDir"; SshStageDir=""
+}
+
+# sshKeyGenerate — tier 4 implementation: generate new key, encrypt to repo, cache.
+sshKeyGenerate() {
+  local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4 cacheDir=$5 cacheKey=$6
   command -v ssh-keygen >/dev/null || { echo "ssh-keygen not found"; return 1; }
   echo "No SSH key for $hostname. Generating..."
   echo "(SSH key passphrase — protects the key on disk)"
