@@ -352,7 +352,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions — Crostini and SSH into
 | Threshold (≥90%) | cpu, mem, disk | Appear in white when threshold crossed |
 | SSH connections | ssh | Hidden when no inbound connections |
 | Battery | bat | Hidden above 10%; warning [10,5%) shows "H:MM" in partial color; critical [5,0%] shows "N% bat" in white |
-| Always shown (non-widget) | clock, hostname | Follow hardware group |
+| Always shown (non-widget) | clock (click for date), hostname | Follow hardware group |
 | Desktop-only (not in panel) | backlight, vol, temp, tray, fw | Handled by waybar on NixOS |
 
 **State coloring** (mirrors waybar.css): on = hidden (health) or white (always-shown); light gray = partial; dark gray = off; amber = unknown.

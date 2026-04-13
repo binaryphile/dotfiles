@@ -28,6 +28,7 @@
 #   mem       memory usage, visible at 90%+           (no click)
 #   disk      root disk usage, visible at 90%+        (no click)
 #   bat       battery time/pct, visible at 10%-       (no click)
+#   clock     time (click shows date for 2s)          (click: show date)
 #   healthsep dynamic separator for health group      (no click)
 #   hostname  human-friendly hostname                 (no click)
 #
@@ -384,6 +385,25 @@ batModule() {
   fg "$ColorPartial" "$(printf '%d:%02d' "$hours" "$m")"
 }
 
+# clockModule shows the time. Clicking toggles date display for 2 seconds.
+# Default: " HH:MM". After click: " MM/DD" for 2s, then reverts.
+# The click handler touches a state file and forces a status refresh;
+# a background sleep removes the file and refreshes again.
+clockModule() {
+  local stateFile=$State/clock-date
+  if [[ -e $stateFile ]]; then
+    local now mtime
+    now=$(date +%s)
+    mtime=$(stat -c %Y "$stateFile")
+    if (( now - mtime < 2 )); then
+      printf ' %s' "$(date '+%m/%d')"
+      return
+    fi
+    rm -f "$stateFile"
+  fi
+  printf ' %s' "$(date '+%H:%M')"
+}
+
 # hostnameCmd prints a human-friendly hostname. On Crostini, reads from
 # ~/crostini/hostname (the real machine name) since the container hostname
 # is always "penguin".
@@ -434,6 +454,12 @@ clickModule() {
     bitbucket) xdg-open https://bitbucket.org/ ;;
     teams)     xdg-open https://teams.microsoft.com/ ;;
     ntfy)      xdg-open https://ntfy.sh/ ;;
+    clock)
+      touch "$State/clock-date"
+      tmux refresh-client -S
+      ( sleep 2; rm -f "$State/clock-date"; tmux refresh-client -S ) &
+      disown
+      ;;
     ssh)       tmux display-popup -E -h 60% -w 80% 'ss -tn sport = :22; echo; read -n1 -p "press any key "' ;;
     load)      tmux display-popup -E -h 60% -w 80% 'top -b -n1 | head -30; echo; read -n1 -p "press any key "' ;;
     *)         tmux display-message "panel: unknown click target '${m}'" ;;
@@ -486,8 +512,8 @@ layoutCmd() {
     done
   fi
   local nSeps=$(( healthVisible ? 3 : 2 ))
-  # clock: " MM/DD HH:MM" = 12, hostname: " name" = 1 + length
-  local rightWidth=$(( nWidgets * 4 + nSeps * 2 + 12 + ${#hostname} + 1 ))
+  # clock: " HH:MM" = 6, hostname: " name" = 1 + length
+  local rightWidth=$(( nWidgets * 4 + nSeps * 2 + 6 + ${#hostname} + 1 ))
 
   local current
   current=$(tmux show-option -v status 2>/dev/null)
@@ -526,6 +552,7 @@ main() {
     mem)        memModule ;;
     disk)       diskModule ;;
     bat)        batModule ;;
+    clock)      clockModule ;;
     healthsep)  healthSep ;;
     hostname)   hostnameCmd ;;
     can-load)   canLoadCmd ;;
@@ -533,7 +560,7 @@ main() {
     click)      clickModule "$@" ;;
     layout)     layoutCmd ;;
     *)
-      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|remotemanager|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|bat|healthsep|hostname|can-load|poll|layout|click <m>}" >&2
+      echo "usage: panel {era|vpn|dm1|stash|gitlab|nexus|remotemanager|codeberg|bitbucket|teams|ntfy|ssh|load|cpu|mem|disk|bat|clock|healthsep|hostname|can-load|poll|layout|click <m>}" >&2
       exit 1
       ;;
   esac
