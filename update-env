@@ -1267,14 +1267,22 @@ restoreSecretsImpl() {
       return 1
     fi
     # Validate archive members before extraction.
-    # Allowlist: entries must be either "." (directory root) or "./name" where
-    # name is a non-dot, non-path, printable-ASCII filename. Reject everything else.
-    local badMember
-    badMember=$($tar tf "$tmpBundle" | grep -vE '^\.$|^\./[a-zA-Z0-9][a-zA-Z0-9._-]*$' || true)
-    if [[ -n "$badMember" ]]; then
+    # Each entry must be "." (root) or "./name" where name passes validSecretName.
+    local entry bad=""
+    while IFS= read -r entry; do
+      [[ $entry == . ]] && continue
+      if [[ $entry == ./* ]]; then
+        local name=${entry#./}
+        if ! validSecretName "$name"; then
+          bad="$bad$NL  $entry"
+        fi
+      else
+        bad="$bad$NL  $entry"
+      fi
+    done < <($tar tf "$tmpBundle")
+    if [[ -n "$bad" ]]; then
       rm -f "$tmpBundle"
-      echo "ERROR: secrets bundle contains unsafe entries:"
-      echo "$badMember"
+      echo "ERROR: secrets bundle contains invalid entries:$bad"
       return 1
     fi
     stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX"); SecretsTmpFiles="$tmpBundle $stageDir"
@@ -1390,6 +1398,14 @@ validateHostname() {
   local h=$1
   [[ $h != penguin ]] || { echo "ERROR: hostname is 'penguin'. Set \$CrostiniDir/hostname."; return 1; }
   [[ $h =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: invalid hostname '$h'. Must be [a-z0-9][a-z0-9-]*."; return 1; }
+}
+
+# validSecretName NAME — returns 0 if NAME is a valid secret filename.
+# Policy: alphanumeric start, then alphanumeric/dot/underscore/hyphen.
+# No dotfiles, no paths, no leading dashes, no spaces, no unicode.
+# Shared between encrypt-secrets (producer) and restoreSecrets (consumer).
+validSecretName() {
+  [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
 }
 
 pubFingerprint() {
