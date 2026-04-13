@@ -781,8 +781,22 @@ cleanupSshStage() {
   SshStageDir=""
 }
 
-restoreSshKey() {
+# withSshTrap FUNC [ARGS...] — call FUNC with INT/TERM trap for stage dir cleanup.
+# Saves and restores previous trap handlers so the caller's traps aren't clobbered.
+withSshTrap() {
+  local func=$1; shift
+  local prevInt prevTerm rc
+  prevInt=$(trap -p INT)
+  prevTerm=$(trap -p TERM)
   trap cleanupSshStage INT TERM
+  "$func" "$@" && rc=$? || rc=$?
+  # Restore previous traps (eval empty string = reset to default)
+  eval "${prevInt:-trap - INT}"
+  eval "${prevTerm:-trap - TERM}"
+  return $rc
+}
+
+restoreSshKeyImpl() {
   local hostname
   hostname=$(machineHostname)
   validateHostname "$hostname" || return 1
@@ -830,15 +844,15 @@ restoreSshKey() {
         return 1
       else
         echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
-        local bakSuffix
-        bakSuffix="bak.$(date +%s)"
-        echo "  Backing up to $localKey.$bakSuffix before restoring from repo."
-        if ! cp "$localKey" "$localKey.$bakSuffix" || ! chmod 600 "$localKey.$bakSuffix"; then
+        local bakFile
+        bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; SshKeyStatus=present; return 1; }
+        echo "  Backing up to $bakFile before restoring from repo."
+        if ! cp "$localKey" "$bakFile" || ! chmod 600 "$bakFile"; then
           echo "ERROR: backup failed. Will not overwrite local key."
           SshKeyStatus=present
           return 1
         fi
-        [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$localKey.pub.$bakSuffix" 2>/dev/null
+        [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
         # Fall through to tier 2/3
       fi
     else
@@ -975,6 +989,8 @@ restoreSshKey() {
   SshKeyStatus=generated
 }
 
+restoreSshKey() { withSshTrap restoreSshKeyImpl; }
+
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
   command -v keychain >/dev/null || { echo "WARNING: keychain not found"; return 0; }
@@ -1053,16 +1069,24 @@ pubFingerprint() {
 }
 
 installKey() {
-  local src=$1 dst=$2 tmp
-  tmp=$(mktemp "$dst.XXXXXX") || return 1
-  cp "$src" "$tmp"            || { rm -f "$tmp"; return 1; }
-  chmod 600 "$tmp"            || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$dst"            || { rm -f "$tmp"; return 1; }
+  local src=$1 dst=$2 tmpPriv tmpPub=""
+
+  # Stage private key
+  tmpPriv=$(mktemp "$dst.XXXXXX")       || return 1
+  cp "$src" "$tmpPriv"                  || { rm -f "$tmpPriv"; return 1; }
+  chmod 600 "$tmpPriv"                  || { rm -f "$tmpPriv"; return 1; }
+
+  # Stage .pub if present
   if [[ -f "$src.pub" ]]; then
-    tmp=$(mktemp "$dst.pub.XXXXXX") || return 1
-    cp "$src.pub" "$tmp"            || { rm -f "$tmp"; return 1; }
-    chmod 644 "$tmp"                || { rm -f "$tmp"; return 1; }
-    mv "$tmp" "$dst.pub"            || { rm -f "$tmp"; return 1; }
+    tmpPub=$(mktemp "$dst.pub.XXXXXX")  || { rm -f "$tmpPriv"; return 1; }
+    cp "$src.pub" "$tmpPub"             || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
+    chmod 644 "$tmpPub"                 || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
+  fi
+
+  # Commit both atomically (as close as POSIX allows)
+  mv "$tmpPriv" "$dst"                  || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
+  if [[ -n "$tmpPub" ]]; then
+    mv "$tmpPub" "$dst.pub"             || { rm -f "$tmpPub"; return 1; }
   fi
 }
 
