@@ -914,9 +914,11 @@ restoreSshKey() {
         echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair."
         return 1
       fi
-      chmod 600 "$stageDir/id_ed25519"
-      mv "$stageDir/id_ed25519" "$localKey"
-      mv "$stageDir/id_ed25519.pub" "$localKey.pub" && chmod 644 "$localKey.pub"
+      if ! installKey "$stageDir/id_ed25519" "$localKey"; then
+        rm -rf "$stageDir"; SshStageDir=""
+        echo "ERROR: failed to install decrypted key."
+        return 1
+      fi
       rm -rf "$stageDir"; SshStageDir=""
       if [[ -d "$CrostiniDir" ]]; then
         mkdir -p "$cacheDir" 2>/dev/null
@@ -1052,19 +1054,15 @@ pubFingerprint() {
 
 installKey() {
   local src=$1 dst=$2 tmp
-  tmp=$(mktemp "$dst.XXXXXX")
-  if cp "$src" "$tmp" && chmod 600 "$tmp"; then
-    mv "$tmp" "$dst"
-  else
-    rm -f "$tmp"; return 1
-  fi
+  tmp=$(mktemp "$dst.XXXXXX") || return 1
+  cp "$src" "$tmp"            || { rm -f "$tmp"; return 1; }
+  chmod 600 "$tmp"            || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$dst"            || { rm -f "$tmp"; return 1; }
   if [[ -f "$src.pub" ]]; then
-    tmp=$(mktemp "$dst.pub.XXXXXX")
-    if cp "$src.pub" "$tmp" && chmod 644 "$tmp"; then
-      mv "$tmp" "$dst.pub"
-    else
-      rm -f "$tmp"; return 1
-    fi
+    tmp=$(mktemp "$dst.pub.XXXXXX") || return 1
+    cp "$src.pub" "$tmp"            || { rm -f "$tmp"; return 1; }
+    chmod 644 "$tmp"                || { rm -f "$tmp"; return 1; }
+    mv "$tmp" "$dst.pub"            || { rm -f "$tmp"; return 1; }
   fi
 }
 
