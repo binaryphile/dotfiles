@@ -649,6 +649,68 @@ test_ageRoundTrip() {
   }
 }
 
+# test_secretsRoundTrip tests that secrets can be bundled into a tar.age
+# and restored, preserving file contents.
+test_secretsRoundTrip() {
+  command -v age >/dev/null || { echo "age not installed, skipping"; return 0; }
+  command -v age-keygen >/dev/null || { echo "age-keygen not installed, skipping"; return 0; }
+
+  local dir
+  tesht.MktempDir dir || return 128
+
+  # Create test secrets
+  mkdir -p "$dir/secrets"
+  echo "token123" > "$dir/secrets/stash.key"
+  echo "conftoken" > "$dir/secrets/confluence.key"
+  chmod 600 "$dir/secrets/stash.key" "$dir/secrets/confluence.key"
+
+  # Generate age keypair for test
+  age-keygen -o "$dir/age.key" 2>/dev/null
+  local ageRecipient
+  ageRecipient=$(age-keygen -y "$dir/age.key")
+
+  # Bundle and encrypt
+  tar cf - -C "$dir/secrets" . | age -r "$ageRecipient" -o "$dir/bundle.tar.age" || {
+    echo "encryption failed"; return 1
+  }
+  [[ -s "$dir/bundle.tar.age" ]] || { echo "empty bundle"; return 1; }
+
+  # Decrypt and extract
+  mkdir -p "$dir/restored"
+  age -d -i "$dir/age.key" "$dir/bundle.tar.age" | tar xf - -C "$dir/restored" || {
+    echo "decryption failed"; return 1
+  }
+
+  # Verify contents
+  [[ -f "$dir/restored/stash.key" ]]      || { echo "stash.key missing"; return 1; }
+  [[ -f "$dir/restored/confluence.key" ]] || { echo "confluence.key missing"; return 1; }
+  [[ $(< "$dir/restored/stash.key") == "token123" ]]  || { echo "stash.key content mismatch"; return 1; }
+  [[ $(< "$dir/restored/confluence.key") == "conftoken" ]] || { echo "confluence.key content mismatch"; return 1; }
+}
+
+# test_withSecret tests the with-secret wrapper.
+test_withSecret() {
+  local dir
+  tesht.MktempDir dir || return 128
+
+  echo "mysecret" > "$dir/secret.txt"
+
+  # with-secret should inject the secret as an env var into the child
+  local got
+  got=$(~/dotfiles/scripts/with-secret MY_TOKEN "$dir/secret.txt" printenv MY_TOKEN)
+  [[ "$got" == "mysecret" ]] || {
+    echo "with-secret: got=${got@Q}, want='mysecret'"
+    return 1
+  }
+}
+
+# test_withSecretMissingFile tests with-secret fails on missing file.
+test_withSecretMissingFile() {
+  local rc
+  ~/dotfiles/scripts/with-secret MY_TOKEN /nonexistent/file echo hi 2>/dev/null && rc=$? || rc=$?
+  (( rc != 0 )) || { echo "should fail on missing file"; return 1; }
+}
+
 # test_machineHostname tests hostname resolution returns a valid hostname.
 test_machineHostname() {
   local got

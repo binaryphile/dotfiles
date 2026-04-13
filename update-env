@@ -218,6 +218,7 @@ stage2() {
   case $Platform in crostini )
     section credential
     try restoreSshKey
+    try restoreSecrets
     try loadSshKey
     section auth-preflight
     try authPreflight
@@ -534,14 +535,15 @@ export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
 
 # Atlassian — Bitbucket Server (stash.digi.com)
+# Tokens stored as files, not env vars. Use with-secret for tools requiring env.
 export BITBUCKET_URL=https://stash.digi.com
 export BITBUCKET_USERNAME=tlilley
-export BITBUCKET_PERSONAL_TOKEN=$(< ~/secrets/stash.key)
+export BITBUCKET_TOKEN_FILE=$HOME/secrets/stash.key
 
 # Atlassian — Confluence Cloud (onedigi.atlassian.net)
 export CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
 export CONFLUENCE_USERNAME=tlilley@digi.com
-export CONFLUENCE_PERSONAL_TOKEN=$(< ~/secrets/confluence.key)
+export CONFLUENCE_TOKEN_FILE=$HOME/secrets/confluence.key
 EOF
 }
 
@@ -1185,6 +1187,105 @@ sshKeyGenerate() {
 }
 
 restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
+
+# restoreSecrets — three-tier restore for per-machine secrets bundle.
+# Same model as SSH key: local → mount cache → age decrypt from repo.
+# Secrets are flat files in ~/secrets/. Bundle is secrets/<hostname>.tar.age.
+restoreSecrets() {
+  local hostname
+  hostname=$(machineHostname)
+  validateHostname "$hostname" || return 1
+  local secretsDir="$HOME/secrets"
+  local repoBundle="$HOME/dotfiles/secrets/${hostname}.tar.age"
+  local cacheDir="$CrostiniDir/secrets/$hostname"
+
+  mkdir -p "$secretsDir" && chmod 700 "$secretsDir"
+
+  # Repo bundle hash for freshness
+  local repoHash=""
+  [[ -f "$repoBundle" ]] && repoHash=$(sha256sum "$repoBundle" | awk '{print $1}')
+
+  # Tier 1: local secrets exist — check freshness
+  if [[ -n "$(glob "$secretsDir"/*)" ]]; then
+    local localHash=""
+    [[ -f "$secretsDir/.bundle-hash" ]] && localHash=$(< "$secretsDir/.bundle-hash")
+    if [[ -n "$repoHash" && -n "$localHash" && "$localHash" != "$repoHash" ]]; then
+      echo "WARNING: secrets may be stale (repo bundle updated). Run: scripts/encrypt-secrets"
+    fi
+    return 0
+  fi
+
+  # Tier 2: mount cache (namespaced by hostname, freshness checked)
+  if [[ -d "$cacheDir" && -f "$cacheDir/.bundle-hash" ]]; then
+    local cachedHash
+    cachedHash=$(< "$cacheDir/.bundle-hash")
+    if [[ -z "$repoHash" || "$cachedHash" == "$repoHash" ]] && [[ -n "$(glob "$cacheDir"/*)" ]]; then
+      echo "Restoring secrets from mount cache ($hostname)..."
+      local stageDir
+      stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
+      chmod 700 "$stageDir"
+      if cp "$cacheDir"/* "$cacheDir"/.bundle-hash "$stageDir"/ 2>/dev/null; then
+        chmod 600 "$stageDir"/* 2>/dev/null
+        mv "$stageDir"/* "$stageDir"/.bundle-hash "$secretsDir"/ 2>/dev/null
+        rmdir "$stageDir" 2>/dev/null
+        return 0
+      fi
+      rm -rf "$stageDir"
+      echo "WARNING: cache restore failed. Falling through to decrypt."
+    elif [[ -n "$repoHash" ]]; then
+      echo "Mount secrets cache stale. Falling through to decrypt."
+    fi
+  fi
+
+  # Tier 3: age decrypt tarball from repo
+  if [[ -f "$repoBundle" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Secrets encrypted in repo but no TTY."
+      return 0
+    fi
+    command -v -- "$age" >/dev/null 2>&1 || { echo "$age not found"; return 1; }
+    echo "Decrypting secrets for $hostname..."
+    local stageDir
+    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
+    chmod 700 "$stageDir"
+    if $age --decrypt "$repoBundle" | $tar xf - -C "$stageDir"; then
+      # Enforce flat regular files only
+      if find "$stageDir" -mindepth 1 -not -type f | grep -q .; then
+        rm -rf "$stageDir"
+        echo "ERROR: secrets bundle contains non-regular files."
+        return 1
+      fi
+      chmod 600 "$stageDir"/* 2>/dev/null
+      # Record bundle hash for freshness
+      echo "$repoHash" > "$stageDir/.bundle-hash"
+      # Move into live dir (including dotfiles)
+      mv "$stageDir"/* "$stageDir"/.bundle-hash "$secretsDir"/ 2>/dev/null
+      rmdir "$stageDir" 2>/dev/null
+      # Cache to mount (atomic: temp dir then rename)
+      if [[ -d "$CrostiniDir" ]]; then
+        local tmpCache
+        tmpCache=$(mktemp -d "$cacheDir.XXXXXX")
+        chmod 700 "$tmpCache"
+        if cp "$secretsDir"/* "$secretsDir"/.bundle-hash "$tmpCache"/ 2>/dev/null; then
+          chmod 600 "$tmpCache"/* 2>/dev/null
+          rm -rf "$cacheDir" 2>/dev/null
+          mv "$tmpCache" "$cacheDir"
+        else
+          rm -rf "$tmpCache"
+          echo "WARNING: secrets cache write failed"
+        fi
+      fi 2>/dev/null
+    else
+      rm -rf "$stageDir"
+      echo "ERROR: secrets decryption failed."
+      return 1
+    fi
+    return 0
+  fi
+
+  echo "No secrets for $hostname. Create ~/secrets/ files, then run scripts/encrypt-secrets."
+  return 0
+}
 
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
