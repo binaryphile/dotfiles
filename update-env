@@ -820,13 +820,22 @@ else
 fi
 
 SshKeyStatus=present
-SshStageDir=""  # tracked for signal cleanup
+SshStageDir=""    # tracked for signal cleanup
+SecretsTmpFiles="" # tracked for signal cleanup (space-separated)
 
 cleanupSshStage() {
   if [[ -n "$SshStageDir" && -d "$SshStageDir" ]]; then
     rm -rf "$SshStageDir"
   fi
   SshStageDir=""
+}
+
+cleanupSecretsTmp() {
+  local f
+  for f in $SecretsTmpFiles; do
+    [[ -e "$f" ]] && rm -rf "$f"
+  done
+  SecretsTmpFiles=""
 }
 
 # withCleanupTrap CLEANUP FUNC [ARGS...] — call FUNC with INT/TERM trap that
@@ -1193,7 +1202,9 @@ restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
 # restoreSecrets — three-tier restore for per-machine secrets bundle.
 # Same model as SSH key: local → mount cache → age decrypt from repo.
 # Secrets are flat files in ~/secrets/. Bundle is secrets/<hostname>.tar.age.
-restoreSecrets() {
+restoreSecrets() { withCleanupTrap cleanupSecretsTmp restoreSecretsImpl; }
+
+restoreSecretsImpl() {
   local hostname
   hostname=$(machineHostname)
   validateHostname "$hostname" || return 1
@@ -1249,22 +1260,24 @@ restoreSecrets() {
     echo "Decrypting secrets for $hostname..."
     # Decrypt to temp file first, validate archive members, then extract
     local tmpBundle stageDir
-    tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX")
+    tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX"); SecretsTmpFiles="$tmpBundle"
     if ! $age --decrypt "$repoBundle" > "$tmpBundle" || [[ ! -s "$tmpBundle" ]]; then
       rm -f "$tmpBundle"
       echo "ERROR: secrets decryption failed."
       return 1
     fi
-    # Validate archive members before extraction — reject paths with /,
-    # .., leading -, or dotfiles
+    # Validate archive members before extraction.
+    # Allowlist: entries must be either "." (directory root) or "./name" where
+    # name is a non-dot, non-path, printable-ASCII filename. Reject everything else.
     local badMember
-    badMember=$($tar tf "$tmpBundle" | grep -E '^-|/|\.\.' || true)
+    badMember=$($tar tf "$tmpBundle" | grep -vE '^\.$|^\./[a-zA-Z0-9][a-zA-Z0-9._-]*$' || true)
     if [[ -n "$badMember" ]]; then
       rm -f "$tmpBundle"
-      echo "ERROR: secrets bundle contains unsafe paths: $badMember"
+      echo "ERROR: secrets bundle contains unsafe entries:"
+      echo "$badMember"
       return 1
     fi
-    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
+    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX"); SecretsTmpFiles="$tmpBundle $stageDir"
     chmod 700 "$stageDir"
     if $tar xf "$tmpBundle" -C "$stageDir"; then
       rm -f "$tmpBundle"
