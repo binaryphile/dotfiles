@@ -138,10 +138,10 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - Future Ted — works without remembering steps
   - UC-1, UC-2, UC-3 — depend on this for tool availability
 - **Main Success Scenario:**
-  1. Ted runs `update-env`
-  2. System detects the platform and converges each phase
-  3. System clones dotfiles, installs nix and home-manager, applies config
-  4. System clones dev tool and project repos, creates symlinks
+  1. Ted runs `update-env` (or `update-env -1` then `-2` for staged deployment)
+  2. Stage 1: System detects platform, clones dotfiles, installs nix and home-manager, applies core config (VPN packages deferred on Crostini to avoid gpoc compilation on the critical path)
+  3. Stage 1 complete: Ted has a working shell with liquidprompt, git, tmux, core dev tools
+  4. Stage 2: System re-runs home-manager with full config (VPN packages), clones project repos, installs remaining tools
   5. System prints any platform-specific manual steps (e.g., ChromeOS proxy setup for UC-8)
   6. Ted is productive immediately
 - **Extensions:**
@@ -149,7 +149,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 1b. New machine → create a machine-specific context with per-machine config; resume at step 1
   - 2a. Platform not recognized → System exits with diagnostic; fail
   - 3a. Package fails to build → nixpkgs compatibility issue; fail
-  - 4a. VPN-dependent repo unreachable → `try` wrapper logs failure; resume at step 5
+  - 4a. VPN-dependent repo unreachable → `try` wrapper with `ConnectTimeout` fails fast; resume at step 5
   - 4b. Repo remote stale → System reports; fix remote manually; resume at step 4
   - 5a. Manual step missed → re-run update-env to see reminders again
 - **Minimal Guarantee:** Phases are idempotent; partial deployment leaves no broken state; re-run converges
@@ -237,7 +237,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   5. gpclient brings up the tunnel; reconnect-loop keeps it alive
   6. Ted reaches `stash.digi.com`, `gitlab.drm.ninja`, etc.
 - **Extensions:**
-  - 1a. `vpn-connect` not on PATH → re-run `home-manager switch`; resume at step 1
+  - 1a. `vpn-connect` not on PATH → rebuild (`home-manager switch` on Crostini, `nixos-rebuild switch` on NixOS); resume at step 1
   - 2a. Browser doesn't open → check `xdg-open` and URL scheme handler (see [docs/vpn.md](vpn.md)); resume at step 1
   - 3a. SAML times out → re-authenticate to the IdP; resume at step 1
   - 4a. Callback not dispatched → URL scheme handler isn't routing back to gpauth; on Crostini, verify `gpgui.desktop` symlink exists (see [docs/vpn.md](vpn.md)); resume at step 1
@@ -366,10 +366,10 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions — Crostini and SSH into
 | UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | NixOS, Crostini, Debian, macOS platform detection |
+| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. NixOS, Crostini, Debian, macOS |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
-| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite via upstream flake; SAML callback validated end-to-end on Crostini |
+| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via getFlake, NixOS via flake input; SAML callback validated end-to-end on Crostini |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |

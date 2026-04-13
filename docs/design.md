@@ -16,13 +16,13 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 ## What this repo owns
 
 - `shared.nix` — cross-platform packages, programs, session variables; imported everywhere
-- `contexts/linux-base.nix` — Linux+Crostini shared layer: notify-send wrapper, vpn-connect, gpoc, calendar/khal-notify, dotfile symlinks
+- `contexts/linux-base.nix` — Linux+Crostini shared layer: notify-send wrapper, calendar/khal-notify, dotfile symlinks
 - `contexts/<platform>/home.nix` — platform-specific packages and overrides
 - Bash — custom app-based init system
 - Git — identity, aliases, global ignore (now home-manager-managed via `home.file`)
 - Tmux, SSH, Ranger, Liquidprompt — platform-aware via `contexts/`, deployed via home-manager
 - Claude Code — settings managed via `home.file`
-- VPN access — gpoc Rust rewrite, vpn-slice, plus crostini-only browser proxy stack
+- VPN access — gpoc Rust rewrite, vpn-slice, vpn-connect wrapper (both platforms); plus Crostini-only browser proxy stack
 - Phone notifications — `notify-send` wrapper bridging to ntfy.sh
 - Neovim — separate `dot_vim` repo
 
@@ -40,9 +40,10 @@ bash/
   settings/                     # Base, login, interactive, env, cmds
   lib/                          # Init system internals
 contexts/
-  linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, vpn-connect, gpoc, dotfile symlinks
-  linux/home.nix                # NixOS-specific (imports linux-base.nix)
-  crostini/home.nix             # Crostini-specific (imports linux-base.nix); also tinyproxy + PAC for UC-8
+  mkScriptBin.nix               # Shared helper: build wrapped script binaries with store-path substitutions
+  linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, dotfile symlinks
+  linux/home.nix                # NixOS-specific (imports linux-base.nix); gpoc, vpn-connect via flake input
+  crostini/home.nix             # Crostini-specific (imports linux-base.nix); gpoc, vpn-connect, tinyproxy + PAC for UC-8
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git
 tmux.conf                       # Context-dependent symlink
@@ -57,17 +58,26 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 ### Deployment — UC-4
 
-`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Nine phases:
+`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages, nine phases:
+
+**Stage 1** (critical path — working shell):
 
 0. Git repo updates (conditional, subsequent runs)
 1. System upgrades + SSH credentials (apt: crostini/debian only; credentials: crostini only)
 2. Clone this repo, install **bootstrap-only** symlinks (`.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `~/dotfiles/context` → active context). The rest of the dotfile symlinks (gitconfig, tmux.conf, ssh, ranger, liquidprompt, etc.) are managed declaratively by home-manager via `linux-base.nix` once nix and HM are installed.
-3. Install Nix + home-manager (crostini/debian/linux/macos only — skipped on NixOS, system-managed there)
+3. Install Nix + home-manager (crostini/debian/linux/macos only — skipped on NixOS, system-managed there). On Crostini, sets `DOTFILES_STAGE1=1` so home-manager switch skips VPN packages (gpoc Rust compilation) to keep the critical path fast.
+5a. Clone and link core dev tools (fp.bash, mk.bash, task.bash, tesht)
+
+**Stage 2** (projects, builds, VPN):
+
+3b. Re-run home-manager with full config (VPN packages included). No-op if stage 1 already had them or platform skips HM.
 4. Platform-specific setup (crostini only)
-5. Clone and link dev tools (fp.bash, mk.bash, task.bash, tesht, jeeves, sofdevsim-2026, blog, tandem-protocol, era)
-5b. Work projects (VPN-dependent, graceful failure): urma-next, pepin, cloud-services, accelerated-linux, urma-obsidian, share
+5b. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
+5c. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`): urma-next, pepin, cloud-services, accelerated-linux, urma-obsidian, share
 6. Neovim plugins, daily notes
 7. SSH key generation (crostini/linux only)
+
+Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages.
 
 Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debian → linux.
 
@@ -79,9 +89,9 @@ Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debia
 |-------|------|-------|-----|
 | `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `context` → active platform; `config.nix` → nixpkgs; `home.nix` → home-manager | 6 symlinks | Must exist before nix/HM runs. Shell init, nix config, and HM config are prerequisites for everything else. |
 | `update-env` (external) | Dev tool and project repos (phases 5 + 5b) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation — cloned repos and secrets are not. |
-| `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3), gpgui desktop entry | 11 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
+| `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3) | 10 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
 | `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies — Claude Code may overwrite these, so HM restores them on switch. |
-| `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC | 3 symlinks + 1 generated (`crostini/home.nix`) | Crostini-only scripts and generated config. |
+| `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC; gpgui desktop entry | 3 symlinks + 1 generated + 1 symlink (`crostini/home.nix`) | Crostini-only scripts, generated config, and gpoc URL scheme handler. |
 | `home-manager` (`programs.*`) | direnv, bat, firefox, khal, vdirsyncer | 5 modules | Declarative program config via HM modules — not `home.file` but the same dependency tree. |
 
 *Decision test for new files:* (1) Is it needed before HM runs? → `update-env`. (2) Does its source live outside `~/dotfiles`? → `update-env`. (3) Otherwise → `home.file` with `mkOutOfStoreSymlink` for edit-in-place, or a `programs.*` module if one exists.
@@ -135,7 +145,7 @@ Current app modules:
 - `pandoc` — shannon (markdown reformatter) function
 - `stg` — 30+ stgit aliases + workflow functions
 
-Liquidprompt is sourced directly from the vendored `liquidprompt/` directory (not an app module). Until nix-packaged (evtctl task #47), a file-existence guard gates its loading.
+Liquidprompt is nix-packaged and sourced via `command -v liquidprompt` (not an app module). The `liquidprompt/` directory contains only config (`liquidpromptrc`) and theme overrides (`liquid.theme`), deployed to `~/.config/` by home-manager.
 
 `bash/lib/initutil.bash` (~55 lines) provides: Alias/reveal wrapper, IsFile, TestAndSource, TestAndTouch, ShellIs* detection, SplitSpace/Globbing control, and function/variable cleanup tracking.
 
@@ -190,7 +200,7 @@ A tool may need several of these. For example, direnv uses nix for the package (
 
 **Failure isolation:** In the target architecture, hook sourcing and command sourcing are separate passes — a syntax error in a `cmds.bash` file does not prevent hooks from running. In both current and target architectures, `TestAndSource` silently skips missing files, and `source` failures in one module do not abort the shell. The shell starts even with broken modules; errors appear in context.
 
-**Liquidprompt caveat:** Until liquidprompt is nix-packaged (evtctl task #47), its vendored file check remains as an inline guard in init.bash. Once nix-managed, the guard becomes unconditional.
+**Liquidprompt:** Now nix-packaged (`shared.nix`). `init.bash` sources it via `command -v liquidprompt` with a guard so the shell starts cleanly if the package is missing (e.g., before first `home-manager switch`). Temp, RAM, and battery indicators are disabled in `liquidpromptrc` — the status bar (waybar/panel) monitors these instead.
 
 ### Rejected alternatives
 
@@ -213,7 +223,9 @@ The home-manager import chain:
 - `contexts/linux/home.nix` → `linux-base.nix` → `shared.nix`
 - `contexts/crostini/home.nix` → `linux-base.nix` → `shared.nix`
 
-`linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), gpoc/vpn-connect (depends on systemd, openconnect, the URL scheme handler stack), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `linux/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
+`linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `linux/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
+
+gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses `builtins.getFlake` (requires `--impure`), NixOS uses a proper flake input from `nixos-config/flake.nix` (pure). Each platform builds an identical `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `linux/home.nix` respectively).
 
 Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config. This keeps platform config shared while allowing per-machine overrides.
 
@@ -229,7 +241,7 @@ Declared in `home.nix`. See the file for the current list. By category:
 
 **Apps (UC-2):** Firefox (via `programs.firefox`), Obsidian, signal-desktop
 
-**VPN (UC-7):** gpoc (yuezk Rust rewrite, via upstream flake), vpn-slice. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
+**VPN (UC-7):** gpoc (yuezk Rust rewrite), vpn-slice, vpn-connect wrapper. On Crostini, gpoc comes via `builtins.getFlake` in `crostini/home.nix`; on NixOS, via a proper flake input in `nixos-config/flake.nix` passed through `extraSpecialArgs`. Both platforms use `mkScriptBin` to wrap `scripts/vpn-connect`. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
 
 **Notifications (UC-9):** notify-send wrapper that bridges desktop notifications to ntfy.sh phone push. Drops in transparently as `notify-send` for any caller.
 
@@ -262,14 +274,16 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 
 ### VPN — UC-7
 
-GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). The Nix package comes from yuezk's upstream flake (`builtins.getFlake "github:yuezk/GlobalProtect-openconnect"`); nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine and was never made to work on Crostini.
+GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
+- **Crostini:** `builtins.getFlake` in `crostini/home.nix` (requires `--impure` — fine because crostini runs `home-manager switch` directly)
+- **NixOS:** proper flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation)
 
 Components:
 - `gpauth` — performs SAML auth via the user's default browser, captures the cookie
 - `gpclient connect` — drives openconnect (linked in via FFI) to bring up the GP tunnel
 - `vpn-slice` — passed as `--script` to gpclient/openconnect for split-tunnel routing and split-horizon DNS
 
-Entry point: `vpn-connect` — a Nix-managed wrapper script defined in `contexts/linux-base.nix` via `mkScriptBin`. The derivation substitutes `@vpn-slice@` and `@gpclient@` with absolute store paths because those binaries are invoked under `sudo`, which strips PATH. `gpoc` is also added to the wrapper's runtime PATH for the unsudo'd `gpauth` invocation.
+Entry point: `vpn-connect` — a Nix-managed wrapper script built via `mkScriptBin` on both platforms (`contexts/linux/home.nix` and `contexts/crostini/home.nix`). The derivation substitutes `@vpn-slice@` and `@gpclient@` with absolute store paths because those binaries are invoked under `sudo`, which strips PATH. `gpoc` is also added to the wrapper's runtime PATH for the unsudo'd `gpauth` invocation. On NixOS, `waybar.nix` builds an identical derivation for its systemd service (nix deduplicates the store path).
 
 The script reconnects in a loop on disconnect; Ctrl-C exits cleanly.
 
@@ -284,13 +298,13 @@ The callback path is non-obvious and the source of past failures. Full step-by-s
 5. `gpclient launch-gui` reads the port file, opens a TCP socket to localhost, writes the auth data
 6. `gpauth` accepts, reads the cookie, prints to stdout (piped to `gpclient connect --cookie-on-stdin`)
 
-The URL scheme handler is registered via home-manager's `xdg.desktopEntries.gpgui` plus `xdg.mimeApps`, both in `contexts/linux-base.nix`.
+The URL scheme handler is registered via home-manager's `xdg.desktopEntries.gpgui` plus `xdg.mimeApps`, both in `contexts/crostini/home.nix`.
 
 #### Crostini garcon discovery gotcha
 
 home-manager's `xdg.desktopEntries` installs to `~/.nix-profile/share/applications/`. **Garcon (the ChromeOS↔container bridge) only scans `~/.local/share/applications/`** for desktop files when propagating MIME registrations to the host, not arbitrary `XDG_DATA_DIRS` entries. Without an extra symlink into the standard XDG dir, host ChromeOS Chrome never learns about the `globalprotectcallback://` handler, the SAML callback URL is silently dropped, and `gpauth` hangs forever on `accept()`.
 
-The fix: a `home.file.".local/share/applications/gpgui.desktop".source` symlink (via `mkOutOfStoreSymlink`) into `~/.nix-profile/share/applications/gpgui.desktop`, defined in `linux-base.nix`. This is harmless on non-Crostini Linux desktops where `~/.nix-profile/share/applications/` is already in `XDG_DATA_DIRS`.
+The fix: a `home.file.".local/share/applications/gpgui.desktop".source` symlink (via `mkOutOfStoreSymlink`) into `~/.nix-profile/share/applications/gpgui.desktop`, defined in `crostini/home.nix`.
 
 #### Split-tunnel routing
 
@@ -431,15 +445,18 @@ dotfiles = {
   url = "path:/home/ted/dotfiles";
   flake = false;
 };
+globalprotect-openconnect = {
+  url = "github:yuezk/GlobalProtect-openconnect";
+};
 ```
 
-NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` symlink chain doesn't resolve in the nix store) and layers Sway on top. Package changes happen here. The local path input means changes take effect on `nixos-rebuild switch` without pushing to GitHub first.
+NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` symlink chain doesn't resolve in the nix store) and layers Sway on top. The `globalprotect-openconnect` flake input provides gpoc as a pure flake reference; it's passed to home-manager via `extraSpecialArgs` as `gpoc` so `linux/home.nix` and `waybar.nix` can build the `vpn-connect` wrapper without `--impure`. Package changes happen here. The local path input means changes take effect on `nixos-rebuild switch` without pushing to GitHub first.
 
 ## Operational Properties
 
 ### Cross-host consistency
 
-`shared.nix` guarantees identical packages and `programs.*` config across all hosts. Context-specific packages (VPN tools on linux, chromium on crostini) are clearly separated in context `home.nix` files.
+`shared.nix` guarantees identical packages and `programs.*` config across all hosts. VPN tools (gpoc, vpn-connect, vpn-slice) are on both NixOS and Crostini via platform-specific gpoc sourcing. Context-specific packages (browser proxy stack on Crostini, desktop apps on NixOS) are separated in context `home.nix` files.
 
 The bash init system is host-agnostic — same `init.bash`, same app modules, same settings. Platform adaptation goes through `context/init.bash` (currently unused but available). The `hm-session-vars.sh` sourcing path checks both standalone (`~/.nix-profile/...`) and NixOS (`/etc/profiles/per-user/$USER/...`) locations.
 
