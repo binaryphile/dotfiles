@@ -813,16 +813,14 @@ test_validateSecretsArchive() {
         (( rc != 0 )) || { echo "corrupt file should be rejected"; return 1; }
         ;;
       case6)
-        # Symlink entry with valid name — type validation should catch it
+        # Symlink entry — type validation must reject it.
+        # GNU tar stores symlinks by default (without -h).
         mkdir -p "$dir/secrets"
         echo "real" > "$dir/secrets/target.key"
         ln -s target.key "$dir/secrets/stash.key"
-        tar cf "$dir/link.tar" -C "$dir/secrets" -h stash.key 2>/dev/null ||
-          tar cf "$dir/link.tar" -C "$dir/secrets" stash.key
+        tar cf "$dir/link.tar" -C "$dir/secrets" stash.key
         validateSecretsArchive "$dir/link.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        # If tar followed the symlink (-h), it's a regular file — should pass.
-        # If tar stored the symlink, type validation should reject it.
-        # Either way, the validator should not crash.
+        (( rc != 0 )) || { echo "symlink entry should be rejected"; return 1; }
         ;;
       case7)
         # Empty tar archive
