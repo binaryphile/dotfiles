@@ -60,7 +60,7 @@ sshKeyEpilogue() {
       echo "Public key: ~/.ssh/id_ed25519.pub"
       [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
-      echo "WARNING: Key exists locally but is NOT encrypted in the repo."
+      echo "WARNING: Key exists locally but is NOT encrypted in the repo." >2 >&2
       echo "This key WILL BE LOST on wipe. To back up, run:"
       echo "  age -p -o ~/dotfiles/ssh/id_ed25519_$(machineHostname).age ~/.ssh/id_ed25519"
       echo "  cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$(machineHostname).pub"
@@ -74,7 +74,7 @@ sshKeyEpilogue() {
       ;;
     missing_noninteractive)
       echo
-      echo "WARNING: No SSH key available. Run update-env interactively to set up."
+      echo "WARNING: No SSH key available. Run update-env interactively to set up." >2 >&2
       ;;
   esac
 }
@@ -821,7 +821,7 @@ fi
 
 SshKeyStatus=present
 SshStageDir=""    # tracked for signal cleanup
-SecretsTmpFiles="" # tracked for signal cleanup (space-separated)
+SecretsTmpFiles=() # tracked for signal cleanup
 
 cleanupSshStage() {
   if [[ -n "$SshStageDir" && -d "$SshStageDir" ]]; then
@@ -832,10 +832,10 @@ cleanupSshStage() {
 
 cleanupSecretsTmp() {
   local f
-  for f in $SecretsTmpFiles; do
+  for f in "${SecretsTmpFiles[@]}"; do
     [[ -e "$f" ]] && rm -rf "$f"
   done
-  SecretsTmpFiles=""
+  SecretsTmpFiles=()
 }
 
 # withCleanupTrap CLEANUP FUNC [ARGS...] — call FUNC with INT/TERM trap that
@@ -971,7 +971,7 @@ restoreSshKeyImpl() {
   # capture is attempted. Capture failure is non-fatal (key is local-only).
   case $action in
     error_*)
-      echo "ERROR: ${action#error_}"
+      echo "ERROR: ${action#error_}" >2 >&2
       return 1
       ;;
 
@@ -988,7 +988,7 @@ restoreSshKeyImpl() {
       ;;
 
     collision)
-      echo "ERROR: hostname collision — local (${state[localFp]}) != repo (${state[repoFp]})."
+      echo "ERROR: hostname collision — local (${state[localFp]}) != repo (${state[repoFp]})." >2 >&2
       SshKeyStatus=collision
       return 1
       ;;
@@ -997,7 +997,7 @@ restoreSshKeyImpl() {
       sshKeyBackupLocal "$localKey" || return 1
       echo "Restoring SSH key from mount cache ($hostname)..."
       if ! installKey "$cacheKey" "$localKey"; then
-        echo "ERROR: cache restore failed after backup."
+        echo "ERROR: cache restore failed after backup." >2 >&2
         return 1
       fi
       SshKeyStatus=restored
@@ -1012,7 +1012,7 @@ restoreSshKeyImpl() {
 
     backup_then_fail)
       sshKeyBackupLocal "$localKey" || return 1
-      echo "ERROR: cannot restore key (no cache or age available after backup)."
+      echo "ERROR: cannot restore key (no cache or age available after backup)." >2 >&2
       return 1
       ;;
 
@@ -1024,10 +1024,10 @@ restoreSshKeyImpl() {
         local pubFp
         pubFp=$(pubFingerprint "$localKey.pub")
         if [[ -z "$pubFp" ]]; then
-          echo "WARNING: local .pub is malformed. Cannot capture to repo."
+          echo "WARNING: local .pub is malformed. Cannot capture to repo." >2 >&2
           echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
         elif ! sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
-          echo "WARNING: repo backup failed. Key is local-only — will be lost on wipe."
+          echo "WARNING: repo backup failed. Key is local-only — will be lost on wipe." >2 >&2
         fi
       fi
       SshKeyStatus=present
@@ -1039,7 +1039,7 @@ restoreSshKeyImpl() {
       # to match .pub — pair was installed together by installKey.
       echo "Restoring SSH key from mount cache ($hostname)..."
       if ! installKey "$cacheKey" "$localKey"; then
-        echo "ERROR: cache restore failed."
+        echo "ERROR: cache restore failed." >2 >&2
         return 1
       fi
       SshKeyStatus=restored
@@ -1065,7 +1065,7 @@ restoreSshKeyImpl() {
       ;;
 
     *)
-      echo "ERROR: unexpected sshKeyAction result: $action"
+      echo "ERROR: unexpected sshKeyAction result: $action" >2 >&2
       return 1
       ;;
   esac
@@ -1074,12 +1074,12 @@ restoreSshKeyImpl() {
 # sshKeyBackupLocal — back up local key before overwriting. Returns 1 on failure.
 sshKeyBackupLocal() {
   local localKey=$1
-  echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify."
+  echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify." >2 >&2
   local bakFile
-  bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; return 1; }
+  bakFile=$(mktemp "$localKey.bak.XXXXXX") || { echo "ERROR: cannot create backup"; return 1; } >2 >&2
   echo "  Backing up to $bakFile before restoring from repo."
   if ! cp "$localKey" "$bakFile" || ! chmod 600 "$bakFile"; then
-    echo "ERROR: backup failed. Will not overwrite local key."
+    echo "ERROR: backup failed. Will not overwrite local key." >2 >&2
     return 1
   fi
   [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
@@ -1098,23 +1098,23 @@ sshKeyDecryptAndInstall() {
     stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
     if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
       rm -rf "$stageDir"; SshStageDir=""
-      echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair."
+      echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair." >2 >&2
       return 1
     fi
     if ! installKey "$stageDir/id_ed25519" "$localKey"; then
       rm -rf "$stageDir"; SshStageDir=""
-      echo "ERROR: failed to install decrypted key."
+      echo "ERROR: failed to install decrypted key." >2 >&2
       return 1
     fi
     rm -rf "$stageDir"; SshStageDir=""
     if [[ -d "$CrostiniDir" ]]; then
       mkdir -p "$cacheDir" 2>/dev/null
       installKey "$localKey" "$cacheKey"
-    fi 2>/dev/null || echo "WARNING: mount cache write failed"
+    fi 2>/dev/null || echo "WARNING: mount cache write failed" >2 >&2
     SshKeyStatus=restored
   else
     rm -rf "$stageDir"; SshStageDir=""
-    echo "ERROR: age decryption failed."
+    echo "ERROR: age decryption failed." >2 >&2
     return 1
   fi
 }
@@ -1134,7 +1134,7 @@ sshKeyEncryptToRepo() {
   pubtmp=$(mktemp "$repoPub.XXXXXX")
   if $tar cf - -C "$stageDir" . | $age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
     cp "$localKey.pub" "$pubtmp" && chmod 644 "$pubtmp" || {
-      rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed."
+      rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed." >2 >&2
       rm -rf "$stageDir"; SshStageDir=""; return 1
     }
     # Back up existing repo files for rollback
@@ -1143,21 +1143,21 @@ sshKeyEncryptToRepo() {
     # Commit both
     mv "$agetmp" "$repoAge" || {
       rm -f "$agetmp" "$pubtmp" "$bakAge" "$bakPub"
-      echo "WARNING: .age commit failed."
+      echo "WARNING: .age commit failed." >2 >&2
       rm -rf "$stageDir"; SshStageDir=""; return 1
     }
     mv "$pubtmp" "$repoPub" || {
       # Restore prior .age if we had one, otherwise remove the new one
       if [[ -n "$bakAge" ]]; then mv "$bakAge" "$repoAge" 2>/dev/null; else rm -f "$repoAge"; fi
       rm -f "$pubtmp" "$bakPub"
-      echo "WARNING: .pub commit failed. Rolled back .age."
+      echo "WARNING: .pub commit failed. Rolled back .age." >2 >&2
       rm -rf "$stageDir"; SshStageDir=""; return 1
     }
     rm -f "$bakAge" "$bakPub"
     echo "Backed up. Commit and push ssh/id_ed25519_${hostname}.{age,pub}"
   else
     rm -f "$agetmp" "$pubtmp"
-    echo "WARNING: encryption failed. Key not backed up to repo."
+    echo "WARNING: encryption failed. Key not backed up to repo." >2 >&2
     rm -rf "$stageDir"; SshStageDir=""
     return 1
   fi
@@ -1171,7 +1171,7 @@ sshKeyGenerate() {
   echo "No SSH key for $hostname. Generating..."
   echo "(SSH key passphrase — protects the key on disk)"
   if ! sshKeygenTask "$localKey"; then
-    echo "ERROR: key generation failed."
+    echo "ERROR: key generation failed." >2 >&2
     return 1
   fi
   chmod 644 "$localKey.pub"
@@ -1181,14 +1181,14 @@ sshKeyGenerate() {
     if sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
       backedUp=1
     else
-      echo "WARNING: key generated locally but NOT backed up to repo. Will be lost on wipe."
+      echo "WARNING: key generated locally but NOT backed up to repo. Will be lost on wipe." >2 >&2
     fi
   fi
 
   if [[ -d "$CrostiniDir" ]]; then
     mkdir -p "$cacheDir" 2>/dev/null
     installKey "$localKey" "$cacheKey"
-  fi 2>/dev/null || echo "WARNING: mount cache write failed"
+  fi 2>/dev/null || echo "WARNING: mount cache write failed" >2 >&2
 
   if (( backedUp )); then
     SshKeyStatus=generated
@@ -1223,7 +1223,7 @@ restoreSecretsImpl() {
     local localHash=""
     [[ -f "$secretsDir/.bundle-hash" ]] && localHash=$(< "$secretsDir/.bundle-hash")
     if [[ -n "$repoHash" && -n "$localHash" && "$localHash" != "$repoHash" ]]; then
-      echo "WARNING: secrets may be stale (repo bundle updated). Run: scripts/encrypt-secrets"
+      echo "WARNING: secrets may be stale (repo bundle updated). Run: scripts/encrypt-secrets" >2 >&2
     fi
     return 0
   fi
@@ -1244,7 +1244,7 @@ restoreSecretsImpl() {
         return 0
       fi
       rm -rf "$stageDir"
-      echo "WARNING: cache restore failed. Falling through to decrypt."
+      echo "WARNING: cache restore failed. Falling through to decrypt." >2 >&2
     elif [[ -n "$repoHash" ]]; then
       echo "Mount secrets cache stale. Falling through to decrypt."
     fi
@@ -1260,24 +1260,24 @@ restoreSecretsImpl() {
     echo "Decrypting secrets for $hostname..."
     # Decrypt to temp file first, validate archive members, then extract
     local tmpBundle stageDir
-    tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX"); SecretsTmpFiles="$tmpBundle"
+    tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX"); SecretsTmpFiles=("$tmpBundle")
     if ! $age --decrypt "$repoBundle" > "$tmpBundle" || [[ ! -s "$tmpBundle" ]]; then
       rm -f "$tmpBundle"
-      echo "ERROR: secrets decryption failed."
+      echo "ERROR: secrets decryption failed." >2 >&2
       return 1
     fi
     if ! validateSecretsArchive "$tmpBundle"; then
       rm -f "$tmpBundle"
       return 1
     fi
-    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX"); SecretsTmpFiles="$tmpBundle $stageDir"
+    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX"); SecretsTmpFiles=("$tmpBundle" "$stageDir")
     chmod 700 "$stageDir"
     if $tar xf "$tmpBundle" -C "$stageDir"; then
       rm -f "$tmpBundle"
       # Enforce flat regular files only (post-extraction safety net)
       if find "$stageDir" -mindepth 1 -not -type f | grep -q .; then
         rm -rf "$stageDir"
-        echo "ERROR: secrets bundle contains non-regular files."
+        echo "ERROR: secrets bundle contains non-regular files." >2 >&2
         return 1
       fi
       chmod 600 "$stageDir"/* 2>/dev/null
@@ -1297,13 +1297,13 @@ restoreSecretsImpl() {
           mv "$tmpCache" "$cacheDir"
         else
           rm -rf "$tmpCache"
-          echo "WARNING: secrets cache write failed"
+          echo "WARNING: secrets cache write failed" >2 >&2
         fi
       fi 2>/dev/null
     else
       rm -f "$tmpBundle"
       rm -rf "$stageDir"
-      echo "ERROR: secrets extraction failed."
+      echo "ERROR: secrets extraction failed." >2 >&2
       return 1
     fi
     return 0
@@ -1315,9 +1315,9 @@ restoreSecretsImpl() {
 
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
-  command -v -- "$keychain" >/dev/null 2>&1 || { echo "WARNING: $keychain not found"; return 0; }
+  command -v -- "$keychain" >/dev/null 2>&1 || { echo "WARNING: $keychain not found"; return 0; } >2 >&2
   eval "$($keychain --eval --agents ssh id_ed25519)" || {
-    echo "WARNING: keychain failed to load SSH key."
+    echo "WARNING: keychain failed to load SSH key." >2 >&2
   }
 }
 
@@ -1381,8 +1381,8 @@ machineHostname() {
 
 validateHostname() {
   local h=$1
-  [[ $h != penguin ]] || { echo "ERROR: hostname is 'penguin'. Set \$CrostiniDir/hostname."; return 1; }
-  [[ $h =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: invalid hostname '$h'. Must be [a-z0-9][a-z0-9-]*."; return 1; }
+  [[ $h != penguin ]] || { echo "ERROR: hostname is 'penguin'. Set \$CrostiniDir/hostname."; return 1; } >2 >&2
+  [[ $h =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: invalid hostname '$h'. Must be [a-z0-9][a-z0-9-]*."; return 1; } >2 >&2
 }
 
 # validSecretName NAME — returns 0 if NAME is a valid secret filename.
@@ -1393,15 +1393,22 @@ validSecretName() {
   [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
 }
 
-# validateSecretsArchive TARFILE — validate archive member names before extraction.
-# Accepts: "." (root entry), "./name" or bare "name" where name passes validSecretName.
-# Rejects: paths, dotfiles, traversal, leading dashes, and anything else.
-# Returns 1 with error message on invalid entries or if tar listing fails.
+# validateSecretsArchive TARFILE — validate archive members before extraction.
+# Checks both names AND types. Accepts only flat regular files with names
+# matching validSecretName. Rejects symlinks, hardlinks, directories (except
+# root "."), devices, fifos, and any invalid names.
+# Returns 1 with error to stderr on invalid entries or tar listing failure.
 validateSecretsArchive() {
   local tarfile=$1
+
+  # Name validation: tar -tf
   local entries
   if ! entries=$($tar tf "$tarfile" 2>/dev/null); then
-    echo "ERROR: failed to list secrets bundle contents (corrupt or not a tar)."
+    echo "ERROR: failed to list secrets bundle contents (corrupt or not a tar)." >&2
+    return 1
+  fi
+  if [[ -z "$entries" ]]; then
+    echo "ERROR: secrets bundle is empty." >&2
     return 1
   fi
   local entry bad=""
@@ -1411,11 +1418,31 @@ validateSecretsArchive() {
     local name=$entry
     [[ $name == ./* ]] && name=${name#./}
     if ! validSecretName "$name"; then
-      bad="$bad$NL  $entry"
+      bad="$bad$NL  name: $entry"
     fi
   done <<< "$entries"
+
+  # Type validation: tar -tvf — first char of each line is the entry type.
+  # '-' = regular file, 'd' = directory, 'l' = symlink, 'h' = hardlink, etc.
+  local verbose
+  if ! verbose=$($tar tvf "$tarfile" 2>/dev/null); then
+    echo "ERROR: failed to inspect secrets bundle types." >&2
+    return 1
+  fi
+  while IFS= read -r entry; do
+    [[ -z $entry ]] && continue
+    local typeChar=${entry:0:1}
+    case $typeChar in
+      d) continue ;;  # directory entries (like ".") are fine
+      -) continue ;;  # regular file — ok
+      *)
+        bad="$bad$NL  type: $entry"
+        ;;
+    esac
+  done <<< "$verbose"
+
   if [[ -n "$bad" ]]; then
-    echo "ERROR: secrets bundle contains invalid entries:$bad"
+    echo "ERROR: secrets bundle contains invalid entries:$bad" >&2
     return 1
   fi
   return 0
