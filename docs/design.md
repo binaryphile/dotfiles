@@ -47,11 +47,10 @@ contexts/
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git
 tmux.conf                       # Context-dependent symlink
-ssh/                            # Client config
+ssh/                            # Client config + per-machine age-encrypted keys (.age) + public sidecars (.pub)
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
 scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, encrypt-secrets, with-secret, lib.bash, load-sparkline)
-ssh/                            # Per-machine age-encrypted keys (.age) + public sidecars (.pub)
 secrets/                        # Per-machine age-encrypted secret bundles (.tar.age)
 docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 ```
@@ -91,7 +90,7 @@ Idempotent. Platform detection: macos → crostini → nixos/$HOSTNAME → debia
 | Owner | What | Count | Why |
 |-------|------|-------|-----|
 | `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `context` → active platform; `config.nix` → nixpkgs; `home.nix` → home-manager | 6 symlinks | Must exist before nix/HM runs. Shell init, nix config, and HM config are prerequisites for everything else. |
-| `update-env` (external) | Dev tool and project repos (phases 5 + 5b) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation — cloned repos and secrets are not. |
+| `update-env` (external) | Dev tool and project repos (steps 4, 8–10) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation — cloned repos and secrets are not. |
 | `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3) | 10 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
 | `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies — Claude Code may overwrite these, so HM restores them on switch. |
 | `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC; gpgui desktop entry | 3 symlinks + 1 generated + 1 symlink (`crostini/home.nix`) | Crostini-only scripts, generated config, and gpoc URL scheme handler. |
