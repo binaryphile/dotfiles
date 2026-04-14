@@ -768,6 +768,7 @@ test_validateSecretsArchive() {
   local -A case5=([name]='reject corrupt/non-tar file')
   local -A case6=([name]='reject archive with symlink entry')
   local -A case7=([name]='reject empty archive')
+  local -A case8=([name]='reject archive with non-root directory entry')
 
   subtest() {
     local casename=$1
@@ -823,10 +824,19 @@ test_validateSecretsArchive() {
         (( rc != 0 )) || { echo "symlink entry should be rejected"; return 1; }
         ;;
       case7)
-        # Empty tar archive
+        # Empty tar archive — verify it was actually created
         tar cf "$dir/empty.tar" -T /dev/null 2>/dev/null || true
+        [[ -f "$dir/empty.tar" ]] || { echo "empty tar not created"; return 1; }
         validateSecretsArchive "$dir/empty.tar" >/dev/null 2>&1 && rc=$? || rc=$?
         (( rc != 0 )) || { echo "empty archive should be rejected"; return 1; }
+        ;;
+      case8)
+        # Archive with a subdirectory — should be rejected
+        mkdir -p "$dir/secrets/subdir"
+        echo "nested" > "$dir/secrets/subdir/file.key"
+        tar cf "$dir/subdir.tar" -C "$dir/secrets" subdir subdir/file.key
+        validateSecretsArchive "$dir/subdir.tar" >/dev/null 2>&1 && rc=$? || rc=$?
+        (( rc != 0 )) || { echo "archive with non-root directory should be rejected"; return 1; }
         ;;
     esac
   }
