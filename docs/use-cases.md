@@ -26,6 +26,10 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 | Ted | Have browsers, messaging, media, and productivity apps available | UC-2 | Subfunction |
 | Ted | Navigate, search, and organize files efficiently | UC-3 | Subfunction |
 | Ted | Complete, consistent environment on a new or rebuilt machine | UC-4 | User goal |
+| Ted | Replace SSH key across machines and forges | UC-4a | Subfunction |
+| Ted | Add, update, or remove a secret | UC-4b | Subfunction |
+| Ted | Recover from credential failure | UC-4c | Subfunction |
+| Ted | Remove retired machine's credentials | UC-4d | Subfunction |
 | Claude | Deliver a validated change to packages, dotfiles, or configs | UC-5 | User goal |
 | Claude | Resume work with full context | UC-6 | Subfunction |
 | Ted | Reach work resources via corporate VPN | UC-7 | User goal |
@@ -160,6 +164,105 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
+- **Technology:** update-env (bash), age (encryption), ssh-keygen, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
+
+---
+
+### UC-4a: Rotate SSH Key
+
+- **Primary Actor:** Ted
+- **Goal:** Replace current SSH key with a new one across all machines and forges
+- **Scope:** Dotfiles repo + Git forge settings
+- **Level:** Subfunction (supports UC-4)
+- **Trigger:** Suspected compromise, scheduled rotation, or key algorithm upgrade
+- **Preconditions:** Current key backed up in repo (.age/.pub). If not, capture first.
+- **Stakeholders:**
+  - Ted -- continued access to all Git forges after rotation
+  - Security -- old key deregistered, new key encrypted at rest
+- **Main Success Scenario:**
+  1. Ted deletes local key, repo key, and cache
+  2. Ted runs `update-env` -- generates new key
+  3. Ted commits new .age/.pub and pushes
+  4. Ted registers new .pub with forges, deregisters old
+- **Extensions:**
+  - 1a. Repo backup missing -> capture current key first (`update-env` triggers `capture_to_repo`)
+  - 2a. age unavailable -> key generated but local-only; install age, re-run
+- **Minimal Guarantee:** Old key backed up before deletion; no key lost
+- **Success Guarantee:** New key in repo, registered with all forges, old key deregistered
+- **Procedure:** [secrets-lifecycle.md Key rotation](secrets-lifecycle.md#key-rotation)
+
+---
+
+### UC-4b: Manage Secrets Bundle
+
+- **Primary Actor:** Ted
+- **Goal:** Add, update, or remove a secret and propagate to the repo
+- **Scope:** ~/secrets/ directory + dotfiles repo
+- **Level:** Subfunction (supports UC-4, UC-7, UC-9)
+- **Trigger:** New service credential, changed token, retired secret
+- **Preconditions:** age installed, ~/secrets/ exists
+- **Stakeholders:**
+  - Ted -- secrets available on all machines after re-encrypt and push
+  - Security -- secrets encrypted at rest; old bundles persist only as age ciphertext in git history
+- **Main Success Scenario:**
+  1. Ted adds/edits/removes file in ~/secrets/
+  2. Ted runs `scripts/encrypt-secrets`
+  3. Ted commits and pushes the new bundle
+- **Extensions:**
+  - 1a. Filename invalid (dotfile, spaces, paths) -> encrypt-secrets warns and excludes
+  - 3a. Stale warning on another machine -> re-encrypt or restore per freshness policy
+- **Minimal Guarantee:** Local secrets unchanged on failure
+- **Success Guarantee:** Bundle committed; other machines can restore on next `update-env`
+- **Procedure:** [secrets-lifecycle.md Add, update, remove](secrets-lifecycle.md#add-update-remove)
+
+---
+
+### UC-4c: Recover from Credential Failure
+
+- **Primary Actor:** Ted
+- **Goal:** Restore working SSH key or secrets after a failure (forgotten passphrase, fingerprint mismatch, corrupt archive, collision)
+- **Scope:** Dotfiles repo + local filesystem + mount cache
+- **Level:** Subfunction (supports UC-4)
+- **Trigger:** `update-env` reports an error during credential restore
+- **Preconditions:** At least one copy of the credential exists (local, cache, or repo)
+- **Stakeholders:**
+  - Ted -- restore access to Git forges and secrets
+  - Security -- recovery should not bypass encryption or trust model
+- **Main Success Scenario:**
+  1. Ted identifies the failure type from `update-env` output
+  2. Ted follows the matching recovery procedure
+  3. Ted re-runs `update-env` to verify
+- **Extensions:**
+  - 1a. Passphrase forgotten, plaintext exists -> re-encrypt with new passphrase
+  - 1b. Passphrase forgotten, only .age remains -> irrecoverable; regenerate (UC-4a variant)
+  - 1c. Fingerprint mismatch -> determine authoritative key, fix the other
+  - 1d. Collision -> determine authoritative key, remove the other
+  - 1e. Corrupt archive -> re-encrypt from local or restore from cache
+- **Minimal Guarantee:** No data destroyed without explicit operator action; cache checked before clearing
+- **Success Guarantee:** Credentials restored; `update-env` completes without errors
+- **Procedure:** [secrets-lifecycle.md Recovery Procedures](secrets-lifecycle.md#recovery-procedures)
+
+---
+
+### UC-4d: Decommission a Machine
+
+- **Primary Actor:** Ted
+- **Goal:** Remove a retired machine's key material from repo and forges
+- **Scope:** Dotfiles repo + Git forge settings + mount cache
+- **Level:** Subfunction (supports UC-4)
+- **Trigger:** Machine retired, repurposed, or hostname changed
+- **Preconditions:** Machine is no longer in use (or hostname reassigned)
+- **Stakeholders:**
+  - Ted -- clean repo, no stale keys
+  - Security -- old key deregistered from forges
+- **Main Success Scenario:**
+  1. Ted removes .age/.pub and secrets bundle from repo
+  2. Ted clears mount cache (if Crostini)
+  3. Ted deregisters old .pub from forges
+  4. Ted commits and pushes
+- **Minimal Guarantee:** Repo unchanged on failure (git rm is reversible before commit)
+- **Success Guarantee:** No credentials for the retired hostname remain in repo, cache, or forges
+- **Procedure:** [secrets-lifecycle.md Cleanup and decommission](secrets-lifecycle.md#cleanup-and-decommission)
 
 ---
 
@@ -373,6 +476,10 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
 | UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. NixOS, Crostini, Debian, macOS |
+| UC-4a Rotate SSH Key | Working | Manual; no automated rotation command |
+| UC-4b Manage Secrets Bundle | Working | encrypt-secrets + commit |
+| UC-4c Recover from Credential Failure | Working | Passphrase, mismatch, collision, corrupt archive |
+| UC-4d Decommission a Machine | Working | git rm + forge deregistration |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
 | UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via getFlake, NixOS via flake input; SAML callback validated end-to-end on Crostini |
