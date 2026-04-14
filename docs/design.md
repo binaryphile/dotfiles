@@ -60,24 +60,23 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 ### Deployment — UC-4
 
-`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages, nine phases:
+`update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages:
 
 **Stage 1** (critical path — working shell, HTTPS only):
 
-0. Git repo updates (conditional, subsequent runs)
-1. System upgrades (apt: crostini/debian only)
+1. System upgrades (apt-get: crostini/debian only)
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` → `bash/init.bash`; `~/dotfiles/context` → active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
 3. Install Nix + home-manager (crostini/debian/linux/macos — skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation).
-5a. Clone and link core dev tools via HTTPS (fp.bash, mk.bash, task.bash, tesht)
+4. Clone and link core dev tools via HTTPS (fp.bash, mk.bash, task.bash, tesht)
 
 **Stage 2** (credentials, projects, VPN):
 
-3b. Re-run home-manager with full config (VPN packages). Installs `age`.
-Credential restore (Crostini only): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `loadSshKey` loads key into agent via keychain. `authPreflight` tests SSH auth to each provider.
-4. Platform-specific setup (crostini only)
-5b. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
-5c. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`): urma-next, pepin, cloud-services, accelerated-linux, urma-obsidian, share
-6. Neovim plugins, daily notes
+5. Re-run home-manager with full config (VPN packages). Installs `age`.
+6. Credential restore (Crostini only): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider.
+7. Platform-specific setup (crostini only)
+8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
+9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
+10. Neovim plugins, daily notes
 
 Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages.
 
