@@ -47,6 +47,35 @@ test_symlinks() {
   tesht.Run ${!case@}
 }
 
+# --- Encoding ---
+
+test_ascii_only() {
+  # All tracked text files must be ASCII-only, except specific scripts
+  # that use Unicode for user-facing rendered output (sparklines, notifications).
+  local -a allowlist=(
+    scripts/load-sparkline
+    scripts/panel
+    scripts/khal-notify
+  )
+  local allow_pattern
+  allow_pattern=$(printf '%s\n' "${allowlist[@]}" | paste -sd'|')
+
+  local violations
+  # LC_ALL=C: grep treats bytes > 0x7F as non-[:print:]. Portable to BSD grep.
+  # -I: skip binary files (.age, .pub if ever tracked). Works on GNU and BSD grep.
+  violations=$(export LC_ALL=C; git ls-files -z \
+    | xargs -0 grep -rlI '[^[:print:][:space:]]' -- 2>/dev/null \
+    | grep -Ev "^(${allow_pattern})$" || true)
+
+  if [[ -n $violations ]]; then
+    echo "Non-ASCII content in tracked files:"
+    echo "$violations" | while read -r f; do
+      LC_ALL=C grep -n '[^[:print:][:space:]]' "$f" | head -3
+    done
+    return 1
+  fi
+}
+
 # --- Behavioral tests ---
 # One shell spawn collects all facts. Grouped assertions verify by concern.
 # Tests validate observable outcomes, not implementation mechanism.
@@ -62,7 +91,7 @@ _run_login_shell() {
 }
 
 # Collect all runtime facts in one shell, cached to file.
-# tesht evals the source inside subshells — variables set in one subshell
+# tesht evals the source inside subshells -- variables set in one subshell
 # don't propagate to others. A file persists across them.
 RuntimeFactsFile=/tmp/dotfiles-test-facts
 [[ -s $RuntimeFactsFile ]] || _run_login_shell '
@@ -88,8 +117,15 @@ RuntimeFactsFile=/tmp/dotfiles-test-facts
     [[ $gss_stderr == *"git status"* ]] && echo "REVEAL=yes" || echo "REVEAL=no"
 
     # Prompt (regression guard: _lp_load_color is IFS-sensitive)
+    # Valid return codes: 0 = load above threshold, 1 = below, 2 = disabled.
+    # IFS corruption produces stderr noise or unexpected exit codes.
     if declare -F _lp_load_color >/dev/null; then
-      _lp_load_color >/dev/null 2>&1 && echo "LP_LOAD=ok" || echo "LP_LOAD=error"
+      lp_err=$(_lp_load_color 2>&1 >/dev/null); rc=$?
+      if (( rc <= 2 )) && [[ -z $lp_err ]]; then
+        echo "LP_LOAD=ok"
+      else
+        echo "LP_LOAD=error"
+      fi
     else
       echo "LP_LOAD=missing"
     fi
