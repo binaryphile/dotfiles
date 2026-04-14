@@ -83,7 +83,7 @@ sshKeyEpilogue() {
 stage1() {
   #  ┌─────────────────────────────────────────────────────────────┐
   #  │ PHASE 1: System (section system)                            │
-  #  │   ├─> [crostini/debian] apt upgrade                         │
+  #  │   ├─> [crostini/debian] apt-get upgrade                     │
   #  │   └─> SSH key restore moved to stage 2 (restoreSshKey)     │
   #  └─────────────────────────────────────────────────────────────┘
   section system
@@ -432,7 +432,7 @@ full story. Delete this file to have update-env regenerate it.
 # Uses DPkg::Lock::Timeout to wait for any held locks (covers all lock
 # files: lists, dpkg, dpkg-frontend, archives). Available on Bullseye+.
 aptUpgradeTask() {
-  desc   'apt upgrade'
+  desc   'apt-get upgrade'
   prog   on
   runas  root
   unchg  '0 upgraded, 0 newly installed'
