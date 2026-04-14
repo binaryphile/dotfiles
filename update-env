@@ -82,11 +82,9 @@ sshKeyEpilogue() {
 # Stage 1: critical path — working shell after completion + exec bash
 stage1() {
   #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 1: System & Credentials (section system)              │
-  #  │   ├─> [crostini/linux] apt upgrade                          │
-  #  │   └─> SSH key installation:                                 │
-  #  │       • np_id_ed25519 (non-passphrase) if exists            │
-  #  │       • id_ed25519 (unique) as fallback                     │
+  #  │ PHASE 1: System (section system)                            │
+  #  │   ├─> [crostini/debian] apt upgrade                         │
+  #  │   └─> SSH key restore moved to stage 2 (restoreSshKey)     │
   #  └─────────────────────────────────────────────────────────────┘
   section system
   each task.Ln <<'  END'
@@ -657,22 +655,6 @@ githubCloneAndLinkTask() {
   try git -C ~/projects/"$repo" remote set-url origin "https://github.com/binaryphile/$repo.git"
   try git -C ~/projects/"$repo" remote set-url --push origin "git@github.com:binaryphile/$repo.git"
   try task.GitUpdate ~/projects/"$repo"
-}
-
-installGlobalProtectClient() {
-  local dir
-  dir=$(mktemp -d)
-  trap "rm -rf $dir" EXIT
-  curl -fsSL https://github.com/yuezk/GlobalProtect-openconnect/releases/download/v2.4.4/globalprotect-openconnect_2.4.4-1_amd64.deb >$dir/globalprotect-openconnect_2.4.4-1_amd64.deb
-  sudo apt install -y --fix-broken $dir/globalprotect-openconnect_*.deb
-}
-
-installGlobalProtectClientTask() {
-  desc  'install the GlobalProtect VPN client'
-  exist /usr/bin/gpclient
-  prog  on
-
-  cmd installGlobalProtectClient
 }
 
 # nix
