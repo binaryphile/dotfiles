@@ -1358,7 +1358,8 @@ fatal() {
 
 # Shared helpers — sourced from lib.bash to avoid duplication.
 # lib.bash provides: glob, machineHostname, validateHostname, validSecretName
-source "$(cd "$(dirname "$BASH_SOURCE")"; pwd)/scripts/lib.bash"
+# Resolve through symlinks so this works when update-env is at ~/.local/bin/update-env.
+source "$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo .)")"; pwd)/scripts/lib.bash"
 
 # validateSecretsArchive TARFILE — validate archive members before extraction.
 # Checks both names AND types. Accepts only flat regular files with names
@@ -1384,9 +1385,10 @@ validateSecretsArchive() {
     [[ -z $entry ]] && continue
     # Root directory in both forms
     [[ $entry == . || $entry == ./ ]] && continue
+    # Reject non-root directory entries (trailing /)
+    [[ $entry == */ ]] && { bad="$bad$NL  name: $entry (non-root directory)"; continue; }
     name=$entry
     [[ $name == ./* ]] && name=${name#./}
-    name=${name%/}  # strip trailing / from directory entries
     if ! validSecretName "$name"; then
       bad="$bad$NL  name: $entry"
     fi
