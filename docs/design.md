@@ -50,7 +50,9 @@ tmux.conf                       # Context-dependent symlink
 ssh/                            # Client config
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
-scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify)
+scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, encrypt-secrets, with-secret, lib.bash, load-sparkline)
+ssh/                            # Per-machine age-encrypted keys (.age) + public sidecars (.pub)
+secrets/                        # Per-machine age-encrypted secret bundles (.tar.age)
 docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 ```
 
@@ -298,6 +300,25 @@ On first-time machine setup (no `.age` in repo), generates a new passphrase-prot
 **Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines. Prevents interactive prompts during bootstrap while rejecting changed host keys on subsequent connections.
 
 **Auth preflight** (stage 2): Tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
+
+### Secrets Bundling — UC-4
+
+Per-machine secrets stored as age-encrypted tarballs: `secrets/<hostname>.tar.age`. Same three-tier restore model as SSH keys.
+
+**Filename policy:** `validSecretName` — alphanumeric start, then `[a-zA-Z0-9._-]*`. No dotfiles, no paths, no spaces. Shared between `scripts/encrypt-secrets` (producer) and `restoreSecrets` (consumer) via `scripts/lib.bash`.
+
+**Archive validation** (`validateSecretsArchive`): Pre-extraction validation in two passes:
+1. **Name pass** — `tar tf`: accepts root (`.`/`./`), rejects non-root directories (`*/`), validates remaining names via `validSecretName`.
+2. **Type pass** — `tar tvf`: accepts regular files (`-`) and root directory (`d` only for `.`/`./`). Rejects symlinks, hardlinks, devices, fifos. Requires at least one regular file.
+
+Fails closed: corrupt or non-tar input rejected before extraction. Post-extraction `find -not -type f` remains as defense-in-depth.
+
+**Freshness:** Bundle hash (sha256 of `.tar.age` ciphertext) stored as `~/secrets/.bundle-hash`. Stale warning if local hash differs from repo. Known limitation: re-encryption changes hash even with identical plaintext.
+
+**Scripts:**
+- `scripts/encrypt-secrets` — bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
+- `scripts/with-secret` — injects file-based secret as env var into child process only. Last-resort shim for tools requiring env vars.
+- `scripts/lib.bash` — shared helpers (`machineHostname`, `validateHostname`, `validSecretName`, `glob`). Sourced by both `update-env` and `encrypt-secrets`.
 
 ### VPN — UC-7
 
