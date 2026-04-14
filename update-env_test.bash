@@ -831,10 +831,11 @@ test_validateSecretsArchive() {
         (( rc != 0 )) || { echo "empty archive should be rejected"; return 1; }
         ;;
       case8)
-        # Archive with a subdirectory — should be rejected
+        # Archive with ONLY a non-root directory entry (no nested file).
+        # Isolates the directory rejection — this test fails if the */
+        # name check or the type-pass root-only check is removed.
         mkdir -p "$dir/secrets/subdir"
-        echo "nested" > "$dir/secrets/subdir/file.key"
-        tar cf "$dir/subdir.tar" -C "$dir/secrets" subdir subdir/file.key
+        tar cf "$dir/subdir.tar" -C "$dir/secrets" subdir
         validateSecretsArchive "$dir/subdir.tar" >/dev/null 2>&1 && rc=$? || rc=$?
         (( rc != 0 )) || { echo "archive with non-root directory should be rejected"; return 1; }
         ;;

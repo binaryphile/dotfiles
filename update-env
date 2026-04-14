@@ -1356,10 +1356,22 @@ fatal() {
   exit $rc
 }
 
+# resolveSourceDir — resolve the directory of the calling script, following
+# symlink chains. Works when update-env is at ~/.local/bin/update-env.
+resolveSourceDir() {
+  local src=${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}
+  local dir
+  while [[ -L $src ]]; do
+    dir=$(cd -P -- "$(dirname -- "$src")" 2>/dev/null && pwd) || return 1
+    src=$(readlink -- "$src") || return 1
+    [[ $src != /* ]] && src=$dir/$src
+  done
+  cd -P -- "$(dirname -- "$src")" 2>/dev/null && pwd
+}
+
 # Shared helpers — sourced from lib.bash to avoid duplication.
 # lib.bash provides: glob, machineHostname, validateHostname, validSecretName
-# Resolve through symlinks so this works when update-env is at ~/.local/bin/update-env.
-source "$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo .)")"; pwd)/scripts/lib.bash"
+source "$(resolveSourceDir)/scripts/lib.bash" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
 
 # validateSecretsArchive TARFILE — validate archive members before extraction.
 # Checks both names AND types. Accepts only flat regular files with names
@@ -1395,7 +1407,7 @@ validateSecretsArchive() {
   done <<< "$entries"
 
   # Type validation pass: tar -tvf — first char is the entry type (GNU tar).
-  # Only regular files ('-') and root directory ('d') accepted.
+  # Only regular files ('-') accepted. Directory ('d') accepted only for root.
   local verbose
   if ! verbose=$($tar tvf "$tarfile" 2>/dev/null); then
     echo "ERROR: failed to inspect secrets bundle types." >&2
@@ -1405,7 +1417,14 @@ validateSecretsArchive() {
     [[ -z $entry ]] && continue
     local typeChar=${entry:0:1}
     case $typeChar in
-      d) ;;                      # root directory — ok
+      d)
+        # Only root directory allowed — check if name ends with " ./" or " ."
+        # tar tvf format: "drwx... user/group size date time name"
+        if [[ $entry == *" ./"  || $entry == *" ." ]]; then
+          continue
+        fi
+        bad="$bad$NL  type: $entry (non-root directory)"
+        ;;
       -) (( regularCount++ )) ;; # regular file — ok, count it
       *)
         bad="$bad$NL  type: $entry"
