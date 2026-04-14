@@ -11,8 +11,8 @@
 #
 # Injectable dependency variables use the command name directly (snake_case,
 # underscores replacing hyphens): e.g. ssh_keygen. Lowercase despite being
-# global — designed to be shadowed by local declarations in tests via bash
-# dynamic scoping. See bash style guide § Injectable dependencies.
+# global -- designed to be shadowed by local declarations in tests via bash
+# dynamic scoping. See bash style guide # Injectable dependencies.
 #
 # Variable declarations that are name references borrow the environment namespace, e.g.
 # "local -n ARRAY=$1".
@@ -56,7 +56,7 @@ sshKeyEpilogue() {
       ;;
     generated_local_only)
       echo
-      echo "=== NEW SSH KEY GENERATED (LOCAL ONLY — NOT BACKED UP) ==="
+      echo "=== NEW SSH KEY GENERATED (LOCAL ONLY -- NOT BACKED UP) ==="
       echo "Public key: ~/.ssh/id_ed25519.pub"
       [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
@@ -79,13 +79,13 @@ sshKeyEpilogue() {
   esac
 }
 
-# Stage 1: critical path — working shell after completion + exec bash
+# Stage 1: critical path -- working shell after completion + exec bash
 stage1() {
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 1: System (section system)                            │
-  #  │   ├─> [crostini/debian] apt-get upgrade                     │
-  #  │   └─> SSH key restore moved to stage 2 (restoreSshKey)     │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 1: System (section system)                            |
+  #  |   +-> [crostini/debian] apt-get upgrade                     |
+  #  |   +-> SSH key restore moved to stage 2 (restoreSshKey)     |
+  #  +-------------------------------------------------------------+
   section system
   each task.Ln <<'  END'
     .config         ~/config
@@ -104,11 +104,11 @@ stage1() {
     ;;
   esac
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 2: Dotfiles & Configuration (section dotfiles)        │
-  #  │   ├─> Clone dotfiles from GitHub                            │
-  #  │   └─> Create symlinks                                       │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 2: Dotfiles & Configuration (section dotfiles)        |
+  #  |   +-> Clone dotfiles from GitHub                            |
+  #  |   +-> Create symlinks                                       |
+  #  +-------------------------------------------------------------+
   section dotfiles
   task.GitClone https://github.com/binaryphile/dotfiles ~/dotfiles main
   try git -C ~/dotfiles remote set-url origin https://github.com/binaryphile/dotfiles.git
@@ -122,13 +122,13 @@ stage1() {
     ~/dotfiles/bash/init.bash                     ~/.bashrc
     ~/dotfiles/bash/init.bash                     ~/.profile
   END
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 3: Package Management (sections nix & home-manager)   │
-  #  │   ├─> Install Nix (Lix installer)                           │
-  #  │   ├─> Fix /nix ownership                                    │
-  #  │   ├─> Add Home Manager channel                              │
-  #  │   └─> Apply Home Manager configuration                      │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 3: Package Management (sections nix & home-manager)   |
+  #  |   +-> Install Nix (Lix installer)                           |
+  #  |   +-> Fix /nix ownership                                    |
+  #  |   +-> Add Home Manager channel                              |
+  #  |   +-> Apply Home Manager configuration                      |
+  #  +-------------------------------------------------------------+
 
   case $Platform in crostini|debian|linux|macos )
     section nix
@@ -149,14 +149,14 @@ stage1() {
     ;;
   esac
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 5 (core): Development Tools                           │
-  #  │   ├─> fp.bash           - functional programming utilities  │
-  #  │   ├─> mk.bash           - build tool & git updater          │
-  #  │   ├─> task.bash         - task automation (this script!)    │
-  #  │   └─> tesht             - testing framework                 │
-  #  │       Default branch: main. Cloned and symlinked.           │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 5 (core): Development Tools                           |
+  #  |   +-> fp.bash           - functional programming utilities  |
+  #  |   +-> mk.bash           - build tool & git updater          |
+  #  |   +-> task.bash         - task automation (this script!)    |
+  #  |   +-> tesht             - testing framework                 |
+  #  |       Default branch: main. Cloned and symlinked.           |
+  #  +-------------------------------------------------------------+
 
   section fp.bash
   githubCloneAndLinkTask fp.bash
@@ -202,7 +202,7 @@ stage2Preflight() {
   fi
 }
 
-# Stage 2: projects, builds, and config — all externals try-wrapped
+# Stage 2: projects, builds, and config -- all externals try-wrapped
 stage2() {
   # Re-run home-manager with VPN packages (skipped in stage 1 to avoid
   # gpoc Rust compilation on the critical path to a working shell).
@@ -223,12 +223,12 @@ stage2() {
     ;;
   esac
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 4: Platform-Specific Setup                            │
-  #  │   └─> [crostini only]:                                      │
-  #  │       • Link ~/crostini → $CrostiniDir                      │
-  #  │       • Clone project directories from permanent mount      │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 4: Platform-Specific Setup                            |
+  #  |   +-> [crostini only]:                                      |
+  #  |       * Link ~/crostini -> $CrostiniDir                      |
+  #  |       * Clone project directories from permanent mount      |
+  #  +-------------------------------------------------------------+
   if [[ $Platform == crostini ]]; then
     section crostini
     task.Ln $CrostiniDir ~/crostini
@@ -245,15 +245,15 @@ stage2() {
     fi
   fi
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 5 (projects): Additional Tools & Projects             │
-  #  │   ├─> jeeves            - project guides (bitbucket)        │
-  #  │   ├─> sofdevsim-2026    - software dev simulation           │
-  #  │   ├─> blog              - binaryphile.github.io             │
-  #  │   ├─> tandem-protocol   - Claude slash commands (codeberg)  │
-  #  │   └─> era               - semantic memory MCP (codeberg)    │
-  #  │       Default branch: main. Cloned and symlinked.           │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 5 (projects): Additional Tools & Projects             |
+  #  |   +-> jeeves            - project guides (bitbucket)        |
+  #  |   +-> sofdevsim-2026    - software dev simulation           |
+  #  |   +-> blog              - binaryphile.github.io             |
+  #  |   +-> tandem-protocol   - Claude slash commands (codeberg)  |
+  #  |   +-> era               - semantic memory MCP (codeberg)    |
+  #  |       Default branch: main. Cloned and symlinked.           |
+  #  +-------------------------------------------------------------+
 
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
@@ -305,17 +305,17 @@ stage2() {
   # Era memory redirects and project CLAUDE.md files are now managed by
   # home-manager (contexts/linux/home.nix)
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 5b: Work Projects (VPN-dependent, graceful failure)   │
-  #  │   ├─> urma-next        - main application (+ MCP)            │
-  #  │   ├─> pepin            - build/deploy tooling               │
-  #  │   ├─> cloud-services                                        │
-  #  │   ├─> accelerated-linux   - DAL (cloned to ~/projects/dal)   │
-  #  │   ├─> urma-obsidian    - obsidian vault                     │
-  #  │   ├─> dal-obsidian     - DAL knowledge vault                │
-  #  │   └─> share            - cross-team utilities               │
-  #  │       All from stash.digi.com, require VPN                  │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
+  #  |   +-> urma-next        - main application (+ MCP)            |
+  #  |   +-> pepin            - build/deploy tooling               |
+  #  |   +-> cloud-services                                        |
+  #  |   +-> accelerated-linux   - DAL (cloned to ~/projects/dal)   |
+  #  |   +-> urma-obsidian    - obsidian vault                     |
+  #  |   +-> dal-obsidian     - DAL knowledge vault                |
+  #  |   +-> share            - cross-team utilities               |
+  #  |       All from stash.digi.com, require VPN                  |
+  #  +-------------------------------------------------------------+
 
   section urma
   try stashCloneAndLinkTask urma-next urma
@@ -355,13 +355,13 @@ stage2() {
   section share
   try stashCloneAndLinkTask share share ~tlilley
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 6: Applications & VPN                                 │
-  #  │   ├─> [crostini/linux] GlobalProtect VPN client             │
-  #  │   ├─> Neovim setup (vim-plug, plugins)                      │
-  #  │   ├─> Daily notes repository                                │
-  #  │   └─> Ranger file manager configs                           │
-  #  └─────────────────────────────────────────────────────────────┘
+  #  +-------------------------------------------------------------+
+  #  | PHASE 6: Applications & VPN                                 |
+  #  |   +-> [crostini/linux] GlobalProtect VPN client             |
+  #  |   +-> Neovim setup (vim-plug, plugins)                      |
+  #  |   +-> Daily notes repository                                |
+  #  |   +-> Ranger file manager configs                           |
+  #  +-------------------------------------------------------------+
 
   section neovim
   try task.GitClone https://github.com/binaryphile/dot_vim ~/.config/nvim master
@@ -375,13 +375,13 @@ stage2() {
   section obsidian
   try bitbucketCloneAndLinkTask tlilley-daily-notes
 
-  #  ┌─────────────────────────────────────────────────────────────┐
-  #  │ PHASE 7: SSH Key Generation (section unique_credential)     │
-  #  │   └─> [crostini/linux] Generate unique SSH key if needed    │
-  #  │       • Remove non-passphrase key if it was copied          │
-  #  │       • Generate new passphrase-protected key               │
-  #  └─────────────────────────────────────────────────────────────┘
-  # Phase 7 (SSH key generation) removed — handled by restoreSshKey in stage 2
+  #  +-------------------------------------------------------------+
+  #  | PHASE 7: SSH Key Generation (section unique_credential)     |
+  #  |   +-> [crostini/linux] Generate unique SSH key if needed    |
+  #  |       * Remove non-passphrase key if it was copied          |
+  #  |       * Generate new passphrase-protected key               |
+  #  +-------------------------------------------------------------+
+  # Phase 7 (SSH key generation) removed -- handled by restoreSshKey in stage 2
 
 }
 
@@ -399,7 +399,7 @@ postInstallMessages() {
 CROSTINI: configure ChromeOS Chrome to use the corporate VPN proxy (UC-8)
 
 For VPN-only URLs (stash.digi.com, gitlab.drm.ninja, etc.) to work in
-ChromeOS host Chrome — instead of just in-container browsers — point
+ChromeOS host Chrome -- instead of just in-container browsers -- point
 Chrome at the in-container PAC server:
 
   1. ChromeOS Settings -> Network
@@ -532,7 +532,7 @@ urmaEnvrcContent() {
 export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
 
-# Atlassian — Bitbucket Server (stash.digi.com)
+# Atlassian -- Bitbucket Server (stash.digi.com)
 # Token loaded from file. MCP atlassian plugin requires env var values.
 # with-secret is preferred for one-off commands but direnv needs the value
 # for tools that read it from the environment (mcp-atlassian-with-bitbucket).
@@ -540,7 +540,7 @@ export BITBUCKET_URL=https://stash.digi.com
 export BITBUCKET_USERNAME=tlilley
 export BITBUCKET_PERSONAL_TOKEN=$(< ~/secrets/stash.key)
 
-# Atlassian — Confluence Cloud (onedigi.atlassian.net)
+# Atlassian -- Confluence Cloud (onedigi.atlassian.net)
 export CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
 export CONFLUENCE_USERNAME=tlilley@digi.com
 export CONFLUENCE_PERSONAL_TOKEN=$(< ~/secrets/confluence.key)
@@ -781,10 +781,10 @@ sshKeygenTask() {
 # Injectable dependencies for credential bootstrap.
 # Override before calling restoreSshKey to substitute test doubles.
 # Injectable command dependencies for credential bootstrap.
-# Lowercase despite being global — designed to be shadowed by local
+# Lowercase despite being global -- designed to be shadowed by local
 # declarations in tests (bash dynamic scoping). Not user-configurable:
 # sourced from environment only when DOTFILES_TEST=1, otherwise hardcoded.
-# See bash style guide § Injectable dependencies.
+# See bash style guide # Injectable dependencies.
 if [[ ${DOTFILES_TEST:-} == 1 ]]; then
   age=${age:-age}
   ssh_keygen=${ssh_keygen:-ssh-keygen}
@@ -820,10 +820,10 @@ cleanupSecretsTmp() {
   SecretsTmpFiles=()
 }
 
-# withCleanupTrap CLEANUP FUNC [ARGS...] — call FUNC with INT/TERM trap that
+# withCleanupTrap CLEANUP FUNC [ARGS...] -- call FUNC with INT/TERM trap that
 # runs CLEANUP then re-raises the signal (preserving abort semantics).
 # Saves and restores previous trap handlers. Does NOT suppress set -e inside
-# FUNC — the function runs under normal errexit behavior.
+# FUNC -- the function runs under normal errexit behavior.
 withCleanupTrap() {
   local cleanup=$1 func=$2; shift 2
   local prevInt prevTerm
@@ -838,7 +838,7 @@ withCleanupTrap() {
   return $rc
 }
 
-# sshKeyAction — pure decision function for SSH key restore.
+# sshKeyAction -- pure decision function for SSH key restore.
 #
 # Takes a nameref to an associative array with keys:
 #   repoHasAge repoHasPub repoFp localExists localFp
@@ -854,14 +854,14 @@ withCleanupTrap() {
 #   error_age_not_found
 #
 # Decision table (abbreviated, see tests for full coverage):
-#   local exists + repo match       → present
-#   local exists + repo mismatch    → collision
-#   local exists + repo unverifiable → backup_then_{cache|age|fail}
-#   local exists + no repo          → capture_to_repo
-#   cache valid + repo match/absent → restore_from_cache
-#   repo age available + tty + age  → restore_from_age
-#   nothing + tty                   → generate
-#   nothing + no tty                → missing_noninteractive
+#   local exists + repo match       -> present
+#   local exists + repo mismatch    -> collision
+#   local exists + repo unverifiable -> backup_then_{cache|age|fail}
+#   local exists + no repo          -> capture_to_repo
+#   cache valid + repo match/absent -> restore_from_cache
+#   repo age available + tty + age  -> restore_from_age
+#   nothing + tty                   -> generate
+#   nothing + no tty                -> missing_noninteractive
 sshKeyAction() {
   local -n STATE=$1
 
@@ -875,7 +875,7 @@ sshKeyAction() {
     if [[ -n "${STATE[repoFp]}" ]]; then
       if [[ -n "${STATE[localFp]}" && "${STATE[localFp]}" == "${STATE[repoFp]}" ]]; then echo present; return 0; fi
       if [[ -n "${STATE[localFp]}" && "${STATE[localFp]}" != "${STATE[repoFp]}" ]]; then echo collision; return 0; fi
-      # localFp empty = unverifiable — backup, then try cache/age/fail
+      # localFp empty = unverifiable -- backup, then try cache/age/fail
       if (( STATE[cacheExists] )) && [[ -n "${STATE[cacheFp]}" ]]; then
         if [[ -z "${STATE[repoFp]}" || "${STATE[cacheFp]}" == "${STATE[repoFp]}" ]]; then
           echo backup_then_cache; return 0
@@ -948,7 +948,7 @@ restoreSshKeyImpl() {
   local action
   action=$(sshKeyAction state)
 
-  # Dispatch — mostly mechanical. capture_to_repo has additional runtime
+  # Dispatch -- mostly mechanical. capture_to_repo has additional runtime
   # checks (tty, age availability, .pub validity) that determine whether
   # capture is attempted. Capture failure is non-fatal (key is local-only).
   case $action in
@@ -970,7 +970,7 @@ restoreSshKeyImpl() {
       ;;
 
     collision)
-      echo "ERROR: hostname collision — local (${state[localFp]}) != repo (${state[repoFp]})." >&2
+      echo "ERROR: hostname collision -- local (${state[localFp]}) != repo (${state[repoFp]})." >&2
       SshKeyStatus=collision
       return 1
       ;;
@@ -1000,7 +1000,7 @@ restoreSshKeyImpl() {
 
     capture_to_repo)
       # Local key usable regardless of capture outcome.
-      # Capture is best-effort — requires tty, age, and valid .pub.
+      # Capture is best-effort -- requires tty, age, and valid .pub.
       chmod 600 "$localKey"
       if (( state[hasTty] && state[hasAge] )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
         local pubFp
@@ -1009,7 +1009,7 @@ restoreSshKeyImpl() {
           echo "WARNING: local .pub is malformed. Cannot capture to repo." >&2
           echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
         elif ! sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
-          echo "WARNING: repo backup failed. Key is local-only — will be lost on wipe." >&2
+          echo "WARNING: repo backup failed. Key is local-only -- will be lost on wipe." >&2
         fi
       fi
       SshKeyStatus=present
@@ -1018,7 +1018,7 @@ restoreSshKeyImpl() {
 
     restore_from_cache)
       # Trust: cache .pub fingerprint matches repo .pub. Private key trusted
-      # to match .pub — pair was installed together by installKey.
+      # to match .pub -- pair was installed together by installKey.
       echo "Restoring SSH key from mount cache ($hostname)..."
       if ! installKey "$cacheKey" "$localKey"; then
         echo "ERROR: cache restore failed." >&2
@@ -1030,7 +1030,7 @@ restoreSshKeyImpl() {
     restore_from_age)
       # Trust: age bundle contains both private + public from same generation.
       # Bundled .pub fingerprint is validated against repo .pub sidecar after
-      # decryption — strongest verification path.
+      # decryption -- strongest verification path.
       sshKeyDecryptAndInstall "$repoAge" "$repoPub" "${state[repoFp]}" "$localKey" "$cacheDir" "$cacheKey"
       return
       ;;
@@ -1053,7 +1053,7 @@ restoreSshKeyImpl() {
   esac
 }
 
-# sshKeyBackupLocal — back up local key before overwriting. Returns 1 on failure.
+# sshKeyBackupLocal -- back up local key before overwriting. Returns 1 on failure.
 sshKeyBackupLocal() {
   local localKey=$1
   echo "WARNING: local key exists but .pub is missing/invalid. Cannot verify." >&2
@@ -1068,7 +1068,7 @@ sshKeyBackupLocal() {
   return 0
 }
 
-# sshKeyDecryptAndInstall — tier 3 implementation: decrypt .age, validate, install, cache.
+# sshKeyDecryptAndInstall -- tier 3 implementation: decrypt .age, validate, install, cache.
 sshKeyDecryptAndInstall() {
   local repoAge=$1 repoPub=$2 repoFp=$3 localKey=$4 cacheDir=$5 cacheKey=$6
   echo "Decrypting SSH key..."
@@ -1101,7 +1101,7 @@ sshKeyDecryptAndInstall() {
   fi
 }
 
-# sshKeyEncryptToRepo — encrypt local key pair to repo. Preserves prior repo
+# sshKeyEncryptToRepo -- encrypt local key pair to repo. Preserves prior repo
 # state on partial failure. Not atomic (two renames), but best-effort consistent.
 sshKeyEncryptToRepo() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4
@@ -1146,12 +1146,12 @@ sshKeyEncryptToRepo() {
   rm -rf "$stageDir"; SshStageDir=""
 }
 
-# sshKeyGenerate — tier 4 implementation: generate new key, encrypt to repo, cache.
+# sshKeyGenerate -- tier 4 implementation: generate new key, encrypt to repo, cache.
 sshKeyGenerate() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4 cacheDir=$5 cacheKey=$6
   command -v -- "$ssh_keygen" >/dev/null 2>&1 || { echo "$ssh_keygen not found"; return 1; }
   echo "No SSH key for $hostname. Generating..."
-  echo "(SSH key passphrase — protects the key on disk)"
+  echo "(SSH key passphrase -- protects the key on disk)"
   if ! sshKeygenTask "$localKey"; then
     echo "ERROR: key generation failed." >&2
     return 1
@@ -1181,8 +1181,8 @@ sshKeyGenerate() {
 
 restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
 
-# restoreSecrets — three-tier restore for per-machine secrets bundle.
-# Same model as SSH key: local → mount cache → age decrypt from repo.
+# restoreSecrets -- three-tier restore for per-machine secrets bundle.
+# Same model as SSH key: local -> mount cache -> age decrypt from repo.
 # Secrets are flat files in ~/secrets/. Bundle is secrets/<hostname>.tar.age.
 restoreSecrets() { withCleanupTrap cleanupSecretsTmp restoreSecretsImpl; }
 
@@ -1200,7 +1200,7 @@ restoreSecretsImpl() {
   local repoHash=""
   [[ -f "$repoBundle" ]] && repoHash=$(sha256sum "$repoBundle" | awk '{print $1}')
 
-  # Tier 1: local secrets exist — check freshness
+  # Tier 1: local secrets exist -- check freshness
   if [[ -n "$(glob "$secretsDir"/*)" ]]; then
     local localHash=""
     [[ -f "$secretsDir/.bundle-hash" ]] && localHash=$(< "$secretsDir/.bundle-hash")
@@ -1309,7 +1309,7 @@ authPreflight() {
     -o IdentitiesOnly=yes -i "$keyFile" -o ConnectTimeout=10
     -o StrictHostKeyChecking=accept-new)
 
-  [[ -f "$keyFile" ]] || { echo "  No SSH key — all private repos will be skipped"; return; }
+  [[ -f "$keyFile" ]] || { echo "  No SSH key -- all private repos will be skipped"; return; }
 
   local provider rc output
   for provider in github.com codeberg.org bitbucket.org; do
@@ -1338,7 +1338,7 @@ fatal() {
   exit $rc
 }
 
-# resolveSourceDir — resolve the directory of the calling script, following
+# resolveSourceDir -- resolve the directory of the calling script, following
 # symlink chains. Works when update-env is at ~/.local/bin/update-env.
 resolveSourceDir() {
   local src=${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}
@@ -1351,11 +1351,11 @@ resolveSourceDir() {
   cd -P -- "$(dirname -- "$src")" 2>/dev/null && pwd
 }
 
-# Shared helpers — sourced from lib.bash to avoid duplication.
+# Shared helpers -- sourced from lib.bash to avoid duplication.
 # lib.bash provides: glob, machineHostname, validateHostname, validSecretName
 source "$(resolveSourceDir)/scripts/lib.bash" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
 
-# validateSecretsArchive TARFILE — validate archive members before extraction.
+# validateSecretsArchive TARFILE -- validate archive members before extraction.
 # Checks both names AND types. Accepts only flat regular files with names
 # matching validSecretName. Rejects symlinks, hardlinks, directories (except
 # root "."), devices, fifos, and any invalid names.
@@ -1388,7 +1388,7 @@ validateSecretsArchive() {
     fi
   done <<< "$entries"
 
-  # Type validation pass: tar -tvf — first char is the entry type (GNU tar).
+  # Type validation pass: tar -tvf -- first char is the entry type (GNU tar).
   # Only regular files ('-') accepted. Directory ('d') accepted only for root.
   local verbose
   if ! verbose=$($tar tvf "$tarfile" 2>/dev/null); then
@@ -1400,14 +1400,14 @@ validateSecretsArchive() {
     local typeChar=${entry:0:1}
     case $typeChar in
       d)
-        # Only root directory allowed — check if name ends with " ./" or " ."
+        # Only root directory allowed -- check if name ends with " ./" or " ."
         # tar tvf format: "drwx... user/group size date time name"
         if [[ $entry == *" ./"  || $entry == *" ." ]]; then
           continue
         fi
         bad="$bad$NL  type: $entry (non-root directory)"
         ;;
-      -) (( regularCount++ )) ;; # regular file — ok, count it
+      -) (( regularCount++ )) ;; # regular file -- ok, count it
       *)
         bad="$bad$NL  type: $entry"
         ;;
@@ -1430,7 +1430,7 @@ pubFingerprint() {
   $ssh_keygen -lf "$1" 2>/dev/null | awk '{print $2}'
 }
 
-# installKey SRC DST — install key pair from SRC to DST.
+# installKey SRC DST -- install key pair from SRC to DST.
 # Contract: destination reflects source pair state exactly.
 # If source has .pub, destination gets it. If not, stale dst.pub is removed.
 # On partial failure, prior destination state is restored (best-effort).
@@ -1463,7 +1463,7 @@ installKey() {
     return 1
   }
 
-  # Commit .pub — rollback private on failure
+  # Commit .pub -- rollback private on failure
   if [[ -n "$tmpPub" ]]; then
     if ! mv "$tmpPub" "$dst.pub"; then
       # Restore prior private key or remove new one
@@ -1476,9 +1476,9 @@ installKey() {
       return 1
     fi
   elif [[ -f "$dst.pub" && ! -f "$src.pub" ]]; then
-    # Source has no .pub — remove stale dst.pub for pair consistency
+    # Source has no .pub -- remove stale dst.pub for pair consistency
     if ! rm -f "$dst.pub"; then
-      # Can't remove stale .pub — rollback private key
+      # Can't remove stale .pub -- rollback private key
       if [[ -n "$bakPriv" ]]; then
         mv "$bakPriv" "$dst" 2>/dev/null || rm -f "$dst"
       else
@@ -1489,7 +1489,7 @@ installKey() {
     fi
   fi
 
-  # Success — clean up rollback backup
+  # Success -- clean up rollback backup
   rm -f "$bakPriv"
   return 0
 }

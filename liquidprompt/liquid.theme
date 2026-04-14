@@ -1,6 +1,6 @@
 # Liquidprompt 2.2.1 theme overrides.
 #
-# Colors use the defaults set by lp_activate() — they match what the
+# Colors use the defaults set by lp_activate() -- they match what the
 # old vendored theme had. Only marks and layout strings need overrides.
 # See: https://liquidprompt.readthedocs.io/en/stable/theme/default.html
 

@@ -16,7 +16,7 @@ future sessions can find it.
 
 Use `mcp__era__code_search` to find code by keyword and meaning across all
 indexed repos. Results include enrichment (callees, callers, doc_comment,
-related_docs, signature, snippet) — use these to triage without opening files.
+related_docs, signature, snippet) -- use these to triage without opening files.
 Use `mcp__era__code_callgraph` to explore call relationships (callers/callees)
 for a specific function or type.
 

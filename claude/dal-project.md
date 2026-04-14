@@ -46,7 +46,7 @@ selection), **seriald** (serial port protocols), **firewalld** (firewall rules).
 - Foundation is OpenWrt: ubus (IPC), procd (init), netifd (network). Digi's
   proprietary layer lives in `prop/`.
 - **runt** publishes state (runt_set/get). **ubus methods** send commands.
-- Config changes flow: configd → action.d → daemon → runt → CLI/web/DRM.
+- Config changes flow: configd -> action.d -> daemon -> runt -> CLI/web/DRM.
 - 309 schema files with versioned migrations. Schema shape is cpp-conditional
   per product.
 - Classify a subsystem before changing it: upstream (user/), Digi fork, or

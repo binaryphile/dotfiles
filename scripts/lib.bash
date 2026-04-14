@@ -1,4 +1,4 @@
-# lib.bash — shared helpers for dotfiles scripts.
+# lib.bash -- shared helpers for dotfiles scripts.
 # Source this instead of update-env to avoid coupling to the full bootstrap script.
 
 # machineHostname returns the machine's identity hostname.
@@ -18,7 +18,7 @@ validateHostname() {
   [[ $h =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: invalid hostname '$h'. Must be [a-z0-9][a-z0-9-]*." >&2; return 1; }
 }
 
-# validSecretName NAME — returns 0 if NAME is a valid secret filename.
+# validSecretName NAME -- returns 0 if NAME is a valid secret filename.
 # Policy: alphanumeric start, then alphanumeric/dot/underscore/hyphen.
 # No dotfiles, no paths, no leading dashes, no spaces, no unicode.
 validSecretName() {

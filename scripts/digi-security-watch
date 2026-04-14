@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# digi-security-watch — poll the Digi Security Center RSS feed and fire
+# digi-security-watch -- poll the Digi Security Center RSS feed and fire
 # a notification (local + ntfy phone push via the notify-send wrapper)
 # for any advisories not previously seen.
 #
@@ -54,7 +54,7 @@ main() {
   local feed
   feed=$(parseFeed)
   if [[ -z $feed ]]; then
-    # Network or parse failure — quietly exit so the timer doesn't spam
+    # Network or parse failure -- quietly exit so the timer doesn't spam
     # error notifications when offline.
     exit 0
   fi

@@ -31,7 +31,7 @@ Key abstractions: **Rest** (HTTP singleton with tenant headers), **SCI/RCI**
 - **API contract?** Check endpoint, hook, types, pagination, cache key,
   mutation invalidation. Verify loading/empty/error states. Verify account
   switching isolates results. For list pages, verify overlapping cache keys
-  all get invalidated — partial invalidation leaves stale rows.
+  all get invalidated -- partial invalidation leaves stale rows.
 - **Background error visibility?** Force a 500 during background revalidation.
   Prove the user sees a visible failure, not silently stale data.
 - **Multi-step form?** Check initialization, edit-mode rehydration,
@@ -58,25 +58,25 @@ Key abstractions: **Rest** (HTTP singleton with tenant headers), **SCI/RCI**
 - URMA is a frontend proxy for DRM. The browser never talks to DRM directly.
   Business data and device connectivity live in DRM.
 - Hard problem: the selected account must scope every fetch, every write,
-  every cached result — while background revalidation and local form edits
+  every cached result -- while background revalidation and local form edits
   proceed independently.
 - Two governing flows:
-  - **Load:** route → providers (Auth blocks on session, Cache creates
-    account-scoped DiskCache) → SWR fetch. First fetch can race before
+  - **Load:** route -> providers (Auth blocks on session, Cache creates
+    account-scoped DiskCache) -> SWR fetch. First fetch can race before
     useAccount establishes the real account filter.
-  - **Save:** Formik → Rest (tenant headers) → middleware (auth) → DRM →
-    SWR mutate → re-render → Formik reinitialize risk.
-- Account switch: Rest.setAccountFilter → listener → new DiskCache keyed to
-  new account in IndexedDB → SWR revalidates. Cache swap before refetch.
+  - **Save:** Formik -> Rest (tenant headers) -> middleware (auth) -> DRM ->
+    SWR mutate -> re-render -> Formik reinitialize risk.
+- Account switch: Rest.setAccountFilter -> listener -> new DiskCache keyed to
+  new account in IndexedDB -> SWR revalidates. Cache swap before refetch.
   Stale closures and late responses from prior account are residual risks.
-- Pages: server page.tsx → client-wrapper (ssr:false) → actual page with SWR.
+- Pages: server page.tsx -> client-wrapper (ssr:false) -> actual page with SWR.
   No server-side data fetching in examined pages.
 - Server traffic splits: middleware proxies /api/ws/* to DRM; route handlers
   under _common/api/ serve MongoDB (same NextAuth JWT, authorizedForRequest
   + userFilter for scoping).
-- Errors: 401 → centralized sign-out. Save failures → FlashMessage. Background
-  revalidation failures → silent stale data (per-component, no global handler).
+- Errors: 401 -> centralized sign-out. Save failures -> FlashMessage. Background
+  revalidation failures -> silent stale data (per-component, no global handler).
 - Tenant headers: GETs get Account-Filter, writes get Actor (edge-case
   overrides exist). Wrong headers = silently wrong data if DRM accepts them.
-- Authorization: four layers — middleware, DRM, provider role gating, flags.
-- Releases: release/YY.MM.DD, GitLab CI → Docker → FluxCD → K8s.
+- Authorization: four layers -- middleware, DRM, provider role gating, flags.
+- Releases: release/YY.MM.DD, GitLab CI -> Docker -> FluxCD -> K8s.

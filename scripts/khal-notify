@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# khal-notify — desktop notifications for upcoming calendar events
+# khal-notify -- desktop notifications for upcoming calendar events
 #
 # Runs every 5 minutes via systemd timer. Checks khal for events starting
 # in 60, 30, 10, or 5 minutes and sends notify-send. Phone push is

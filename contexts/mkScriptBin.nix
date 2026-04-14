@@ -1,4 +1,4 @@
-# mkScriptBin — build a wrapped script binary from a file in scripts/.
+# mkScriptBin -- build a wrapped script binary from a file in scripts/.
 #
 # Substitutes `@key@` placeholders with store paths (for binaries invoked
 # under sudo, which strips PATH) and wraps the result with runtimeInputs

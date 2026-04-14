@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# notify-send — wrapper that bridges desktop notifications to ntfy.sh
+# notify-send -- wrapper that bridges desktop notifications to ntfy.sh
 #
 # Calls the real notify-send for local notification, then also POSTs to
 # ntfy.sh if ~/secrets/ntfy-topic exists. Phone gets a push notification
@@ -31,7 +31,7 @@ while (( $# )); do
 done
 
 # Push to ntfy if topic configured and we have a summary. Backgrounded
-# in a subshell so callers don't block on network — the local notify-send
+# in a subshell so callers don't block on network -- the local notify-send
 # above has already fired, and ntfy delivery is best-effort.
 NtfyTopicFile=$HOME/secrets/ntfy-topic
 if [[ -r $NtfyTopicFile ]] && (( ${#Positional[@]} > 0 )); then
