@@ -37,7 +37,7 @@ let
 
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
   # it via garcon's container->host localhost forwarding. Selectively used
-  # by Chrome via the PAC file below — only VPN-bound hosts traverse it.
+  # by Chrome via the PAC file below -- only VPN-bound hosts traverse it.
   tinyproxyPort = 8118;
   pacPort = 8120;
   pacDir = "${config.home.homeDirectory}/.local/share/proxy-pac";
@@ -52,7 +52,7 @@ let
   '';
 
   # PAC file routes only VPN hosts through tinyproxy. Everything else
-  # returns DIRECT — Chrome connects without involving the container.
+  # returns DIRECT -- Chrome connects without involving the container.
   # vpn-connect routes 10.0.0.0/8 and 172.26.0.0/16 via CIDRs for
   # routing, and lists split-horizon *.digi.com hosts as positional
   # args so vpn-slice writes /etc/hosts entries. This PAC uses
@@ -60,7 +60,7 @@ let
   # sites), plus explicit entries for AWS-hosted services.
   proxyPac = pkgs.writeText "proxy.pac" ''
     function FindProxyForURL(url, host) {
-      // Public *.digi.com sites — access externally, not via tunnel
+      // Public *.digi.com sites -- access externally, not via tunnel
       if (host == "remotemanager.digi.com" || host == "www.digi.com" || host == "digi.com") {
         return "DIRECT";
       }
@@ -174,7 +174,7 @@ in
   # Digi security advisory watcher: polls the Digi Security Center RSS
   # feed every 30 minutes, fires a notify-send (which the linux-base
   # wrapper bridges to ntfy phone push) for any advisory not seen
-  # before. Crostini-only — on NixOS, equivalent monitoring is handled
+  # before. Crostini-only -- on NixOS, equivalent monitoring is handled
   # by the waybar custom modules.
   systemd.user.services.digi-security-watch = {
     Unit.Description = "Watch Digi Security Center RSS for new advisories";

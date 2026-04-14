@@ -1,4 +1,4 @@
-# CLAUDE.md — dotfiles
+# CLAUDE.md -- dotfiles
 
 Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.md` and `docs/design.md` for full context.
 
@@ -6,49 +6,53 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 
 1. One environment, all hosts. Platform differences handled by `contexts/`.
 2. Symlinks over copies.
-3. Single-file bash init — one entry point (`init.bash`) replaces `.bashrc`, `.bash_profile`, `.profile`. Explicit mode detection, no hidden sourcing rules. Does not use `programs.bash`, but `home.sessionVariables`, `home.sessionPath`, and `programs.*` modules are used freely.
+3. Single-file bash init -- one entry point (`init.bash`) replaces `.bashrc`, `.bash_profile`, `.profile`. Explicit mode detection, no hidden sourcing rules. Does not use `programs.bash`, but `home.sessionVariables`, `home.sessionPath`, and `programs.*` modules are used freely.
 4. Idempotent deployment. `update-env` works on fresh or existing machines.
 5. Nix for packages, dotfiles for config. `home.nix` says what to install. Dotfiles say how to configure.
-6. Nix owns declarative, shell-independent config. Bash owns shell-evaluated, session-dependent behavior. Decision test: can it be expressed as static data without bash evaluating shell state? If yes → nix. If no → bash. See `docs/design.md` [Nix/bash boundary](docs/design.md#nixbash-boundary).
+6. Nix owns declarative, shell-independent config. Bash owns shell-evaluated, session-dependent behavior. Decision test: can it be expressed as static data without bash evaluating shell state? If yes -> nix. If no -> bash. See `docs/design.md` [Nix/bash boundary](docs/design.md#nixbash-boundary).
 
 ## Structure
 
-- `shared.nix` — shared packages, programs, and config imported by all contexts.
-- `contexts/` — platform overrides (crostini, linux, macos). Each has its own `home.nix` that imports `shared.nix` and adds platform-specific packages.
-- `context` — symlink at repo root pointing to active platform.
-- Top-level `home.nix`, `gitconfig`, `tmux.conf` — symlinks to the active context's versions.
-- `bash/apps/<app>/` — per-app modules with `init.bash` (hooks) and `cmds.bash` (aliases/functions).
-- `bash/settings/` — base, login, interactive, env, cmds.
-- `claude/` — Claude Code config (`settings.json`, `CLAUDE.md`), deployed via `home.file`.
-- `scripts/` — vpn-connect, khal-notify, and other utilities.
-- `update-env` — idempotent deployment script (lives in repo root, deployed to `~/.local/bin/`).
+- `shared.nix` -- shared packages, programs, and config imported by all contexts.
+- `contexts/` -- platform overrides (crostini, linux, macos). Each has its own `home.nix` that imports `shared.nix` and adds platform-specific packages.
+- `context` -- symlink at repo root pointing to active platform.
+- Top-level `home.nix`, `gitconfig`, `tmux.conf` -- symlinks to the active context's versions.
+- `bash/apps/<app>/` -- per-app modules with `init.bash` (hooks) and `cmds.bash` (aliases/functions).
+- `bash/settings/` -- base, login, interactive, env, cmds.
+- `claude/` -- Claude Code config (`settings.json`, `CLAUDE.md`), deployed via `home.file`.
+- `scripts/` -- vpn-connect, khal-notify, and other utilities.
+- `update-env` -- idempotent deployment script (lives in repo root, deployed to `~/.local/bin/`).
+
+## Text encoding
+
+ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `-`, `->`, etc. Exception: user-facing rendered output may use Unicode where it materially improves display (sparkline bars, panel glyphs, notification text). Allowed files: `scripts/load-sparkline`, `scripts/panel`, `scripts/khal-notify`.
 
 ## Making changes
 
 - **Packages:** shared packages go in `shared.nix`. Platform-specific packages go in the relevant `contexts/*/home.nix`. If a `programs.<name>` module exists, prefer that.
-- **Env vars / PATH:** use `home.sessionVariables` or `home.sessionPath` in `shared.nix` — they flow into the shell via `hm-session-vars.sh`, sourced directly by `init.bash`.
+- **Env vars / PATH:** use `home.sessionVariables` or `home.sessionPath` in `shared.nix` -- they flow into the shell via `hm-session-vars.sh`, sourced directly by `init.bash`.
 - **Shell integration / aliases / functions:** add a module under `bash/apps/`.
-- **Shared packages are in `shared.nix`** — no need to sync across contexts manually. Platform-specific packages go in individual context files.
+- **Shared packages are in `shared.nix`** -- no need to sync across contexts manually. Platform-specific packages go in individual context files.
 - **Validate nix changes** with `nix-instantiate --parse` before committing. Use `home-manager build` for deeper validation (evaluates options and builds derivations).
-- **Run `tesht`** before committing — tests are configuration validation: they describe the intended shell environment and should fail when config drifts. Fix the config to satisfy the assertions; do not rewrite tests to match accidental behavior.
+- **Run `tesht`** before committing -- tests are configuration validation: they describe the intended shell environment and should fail when config drifts. Fix the config to satisfy the assertions; do not rewrite tests to match accidental behavior.
 - **Calendar config and notify-send-bridge** live in `contexts/linux-base.nix`, imported by both `contexts/linux/home.nix` and `contexts/crostini/home.nix`. macos imports `shared.nix` directly and skips this layer.
-- **NixOS note:** `~/nixos-config/flake.nix` imports `contexts/linux/home.nix` via a local path flake input pointing to `~/dotfiles`. Changes take effect on `sudo nixos-rebuild switch` without pushing first. System-level config belongs in nixos-config, not here. **Important:** after changing dotfiles, run `nix flake update dotfiles` in `~/nixos-config` before `nixos-rebuild switch` — the flake lock caches a hash of the dotfiles directory and won't see changes until updated.
+- **NixOS note:** `~/nixos-config/flake.nix` imports `contexts/linux/home.nix` via a local path flake input pointing to `~/dotfiles`. Changes take effect on `sudo nixos-rebuild switch` without pushing first. System-level config belongs in nixos-config, not here. **Important:** after changing dotfiles, run `nix flake update dotfiles` in `~/nixos-config` before `nixos-rebuild switch` -- the flake lock caches a hash of the dotfiles directory and won't see changes until updated.
 
 ## Development tools
 
-- **`flake.nix`** — dev shell with kcov, scc, jq, and editor. Enter with `nix develop`.
-- **`mk`** — project command runner (uses mk.bash). Subcommands:
-  - `mk test` — run tesht, create test badge
-  - `mk cover` — run kcov coverage (Linux only), create coverage badge
-  - `mk lines` — run scc source line count, create lines badge
-  - `mk badges` — run all three and create all badges
-- **Coverage** — kcov instruments bash and reports line coverage. `--include-path bash` scopes reporting to the `bash/` directory.
-- **SLOC** — scc counts source lines of code (the "Code" column in CSV output). `cmd.lines` targets `bash/` and `scripts/`.
-- **Cyclomatic complexity** — scc calculates this for bash (the "Complexity" column in CSV output). Available via `scc bash/ scripts/`.
+- **`flake.nix`** -- dev shell with kcov, scc, jq, and editor. Enter with `nix develop`.
+- **`mk`** -- project command runner (uses mk.bash). Subcommands:
+  - `mk test` -- run tesht, create test badge
+  - `mk cover` -- run kcov coverage (Linux only), create coverage badge
+  - `mk lines` -- run scc source line count, create lines badge
+  - `mk badges` -- run all three and create all badges
+- **Coverage** -- kcov instruments bash and reports line coverage. `--include-path bash` scopes reporting to the `bash/` directory.
+- **SLOC** -- scc counts source lines of code (the "Code" column in CSV output). `cmd.lines` targets `bash/` and `scripts/`.
+- **Cyclomatic complexity** -- scc calculates this for bash (the "Complexity" column in CSV output). Available via `scc bash/ scripts/`.
 
 ## Docs
 
-- `docs/use-cases.md` — what this repo does and for whom.
-- `docs/design.md` — how components work, deployment phases, bash init flow.
-- `docs/uc-init.md` — use cases for every init.bash feature employed in the config.
+- `docs/use-cases.md` -- what this repo does and for whom.
+- `docs/design.md` -- how components work, deployment flow, bash init flow.
+- `docs/uc-init.md` -- use cases for every init.bash feature employed in the config.
 - Keep all updated when making changes.

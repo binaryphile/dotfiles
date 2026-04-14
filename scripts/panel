@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# panel — tmux status bar widgets, ported from waybar custom/* modules
+# panel -- tmux status bar widgets, ported from waybar custom/* modules
 # in nixos-config/home/sway/waybar.nix.
 #
 # Usage:
@@ -32,7 +32,7 @@
 #   healthsep dynamic separator for health group      (no click)
 #   hostname  human-friendly hostname                 (no click)
 #
-# Health widgets are quiet by default — hidden when healthy, visible
+# Health widgets are quiet by default -- hidden when healthy, visible
 # only when degraded/down/unknown. Service toggles (era, vpn) and
 # resource monitors (load) are always visible. Slow probes are cached
 # asynchronously; the first read after startup shows "?" until the
@@ -53,18 +53,18 @@ source "$HOME/dotfiles/scripts/probe-lib.bash"
 fg() { printf '#[fg=%s]%s#[default]' "$1" "$2"; }
 
 # Color palette mirrors waybar.css from nixos-config:
-#   on       white       (#ffffff) — used by alwaysSegment and thresholdSegment
-#   partial  colour250   (#bcbcbc) — degraded
-#   off      colour244   (#808080) — down
-#   unknown  colour130   (#af5f00) — amber, no data yet
-# Health widgets (segment) are hidden when on — they don't use ColorOn.
+#   on       white       (#ffffff) -- used by alwaysSegment and thresholdSegment
+#   partial  colour250   (#bcbcbc) -- degraded
+#   off      colour244   (#808080) -- down
+#   unknown  colour130   (#af5f00) -- amber, no data yet
+# Health widgets (segment) are hidden when on -- they don't use ColorOn.
 ColorOn=white
 ColorPartial=colour250
 ColorOff=colour244
 ColorUnknown=colour130
 
 # segment renders a 3-char text label colored by state. Hidden when
-# state is "on" — healthy widgets vanish so the bar is quiet by default,
+# state is "on" -- healthy widgets vanish so the bar is quiet by default,
 # surfacing only when something needs attention. Partial and off states
 # render in the customary mid-gray/dark-gray. Plain text so it works
 # in ChromeOS Terminal's font set (no Nerd Font required).
@@ -110,7 +110,7 @@ thresholdSegment() {
 }
 
 # pollAll forces a synchronous poll of every health module by simply
-# rendering each one — that runs the same refresh-if-stale logic the
+# rendering each one -- that runs the same refresh-if-stale logic the
 # normal status bar uses, but synchronously waits for all the spawned
 # probes via `wait`. Used by `panel poll` for initial warm-up.
 pollAll() {
@@ -121,7 +121,7 @@ pollAll() {
   wait
 }
 
-# Local probes — each prints exactly one of "on" "partial" "off" on
+# Local probes -- each prints exactly one of "on" "partial" "off" on
 # stdout. Network probes (sshHost, pingHost, vendor APIs) come from
 # probe-lib.bash.
 
@@ -133,9 +133,9 @@ vpnProbe() {
   ip link show tun0 >/dev/null 2>&1 && echo on || echo off
 }
 
-# Module rendering — fast: read cached state, kick off async refresh,
+# Module rendering -- fast: read cached state, kick off async refresh,
 # emit a 3-char text segment colored by state. VPN-gated modules
-# (dm1, stash, gitlab, nexus) return empty when VPN is down — without
+# (dm1, stash, gitlab, nexus) return empty when VPN is down -- without
 # a tun0 interface there's nothing to probe and no useful state to
 # show, so the segment vanishes from the bar entirely.
 #
@@ -259,7 +259,7 @@ loadModule() {
   #
   # Normalization: bar 6 = 2 * nproc (the "2 processes waiting per
   # CPU, time to be concerned" threshold). Bars 7 and 8 give headroom
-  # past that — bar 8 saturates at 2.8 * nproc. Linear from 0:
+  # past that -- bar 8 saturates at 2.8 * nproc. Linear from 0:
   #   idx = 1 + floor(load * 5 / (2 * nproc))
   # Below that line the bar is mostly empty; once you're past it,
   # things are getting crazy and the bar fills up fast.
@@ -275,7 +275,7 @@ cpuModule() {
   local stateFile=$State/cpu-stat
   # /proc/stat first line: "cpu user nice system idle iowait irq
   # softirq steal guest guest_nice". Read the whole row into an
-  # indexed array so we don't have to spell out throwaway names —
+  # indexed array so we don't have to spell out throwaway names --
   # the project bash style guide forbids leading-underscore locals.
   [[ -r /proc/stat ]] || return
   local fields
@@ -294,7 +294,7 @@ cpuModule() {
     fi
   fi
   printf '%s %s' "$active" "$total" > "$stateFile"
-  # Crostini CPUs max at 50% — double to show real utilization
+  # Crostini CPUs max at 50% -- double to show real utilization
   [[ $HOSTNAME == penguin ]] && pct=$((pct * 2))
   thresholdSegment cpu "$pct"
 }
@@ -340,17 +340,17 @@ batModule() {
   read -r capacity < "$base/capacity"
   (( capacity <= 10 )) || return
 
-  # Critical: [5,0%] — show "N% bat" in white
+  # Critical: [5,0%] -- show "N% bat" in white
   if (( capacity <= 5 )); then
     printf ' '
     fg "$ColorOn" "${capacity}%% bat"
     return
   fi
 
-  # Warning: (10,5%] — show "H:MM" in partial color
-  # Time remaining: charge_now/current_now (µAh/µA, standard ACPI),
-  # charge_counter/current_now (µAh/µA, Crostini Android bridge), or
-  # energy_now/power_now (µWh/µW, energy-based laptops). Same formula.
+  # Warning: (10,5%] -- show "H:MM" in partial color
+  # Time remaining: charge_now/current_now (uAh/uA, standard ACPI),
+  # charge_counter/current_now (uAh/uA, Crostini Android bridge), or
+  # energy_now/power_now (uWh/uW, energy-based laptops). Same formula.
   local current=0 charge=0
   if [[ -r $base/charge_now && -r $base/current_now ]]; then
     read -r current < "$base/current_now"
@@ -403,7 +403,7 @@ hostnameCmd() {
 
 # canLoadCmd checks whether the current tmux session should load the
 # panel. True when SSH_CONNECTION is set (non-empty) and WAYLAND_DISPLAY
-# is absent — i.e., an SSH session without a desktop. Reads session env
+# is absent -- i.e., an SSH session without a desktop. Reads session env
 # via tmux show-env (populated by update-environment from the client).
 canLoadCmd() {
   tmux show-env SSH_CONNECTION 2>/dev/null | grep -q '=.' &&
@@ -455,7 +455,7 @@ clickModule() {
 # layoutCmd toggles tmux between 1-line and 2-line status bar based on
 # whether the window list + right-side content fits the terminal width.
 # Called silently from the status format every refresh (5s) and from
-# tmux hooks on resize/window changes. Idempotent — skips if already
+# tmux hooks on resize/window changes. Idempotent -- skips if already
 # in the correct mode.
 layoutCmd() {
   local width session

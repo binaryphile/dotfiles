@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# vpn — manage vpn-connect in a detached tmux session.
+# vpn -- manage vpn-connect in a detached tmux session.
 #
 # Running `vpn-connect &` from an interactive shell pollutes the prompt
 # with job-control noise and dumps reconnect-loop output into the active
