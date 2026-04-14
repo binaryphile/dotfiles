@@ -437,148 +437,148 @@ test_installKey() {
 
 # test_sshKeyAction tests the pure decision function for SSH key restore.
 # Each test builds a state associative array and asserts the returned action.
-# No I/O, no filesystem — pure decision logic in Khorikov's "valuable" quadrant.
+# No I/O, no filesystem -- pure decision logic in Khorikov's "valuable" quadrant.
 test_sshKeyAction() {
   # Helper: build state array from test case, call sshKeyAction
   # Test cases use lowercase keys matching the state array contract.
   local -A case1=(
-    [name]='local key matches repo — present'
+    [name]='local key matches repo -- present'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]='SHA256:abc'
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='present'
   )
   local -A case2=(
-    [name]='local key mismatches repo — collision'
+    [name]='local key mismatches repo -- collision'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]='SHA256:xyz'
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='collision'
   )
   local -A case3=(
-    [name]='unverifiable local + cache available — backup then cache'
+    [name]='unverifiable local + cache available -- backup then cache'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
     [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
     [want]='backup_then_cache'
   )
   local -A case4=(
-    [name]='unverifiable local + no cache, has age — backup then age'
+    [name]='unverifiable local + no cache, has age -- backup then age'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='backup_then_age'
   )
   local -A case5=(
-    [name]='unverifiable local + no cache, no age — backup then fail'
+    [name]='unverifiable local + no cache, no age -- backup then fail'
     [repoHasAge]=0 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='error_pub_without_age'
   )
   local -A case6=(
-    [name]='local key exists, no repo pair — capture'
+    [name]='local key exists, no repo pair -- capture'
     [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
     [localExists]=1 [localFp]='SHA256:abc'
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='capture_to_repo'
   )
   local -A case7=(
-    [name]='no local, cache matches repo — restore from cache'
+    [name]='no local, cache matches repo -- restore from cache'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
     [want]='restore_from_cache'
   )
   local -A case8=(
-    [name]='no local, stale cache — restore from age'
+    [name]='no local, stale cache -- restore from age'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1 [hasAge]=1
     [want]='restore_from_age'
   )
   local -A case9=(
-    [name]='no local, no cache, has age — restore from age'
+    [name]='no local, no cache, has age -- restore from age'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='restore_from_age'
   )
   local -A case10=(
-    [name]='nothing anywhere, has tty — generate'
+    [name]='nothing anywhere, has tty -- generate'
     [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='generate'
   )
   local -A case11=(
-    [name]='nothing anywhere, no tty — missing noninteractive'
+    [name]='nothing anywhere, no tty -- missing noninteractive'
     [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
     [want]='missing_noninteractive'
   )
   local -A case12=(
-    [name]='age without pub — error'
+    [name]='age without pub -- error'
     [repoHasAge]=1 [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='error_age_without_pub'
   )
   local -A case13=(
-    [name]='pub without age — error'
+    [name]='pub without age -- error'
     [repoHasAge]=0 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='error_pub_without_age'
   )
   local -A case14=(
-    [name]='malformed repo pub — error'
+    [name]='malformed repo pub -- error'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]=''
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='error_malformed_pub'
   )
   local -A case15=(
-    [name]='repo has age, no tty — missing noninteractive'
+    [name]='repo has age, no tty -- missing noninteractive'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
     [want]='missing_noninteractive'
   )
   local -A case16=(
-    [name]='repo has age, no age command — error'
+    [name]='repo has age, no age command -- error'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=0
     [want]='error_age_not_found'
   )
   local -A case17=(
-    [name]='cache valid, no repo — restore from cache'
+    [name]='cache valid, no repo -- restore from cache'
     [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
     [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
     [want]='restore_from_cache'
   )
-  # Boundary: cache exists but fingerprint empty — should not use cache
+  # Boundary: cache exists but fingerprint empty -- should not use cache
   local -A case18=(
-    [name]='cache exists but empty fingerprint — fall through to age'
+    [name]='cache exists but empty fingerprint -- fall through to age'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
     [cacheExists]=1 [cacheFp]='' [hasTty]=1 [hasAge]=1
     [want]='restore_from_age'
   )
-  # Boundary: unverifiable local, stale cache, has age — backup then age
+  # Boundary: unverifiable local, stale cache, has age -- backup then age
   local -A case19=(
-    [name]='unverifiable local + stale cache — backup then age'
+    [name]='unverifiable local + stale cache -- backup then age'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
     [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1 [hasAge]=1
     [want]='backup_then_age'
   )
-  # Boundary: unverifiable local, no tty — missing noninteractive
+  # Boundary: unverifiable local, no tty -- missing noninteractive
   local -A case20=(
-    [name]='unverifiable local + no tty — missing noninteractive'
+    [name]='unverifiable local + no tty -- missing noninteractive'
     [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
     [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
@@ -601,7 +601,7 @@ test_sshKeyAction() {
 # test_ageRoundTrip tests that a key pair can be encrypted to an age bundle
 # and decrypted back, with the public key fingerprint preserved.
 # Uses age recipient mode (not passphrase) to avoid TTY requirement.
-# This is the core recovery path — if this breaks, powerwash recovery fails.
+# This is the core recovery path -- if this breaks, powerwash recovery fails.
 test_ageRoundTrip() {
   command -v age >/dev/null || { echo "age not installed, skipping"; return 0; }
   command -v age-keygen >/dev/null || { echo "age-keygen not installed, skipping"; return 0; }
@@ -695,10 +695,10 @@ test_secretsRoundTrip() {
 # which is deferred to a future phase.
 test_restoreSecretsTierSelection() {
   local -A case1=(
-    [name]='local secrets exist — skip restore'
+    [name]='local secrets exist -- skip restore'
   )
   local -A case2=(
-    [name]='nothing available — print setup message'
+    [name]='nothing available -- print setup message'
   )
 
   subtest() {
@@ -814,7 +814,7 @@ test_validateSecretsArchive() {
         (( rc != 0 )) || { echo "corrupt file should be rejected"; return 1; }
         ;;
       case6)
-        # Symlink entry — type validation must reject it.
+        # Symlink entry -- type validation must reject it.
         # GNU tar stores symlinks by default (without -h).
         mkdir -p "$dir/secrets"
         echo "real" > "$dir/secrets/target.key"
@@ -824,7 +824,7 @@ test_validateSecretsArchive() {
         (( rc != 0 )) || { echo "symlink entry should be rejected"; return 1; }
         ;;
       case7)
-        # Empty tar archive — verify it was actually created
+        # Empty tar archive -- verify it was actually created
         tar cf "$dir/empty.tar" -T /dev/null 2>/dev/null || true
         [[ -f "$dir/empty.tar" ]] || { echo "empty tar not created"; return 1; }
         validateSecretsArchive "$dir/empty.tar" >/dev/null 2>&1 && rc=$? || rc=$?
@@ -832,7 +832,7 @@ test_validateSecretsArchive() {
         ;;
       case8)
         # Archive with ONLY a non-root directory entry (no nested file).
-        # Isolates the directory rejection — this test fails if the */
+        # Isolates the directory rejection -- this test fails if the */
         # name check or the type-pass root-only check is removed.
         mkdir -p "$dir/secrets/subdir"
         tar cf "$dir/subdir.tar" -C "$dir/secrets" subdir

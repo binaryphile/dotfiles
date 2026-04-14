@@ -6,11 +6,11 @@ Creates and maintains nix-wrapper infrastructure for projects that use nix flake
 
 Given a project directory, scaffold ensures three things exist and are up to date:
 
-1. **`bin/nix-wrapper`** — a generic wrapper that transparently runs commands inside `nix develop`. Symlink any nix-provided tool to it (e.g., `ln -s nix-wrapper go`) and the tool works outside `nix develop` without the user typing `nix develop -c`.
+1. **`bin/nix-wrapper`** -- a generic wrapper that transparently runs commands inside `nix develop`. Symlink any nix-provided tool to it (e.g., `ln -s nix-wrapper go`) and the tool works outside `nix develop` without the user typing `nix develop -c`.
 
-2. **`.envrc`** — puts `bin/` on PATH so nix-wrapped tools are available from the project root.
+2. **`.envrc`** -- puts `bin/` on PATH so nix-wrapped tools are available from the project root.
 
-3. **`flake.nix`** — a minimal nix flake with the requested packages (only when creating a new project; existing flakes with custom config are left alone by consumers).
+3. **`flake.nix`** -- a minimal nix flake with the requested packages (only when creating a new project; existing flakes with custom config are left alone by consumers).
 
 ## Usage
 
@@ -43,7 +43,7 @@ each task.Ln <<'END'
 END
 ```
 
-This is how update-env uses scaffold for the era project — it calls `scaffold.NixWrapperTask` and `scaffold.EnvrcTask` but skips `scaffold.FlakeNixTask` because era has its own flake with custom shellHook and many packages.
+This is how update-env uses scaffold for the era project -- it calls `scaffold.NixWrapperTask` and `scaffold.EnvrcTask` but skips `scaffold.FlakeNixTask` because era has its own flake with custom shellHook and many packages.
 
 ## Public API
 
@@ -52,7 +52,7 @@ This is how update-env uses scaffold for the era project — it calls `scaffold.
 | `scaffold.MkdirTask` | Create a directory (idempotent) |
 | `scaffold.NixWrapperTask` | Install/update `bin/nix-wrapper` |
 | `scaffold.EnvrcTask` | Install/update `.envrc` |
-| `scaffold.FlakeNixTask` | Install/update `flake.nix` (destructive — overwrites) |
+| `scaffold.FlakeNixTask` | Install/update `flake.nix` (destructive -- overwrites) |
 | `scaffold.NixWrapperContent` | Emit nix-wrapper script content to stdout |
 | `scaffold.EnvrcContent` | Emit .envrc content to stdout |
 | `scaffold.FlakeNixContent` | Emit flake.nix content to stdout (uses `PackagesW`) |

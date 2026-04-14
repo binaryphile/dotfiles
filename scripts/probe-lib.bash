@@ -1,10 +1,10 @@
-# probe-lib.bash — shared probe logic for tmux panel and waybar
+# probe-lib.bash -- shared probe logic for tmux panel and waybar
 # widget-status. Sourced by both rendering scripts.
 #
 # Caller must set $State to a writable directory BEFORE sourcing
 # (e.g., $XDG_RUNTIME_DIR/panel for tmux, /tmp/waybar-health for
 # waybar). All cached state lives under $State. The check below
-# fails fast with a clear error if the caller forgot — without it,
+# fails fast with a clear error if the caller forgot -- without it,
 # probes silently write to a literal "$State/..." path in the cwd.
 #
 # Naming follows the project bash style guide (see
@@ -24,7 +24,7 @@ jq=${jq:-jq}
 ip=${ip:-ip}
 
 if [[ -z ${State:-} ]]; then
-  echo "probe-lib.bash: \$State is not set — caller must set it to a writable directory before sourcing this library" >&2
+  echo "probe-lib.bash: \$State is not set -- caller must set it to a writable directory before sourcing this library" >&2
   return 1 2>/dev/null || exit 1
 fi
 if [[ ! -d $State ]]; then
@@ -79,7 +79,7 @@ vpnUp() { $ip link show tun0 >/dev/null 2>&1; }
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
 # unreliable because most vendor sites block it). Returns ok or fail.
 # On fail, also invalidates the cached SSH success for the widget so
-# the state cannot return to "active" without a fresh SSH probe —
+# the state cannot return to "active" without a fresh SSH probe --
 # implements the "stay active so long as ping is succeeding" contract.
 # Args: state-key-prefix host
 pingHost() {
@@ -95,7 +95,7 @@ pingHost() {
 }
 
 # sshHost tests git-over-ssh reachability. Returns ok if the server
-# responds (rc 0/1 or "shell request failed" — both indicate the SSH
+# responds (rc 0/1 or "shell request failed" -- both indicate the SSH
 # layer is up regardless of git permissions), fail otherwise.
 sshHost() {
   local host=$1
@@ -110,13 +110,13 @@ sshHost() {
 }
 
 # combine merges per-source results into a single widget class. Rules:
-#   - api=down or api=off    → off  (service is down per vendor)
-#   - api=degraded/partial   → partial
-#   - ping=fail              → off  (network unreachable)
-#   - ssh=ok and ping=ok     → on   (fully active)
-#   - ssh=skip and ping=ok   → on   (no SSH layer; ping+api sufficient)
-#   - ping=ok                → partial (reachable but no auth confirmation)
-#   - otherwise              → unknown
+#   - api=down or api=off    -> off  (service is down per vendor)
+#   - api=degraded/partial   -> partial
+#   - ping=fail              -> off  (network unreachable)
+#   - ssh=ok and ping=ok     -> on   (fully active)
+#   - ssh=skip and ping=ok   -> on   (no SSH layer; ping+api sufficient)
+#   - ping=ok                -> partial (reachable but no auth confirmation)
+#   - otherwise              -> unknown
 # Args: ssh-state ping-state [api-state]
 combine() {
   local ssh=${1:-unknown}
@@ -180,7 +180,7 @@ digiApiProbe() {
 }
 
 # Widget metadata. Single source of truth for host names, VPN gating,
-# and vendor API probe selection — both the dotfiles tmux panel and
+# and vendor API probe selection -- both the dotfiles tmux panel and
 # the nixos-config waybar widget-status renderer read these. Adding a
 # new widget host means editing this file once instead of two.
 declare -A WidgetHost=(
@@ -247,7 +247,7 @@ probeReachability() {
 
 # probeWidget is a thin wrapper that reads host + apiFn from the
 # widget metadata table and calls probeReachability. Most callers
-# should use this — it eliminates the need to repeat the host name
+# should use this -- it eliminates the need to repeat the host name
 # at each call site.
 probeWidget() {
   local key=$1
@@ -261,7 +261,7 @@ probeWidget() {
 
 # probePing runs only the TCP/443 ping probe at a configurable
 # cadence. Useful for widgets like teams that don't expose SSH and
-# don't have a vendor status API — just a "is the host reachable"
+# don't have a vendor status API -- just a "is the host reachable"
 # check at a slow cadence.
 # Args: key host [ttl-seconds]
 probePing() {

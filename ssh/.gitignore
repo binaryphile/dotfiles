@@ -1,4 +1,4 @@
-# Plaintext private keys — never commit
+# Plaintext private keys -- never commit
 id_ed25519_*
 !id_ed25519_*.age
 !id_ed25519_*.pub
