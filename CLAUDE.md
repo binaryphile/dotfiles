@@ -55,4 +55,5 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 - `docs/use-cases.md` -- what this repo does and for whom.
 - `docs/design.md` -- how components work, deployment flow, bash init flow.
 - `docs/uc-init.md` -- use cases for every init.bash feature employed in the config.
-- Keep all updated when making changes.
+- `docs/secrets-lifecycle.md` -- SSH key and secrets lifecycle: bootstrap, rotation, recovery.
+- Keep all updated when making changes. When changing secrets bootstrap, restore, encryption, or `~/secrets/` consumers, review `docs/design.md` and `docs/secrets-lifecycle.md` for sync.

@@ -309,6 +309,26 @@ On first-time machine setup (no `.age` in repo), generates a new passphrase-prot
 
 **Auth preflight** (stage 2): Tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
 
+**Decision logic** (`sshKeyAction` in `update-env`, lines 865-914): pure function mapping filesystem state to exactly one action. Code is authoritative; this table is a reading aid.
+
+*Invariant checks* (evaluated first): repo .age without .pub or vice versa -> error; repo .pub with empty fingerprint -> error.
+
+| State | Action | Notes |
+|-------|--------|-------|
+| local exists, localFp == repoFp | `present` | strongest match |
+| local exists, localFp != repoFp | `collision` | error: two keys for same hostname |
+| local exists, localFp unknown, cacheFp == repoFp | `backup_then_cache` | backup local, restore cache |
+| local exists, localFp unknown, repo .age + tty + age | `backup_then_age` | backup local, decrypt repo |
+| local exists, no repo state | `capture_to_repo` | encrypt local to repo |
+| no local, cacheFp == repoFp (or repoFp empty) | `restore_from_cache` | fast path. Weaker when repoFp empty |
+| no local, repo .age + tty + age | `restore_from_age` | passphrase required |
+| no local, no repo, tty | `generate` | new key, encrypt to repo |
+| any path needing tty but no tty | `missing_noninteractive` | CI: pre-provision required |
+
+`SshKeyStatus` values (set by restore, read by `sshKeyEpilogue`): `present`, `restored`, `generated`, `generated_local_only`, `collision`, `missing_noninteractive`.
+
+Operator workflows (bootstrap, rotation, recovery, decommission): [secrets-lifecycle.md](secrets-lifecycle.md).
+
 ### Secrets Bundling (UC-4)
 
 Per-machine secrets stored as age-encrypted tarballs: `secrets/<hostname>.tar.age`. Same three-tier restore model as SSH keys.
@@ -321,7 +341,13 @@ Per-machine secrets stored as age-encrypted tarballs: `secrets/<hostname>.tar.ag
 
 Fails closed: corrupt or non-tar input rejected before extraction. Post-extraction `find -not -type f` remains as defense-in-depth.
 
-**Freshness:** Bundle hash (sha256 of `.tar.age` ciphertext) stored as `~/secrets/.bundle-hash`. Stale warning if local hash differs from repo. Known limitation: re-encryption changes hash even with identical plaintext.
+**Snapshot semantics:** each bundle is a point-in-time snapshot from one machine. Last committed bundle wins -- no merge, no conflict resolution. Different machines may have different secret subsets.
+
+**Restore behavior:** restore only runs when `~/secrets/` is empty (Tier 1 short-circuits if any non-dot files exist). Files are moved into `~/secrets/` additively; restore never overwrites existing secrets.
+
+**Freshness:** Bundle hash (sha256 of `.tar.age` ciphertext) stored as `~/secrets/.bundle-hash`. Stale warning (advisory, not blocking) if local hash differs from repo. Known limitation: re-encryption changes hash even with identical plaintext.
+
+Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.md](secrets-lifecycle.md).
 
 **Scripts:**
 - `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
