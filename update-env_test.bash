@@ -45,80 +45,6 @@ test_each() {
   tesht.Run ${!case@}
 }
 
-# It creates temporary directories with test files to control the environment.
-test_glob() {
-  local -A case1=(
-    [name]='match files with a splat'
-
-    [args]='(*.txt)'
-    [files]="(file1.txt file2.txt file3.log)"
-    [wants]="(file1.txt file2.txt)"
-  )
-
-  local -A case2=(
-    [name]='return no files if none match'
-
-    [args]='(nonexistent-*)'
-    [files]="(file1.txt)"
-    [wants]="()"
-  )
-
-  local -A case3=(
-    [name]='match files with question mark'
-
-    [args]='(file?.txt)'
-    [files]="(file1.txt file10.txt)"
-    [wants]="(file1.txt)"
-  )
-
-  local -A case4=(
-    [name]='match multiple patterns'
-
-    [args]='(*.txt *.log)'
-    [files]="(file.txt file.log)"
-    [wants]="(file.txt file.log)"
-  )
-
-  # subtest runs each subtest.
-  # casename is expected to be the name of an associative array holding at least the key "name".
-  subtest() {
-    local casename=$1
-
-    ## arrange
-
-    # temporary directory
-    local dir
-    tesht.MktempDir dir || return 128
-    cd "$dir"
-
-    # create variables from the keys/values of the test map
-    eval "$(tesht.Inherit $casename)"
-
-    # Create test files
-    stream "${files[@]}" | each touch
-
-    ## act
-
-    # run the command and capture the output and result code
-    local got rc
-    got=$(glob "${args[@]}") && rc=$? || rc=$?
-
-    ## assert
-    # assert that we got the wanted output
-    local want=$(stream "${wants[@]}")
-    tesht.AssertGot "$got" "$want"
-  }
-
-  local failed=0 casename
-  for casename in ${!case@}; do
-    tesht.Run $casename || {
-      (( $? == 128 )) && return 128   # fatal
-      failed=1
-    }
-  done
-
-  return $failed
-}
 # test_keepIf tests that keepIf filters lines by a pattern.
 # Subtests are run with tesht.Run.
 test_keepIf() {
@@ -265,53 +191,6 @@ test_stream() {
 }
 
 ## credential bootstrap helpers
-
-# test_validateHostname tests hostname validation rules.
-test_validateHostname() {
-  local -A case1=(
-    [name]='accept simple hostname'
-    [input]='calumny'
-    [wantRc]=0
-  )
-  local -A case2=(
-    [name]='accept hostname with hyphen'
-    [input]='my-host'
-    [wantRc]=0
-  )
-  local -A case3=(
-    [name]='reject penguin'
-    [input]='penguin'
-    [wantRc]=1
-  )
-  local -A case4=(
-    [name]='reject uppercase'
-    [input]='MyHost'
-    [wantRc]=1
-  )
-  local -A case5=(
-    [name]='reject special characters'
-    [input]='host/name'
-    [wantRc]=1
-  )
-  local -A case6=(
-    [name]='reject leading hyphen'
-    [input]='-badhost'
-    [wantRc]=1
-  )
-
-  subtest() {
-    local casename=$1
-    eval "$(tesht.Inherit "$casename")"
-    local rc
-    validateHostname "$input" >/dev/null 2>&1 && rc=$? || rc=$?
-    (( rc == wantRc )) || {
-      echo "${NL}validateHostname ${input@Q}: rc=$rc, want=$wantRc"
-      return 1
-    }
-  }
-
-  tesht.Run ${!case@}
-}
 
 # test_pubFingerprint tests fingerprint extraction from .pub files.
 test_pubFingerprint() {
@@ -710,7 +589,7 @@ test_restoreSecretsTierSelection() {
     HOME=$dir
     CrostiniDir="$dir/crostini"
     mkdir -p "$dir/secrets" "$dir/dotfiles/secrets"
-    machineHostname() { echo testhost; }
+    lib.MachineHostname() { echo testhost; }
 
     local got rc
     case $casename in
@@ -726,34 +605,6 @@ test_restoreSecretsTierSelection() {
         [[ "$got" == *"No secrets for testhost"* ]] || { echo "should print setup message, got: $got"; return 1; }
         ;;
     esac
-  }
-
-  tesht.Run ${!case@}
-}
-
-# test_validSecretName tests the shared filename policy used by both
-# encrypt-secrets (producer) and restoreSecrets (consumer).
-test_validSecretName() {
-  local -A case1=([name]='accept simple name' [input]='stash.key' [wantRc]=0)
-  local -A case2=([name]='accept underscores' [input]='api_token' [wantRc]=0)
-  local -A case3=([name]='accept hyphens' [input]='my-token' [wantRc]=0)
-  local -A case4=([name]='accept dots' [input]='key.pem' [wantRc]=0)
-  local -A case5=([name]='reject dotfile' [input]='.secret' [wantRc]=1)
-  local -A case6=([name]='reject leading dash' [input]='-rf' [wantRc]=1)
-  local -A case7=([name]='reject path separator' [input]='foo/bar' [wantRc]=1)
-  local -A case8=([name]='reject spaces' [input]='my key' [wantRc]=1)
-  local -A case9=([name]='reject empty' [input]='' [wantRc]=1)
-  local -A case10=([name]='reject path traversal' [input]='../etc' [wantRc]=1)
-
-  subtest() {
-    local casename=$1
-    eval "$(tesht.Inherit "$casename")"
-    local rc
-    validSecretName "$input" && rc=$? || rc=$?
-    (( rc == wantRc )) || {
-      echo "validSecretName ${input@Q}: rc=$rc, want=$wantRc"
-      return 1
-    }
   }
 
   tesht.Run ${!case@}
@@ -866,11 +717,4 @@ test_withSecretMissingFile() {
   local rc
   ~/dotfiles/scripts/with-secret MY_TOKEN /nonexistent/file echo hi 2>/dev/null && rc=$? || rc=$?
   (( rc != 0 )) || { echo "should fail on missing file"; return 1; }
-}
-
-# test_machineHostname tests hostname resolution returns a valid hostname.
-test_machineHostname() {
-  local got
-  got=$(machineHostname)
-  [[ -n "$got" ]] || { echo "machineHostname returned empty"; return 1; }
 }
