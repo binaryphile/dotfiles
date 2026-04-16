@@ -696,6 +696,92 @@ test_validateSecretsArchive() {
   tesht.Run ${!case@}
 }
 
+# test_crostiniHostname tests crostiniHostnameSetup: writes hostname to
+# $CrostiniDir/hostname, validates input, requires backing storage.
+test_crostiniHostname() {
+  local -A case1=(
+    [name]='writes hostname arg to file'
+    [hostname]='calderon'
+    [existing]=''
+    [backingExists]=1
+    [wantRc]=0
+    [wantContent]='calderon'
+  )
+  local -A case2=(
+    [name]='preserves existing hostname on re-run without arg'
+    [hostname]=''
+    [existing]='calliope'
+    [backingExists]=1
+    [wantRc]=0
+    [wantContent]='calliope'
+  )
+  local -A case3=(
+    [name]='rejects invalid hostname'
+    [hostname]='INVALID'
+    [existing]=''
+    [backingExists]=1
+    [wantRc]=1
+  )
+  local -A case4=(
+    [name]='fails without backing storage'
+    [hostname]='calderon'
+    [existing]=''
+    [backingExists]=0
+    [wantRc]=1
+  )
+  local -A case5=(
+    [name]='first run without hostname is fatal'
+    [hostname]=''
+    [existing]=''
+    [backingExists]=1
+    [wantRc]=1
+  )
+  local -A case6=(
+    [name]='creates CrostiniDir when backing exists'
+    [hostname]='calderon'
+    [existing]=''
+    [backingExists]=1
+    [wantRc]=0
+    [wantDir]=1
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    ## arrange
+    local dir
+    tesht.MktempDir dir || return 128
+    local testBacking=$dir/backing
+    local testCrostiniDir=$testBacking/crostini
+
+    if (( backingExists )); then
+      mkdir -p "$testBacking"
+    fi
+    if [[ -n $existing ]]; then
+      mkdir -p "$testCrostiniDir"
+      echo "$existing" > "$testCrostiniDir/hostname"
+    fi
+
+    ## act
+    local got rc
+    got=$(CrostiniDir=$testCrostiniDir CrostiniBacking=$testBacking Hostname=$hostname crostiniHostnameSetup 2>&1) && rc=$? || rc=$?
+
+    ## assert
+    tesht.AssertRC $rc $wantRc || return 1
+    if [[ -n ${wantContent:-} ]]; then
+      local actual
+      actual=$(< "$testCrostiniDir/hostname")
+      tesht.AssertGot "$actual" "$wantContent" || return 1
+    fi
+    if [[ -n ${wantDir:-} ]]; then
+      [[ -d $testCrostiniDir ]] || { echo "CrostiniDir not created"; return 1; }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecret tests the with-secret wrapper.
 test_withSecret() {
   local dir
