@@ -146,41 +146,15 @@ stage1() {
     export DOTFILES_STAGE1=1
     homeManagerSwitchTask
     unset DOTFILES_STAGE1
+    convergeTaskBash
     ;;
   esac
 
-  #  +-------------------------------------------------------------+
-  #  | PHASE 5 (core): Development Tools                           |
-  #  |   +-> fp.bash           - functional programming utilities  |
-  #  |   +-> mk.bash           - build tool & git updater          |
-  #  |   +-> task.bash         - task automation (this script!)    |
-  #  |   +-> tesht             - testing framework                 |
-  #  |       Default branch: main. Cloned and symlinked.           |
-  #  +-------------------------------------------------------------+
-
-  section fp.bash
-  githubCloneAndLinkTask fp.bash
-  task.Ln ~/projects/fp.bash/fp.bash ~/.local/lib/fp.bash
-
-  section mk.bash
-  githubCloneAndLinkTask mk.bash
-  scaffoldTask ~/projects/mk.bash
-  task.Ln nix-wrapper ~/projects/mk.bash/bin/node
-  task.Ln nix-wrapper ~/projects/mk.bash/bin/npx
-  task.Ln ~/projects/mk.bash/mk.bash ~/.local/lib/mk.bash
-  task.Ln ~/projects/mk.bash/mk-example ~/.local/bin/mk
-
-  section task.bash
-  githubCloneAndLinkTask task.bash
-  scaffoldTask ~/projects/task.bash
+  # Dev tools (task.bash, mk.bash, tesht) are nix-packaged in bash-tools.nix
+  # and installed by home-manager above. Clones moved to stage 2.
 
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
   task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
-
-  section tesht
-  githubCloneAndLinkTask tesht
-  scaffoldTask ~/projects/tesht
-  task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
 }
 
 stage1Epilogue() {
@@ -209,6 +183,7 @@ stage2() {
   case $Platform in crostini|debian|linux|macos )
     section home-manager-full
     homeManagerSwitchTask
+    convergeTaskBash
     ;;
   esac
 
@@ -244,6 +219,38 @@ stage2() {
         each task.GitClone
     fi
   fi
+
+  #  +-------------------------------------------------------------+
+  #  | PHASE 5 (core): Dev Tool Clones (nix-packaged, cloned for  |
+  #  |   development). Tools available via nix after stage 1.      |
+  #  |   +-> task.bash         - task automation                   |
+  #  |   +-> fp.bash           - functional programming utilities  |
+  #  |   +-> mk.bash           - build tool & git updater          |
+  #  |   +-> tesht             - testing framework                 |
+  #  +-------------------------------------------------------------+
+
+  section task.bash
+  try githubCloneAndLinkTask task.bash
+  try scaffoldTask ~/projects/task.bash
+  try task.Ln ~/projects/task.bash/task.bash ~/.local/bin/task.bash
+
+  section fp.bash
+  try githubCloneAndLinkTask fp.bash
+  try task.Ln ~/projects/fp.bash/fp.bash ~/.local/bin/fp.bash
+
+  section mk.bash
+  try githubCloneAndLinkTask mk.bash
+  try scaffoldTask ~/projects/mk.bash
+  try task.Ln nix-wrapper ~/projects/mk.bash/bin/node
+  try task.Ln nix-wrapper ~/projects/mk.bash/bin/npx
+  try task.Ln ~/projects/mk.bash/mk.bash ~/.local/bin/mk.bash
+  # mk-example symlink deferred until upstream uses repo-relative sourcing.
+  # Nix-packaged mk (patched to store path) is the active command until then.
+
+  section tesht
+  try githubCloneAndLinkTask tesht
+  try scaffoldTask ~/projects/tesht
+  try task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5 (projects): Additional Tools & Projects             |
@@ -1338,6 +1345,24 @@ fatal() {
   exit $rc
 }
 
+# convergeTaskBash -- after home-manager switch, re-source session vars to
+# pick up TASK_BASH_LIB from the new generation, then re-source task.bash
+# from the pinned store path. Ensures the rest of this run uses the
+# nix-pinned version, not the curl bootstrap.
+# Unsets __HM_SESS_VARS_SOURCED first -- hm-session-vars.sh guards against
+# double-sourcing, but we need the new generation's values.
+# Non-NixOS only (called inside the crostini|debian|linux|macos case block).
+convergeTaskBash() {
+  local hmVars=$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
+  unset -v __HM_SESS_VARS_SOURCED
+  [[ -r $hmVars ]] || { echo "fatal: hm-session-vars.sh not found at $hmVars" >&2; exit 1; }
+  loosely source "$hmVars"
+  if [[ -n ${TASK_BASH_LIB:-} ]]; then
+    [[ -r $TASK_BASH_LIB ]] || { echo "fatal: TASK_BASH_LIB unreadable after switch: $TASK_BASH_LIB" >&2; exit 1; }
+    source "$TASK_BASH_LIB" || { echo "fatal: failed to source converged task.bash: $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
+  fi
+}
+
 # resolveSourceDir -- resolve the directory of the calling script, following
 # symlink chains. Works when update-env is at ~/.local/bin/update-env.
 resolveSourceDir() {
@@ -1568,14 +1593,23 @@ NL=$'\n'
 
 ## boilerplate
 
-Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo .)")"; pwd)
-if [[ -e "$Here"/task.bash ]]; then
-  source "$Here"/task.bash
+# Pinned to the same rev as bash-tools.nix taskBash. Update both together.
+TaskBashBootstrapRev=574e4750531cebfbb1ca79d75640322c1e17aa7e
+
+if [[ -n ${TASK_BASH_LIB:-} ]]; then
+  [[ -r $TASK_BASH_LIB ]] || { echo "fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB" >&2; exit 1; }
+  source "$TASK_BASH_LIB" || { echo "fatal: failed to source $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
 else
-  Lib=$(curl -fsSL https://raw.githubusercontent.com/binaryphile/task.bash/main/task.bash) || exit
-  eval "$Lib"
+  TaskTmp=$(mktemp) || { echo "fatal: cannot create temp file" >&2; exit 1; }
+  curl -fsSL "https://raw.githubusercontent.com/binaryphile/task.bash/$TaskBashBootstrapRev/task.bash" > "$TaskTmp" ||
+    { rm -f "$TaskTmp"; echo "fatal: task.bash bootstrap fetch failed" >&2; exit 1; }
+  source "$TaskTmp" && Rc=$? || Rc=$?
+  rm -f "$TaskTmp"
+  unset -v TaskTmp
+  (( Rc == 0 )) || { echo "fatal: failed to source bootstrap task.bash (rc=$Rc)" >&2; exit 1; }
+  unset -v Rc
 fi
-unset -v Here Lib
+unset -v TaskBashBootstrapRev
 
 return 2>/dev/null  # stop here if sourced, for interactive debugging
 

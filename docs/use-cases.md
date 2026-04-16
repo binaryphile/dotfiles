@@ -145,7 +145,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - UC-7 (VPN) -- depends on SSH keys registered with providers and gpoc installed
 - **Main Success Scenario:**
   1. Ted runs `update-env` (or `-1` / `-2` for individual stages)
-  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and home-manager
+  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and home-manager (which installs nix-packaged dev tools and sets env vars)
   3. System restores SSH key from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset)
   4. System loads SSH key into agent, validates provider auth
   5. System clones project repos and prints remaining manual steps
@@ -163,7 +163,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 5b. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
-- **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
+- **Success Guarantee:** Shell, git, editor, tmux, dev tools (nix-packaged + project repos), packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
 - **Technology:** update-env (bash), age (encryption), ssh-keygen, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
 
 ---
