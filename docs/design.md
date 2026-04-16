@@ -62,27 +62,27 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 `update-env` takes a bare machine to fully configured. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages:
 
-**Stage 1** (critical path -- working shell, HTTPS only):
+**Stage 1** (critical path -- working shell with identity):
 
-1. System upgrades (apt-get: crostini/debian only)
+1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation). Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts.
+3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation). Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. Installs `age`.
+4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider. After this step, `git push` and SSH clones work. Skipped if no hostname is set (re-run with hostname to fix).
 
-**Stage 2** (credentials, projects, dev tool repos, VPN):
+**Stage 2** (projects, dev tool repos, VPN):
 
-4. Re-run home-manager with full config (VPN packages). Installs `age`.
-5. Credential restore (Crostini only): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider.
+5. Re-run home-manager with full config (VPN packages).
 6. Platform-specific setup (crostini only)
 7. Clone dev tool repos for development (task.bash, fp.bash, mk.bash, tesht). Symlinked to `~/.local/bin/` for interactive use and executable overrides. Tools themselves already available via nix (step 3).
 8. Clone and link project repos (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
 10. Neovim plugins, daily notes
 
-Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages.
+Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages. Hostname positional argument accepted only with `-1` (`update-env -1 calderon`); rejected otherwise.
 
 **Deployment terminology:**
 
-- **Stage** -- top-level division. Stage 1 = critical path (working shell). Stage 2 = credentials, projects, VPN.
+- **Stage** -- top-level division. Stage 1 = critical path (working shell with identity). Stage 2 = projects, VPN.
 - **Step** -- a numbered item within a stage (1-10 above). Referenced as "step 7" or "steps 8-10".
 - **Phase** -- legacy label in `update-env` box comments (PHASE 1-7). Numbering does not map 1:1 to steps. Docs use "step" for the canonical sequence.
 - **Section** -- progress marker emitted by `section <name>` calls in `update-env`; typically sub-step granularity (e.g. one `section` per repo clone within a step).

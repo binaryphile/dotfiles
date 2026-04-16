@@ -136,31 +136,32 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Scope:** update-env (deployment script)
 - **Level:** User goal
 - **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, or new NixOS host
-- **Preconditions:** Network connected. NixOS: SSH keys pre-existing.
+- **Preconditions:** Network connected. Crostini: ChromeOS file sharing enabled (shared Downloads visible at `/mnt/chromeos/MyFiles/Downloads`). Crostini first run: hostname argument required (`update-env -1 <hostname>`). NixOS: SSH keys pre-existing.
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
   - Future Ted -- works without remembering steps; idempotent re-runs fix drift
   - Security -- keys encrypted at rest in repo; passphrase on generated keys; TOFU host-key model
-  - UC-1 (development) -- depends on git, editor, tmux, dev tool repos
+  - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
   - UC-7 (VPN) -- depends on SSH keys registered with providers and gpoc installed
 - **Main Success Scenario:**
-  1. Ted runs `update-env` (or `-1` / `-2` for individual stages)
-  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and home-manager (which installs nix-packaged dev tools and sets env vars)
-  3. System restores SSH key from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset)
-  4. System loads SSH key into agent, validates provider auth
-  5. System clones project repos and prints remaining manual steps
+  1. Ted runs `update-env -1 <hostname>` (Crostini first run) or `update-env` (subsequent/other platforms). Hostname is written to persistent storage and identifies the machine for SSH keys and secrets.
+  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and home-manager (which installs nix-packaged dev tools, age, and sets env vars)
+  3. System restores SSH key and secrets from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset). Loads key into agent, validates provider auth. Working shell with full identity after stage 1.
+  4. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
+  - 1a. Crostini first run, no hostname arg -> fail with instructions (`update-env -1 <hostname>`)
+  - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions (enable file sharing in ChromeOS Settings)
+  - 1c. Hostname arg given with `-2` or without `-1` -> rejected (hostname only accepted with `-1`)
   - 2a. apt lock held -> waits up to 60s; resume at step 2
-  - 3a. Key already exists locally, matches repo -> no decrypt needed; resume at step 4
-  - 3b. Mount cache valid -> restore without passphrase; resume at step 4
+  - 3a. Key already exists locally, matches repo -> no decrypt needed; resume at step 3 (agent load)
+  - 3b. Mount cache valid -> restore without passphrase; resume at step 3 (agent load)
   - 3c. No TTY -> skip credentials; HTTPS clones still work; separate success
-  - 3d. No credentials in repo -> generate, encrypt, prompt to commit; resume at step 4
-  - 3e. Hostname is "penguin" -> fail with instructions
-  - 3f. Local key mismatches repo -> collision error; fail
-  - 4a. NixOS host -> system skips nix/home-manager and credential restore; resume at step 5
-  - 4b. Agent load fails -> warn; preflight may report false negatives
-  - 5a. Provider auth fails -> reports per provider; private repos skipped; separate success
-  - 5b. VPN-dependent repo unreachable -> fails fast; resume at next repo
+  - 3d. No credentials in repo -> generate, encrypt, prompt to commit; resume at step 3 (agent load)
+  - 3e. Local key mismatches repo -> collision error; fail
+  - 3f. Agent load fails -> warn; preflight may report false negatives
+  - 3g. NixOS host -> system skips nix/home-manager and credential restore; resume at step 4
+  - 4a. Provider auth fails -> reports per provider; private repos skipped; separate success
+  - 4b. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools (nix-packaged + project repos), packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps

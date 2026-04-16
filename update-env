@@ -84,7 +84,6 @@ stage1() {
   #  +-------------------------------------------------------------+
   #  | PHASE 1: System (section system)                            |
   #  |   +-> [crostini/debian] apt-get upgrade                     |
-  #  |   +-> SSH key restore moved to stage 2 (restoreSshKey)     |
   #  +-------------------------------------------------------------+
   section system
   each task.Ln <<'  END'
@@ -98,7 +97,7 @@ stage1() {
   ;; esac
 
   case $Platform in crostini )
-    # SSH key restore moved to stage 2 (restoreSshKey, after age is installed)
+    crostiniHostnameSetup
     task.Ln $CrostiniDir/repos ~/repos
     task.Ln $CrostiniDir/secrets ~/secrets
     ;;
@@ -153,15 +152,27 @@ stage1() {
   # Dev tools (task.bash, mk.bash, tesht) are nix-packaged in bash-tools.nix
   # and installed by home-manager above. Clones moved to stage 2.
 
+  # Credential restore + agent load + auth preflight (after age is installed
+  # by home-manager). Working shell includes full identity -- SSH push, clone.
+  case $Platform in crostini )
+    section credential
+    try restoreSshKey
+    try restoreSecrets
+    try loadSshKey
+    section auth-preflight
+    try authPreflight
+    ;;
+  esac
+
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
   task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
 }
 
 stage1Epilogue() {
   echo
-  echo "Stage 1 complete. Shell configuration changed."
+  echo "Stage 1 complete. Working shell with identity."
   echo "Run 'exec bash' to reload your shell."
-  echo "Then run 'update-env -2' to install remaining tools and repos."
+  echo "Then run 'update-env -2' to clone projects and dev tool repos."
 }
 
 stage2Preflight() {
@@ -184,17 +195,6 @@ stage2() {
     section home-manager-full
     homeManagerSwitchTask
     convergeTaskBash
-    ;;
-  esac
-
-  # SSH key restore + agent load + auth preflight (after age is installed)
-  case $Platform in crostini )
-    section credential
-    try restoreSshKey
-    try restoreSecrets
-    try loadSshKey
-    section auth-preflight
-    try authPreflight
     ;;
   esac
 
@@ -1345,6 +1345,24 @@ fatal() {
   exit $rc
 }
 
+# crostiniHostnameSetup -- verify ChromeOS backing storage, create
+# $CrostiniDir, and write hostname file. Fatal on first run without
+# hostname arg or without backing storage.
+# Reads: $CrostiniBacking (parent of $CrostiniDir), $CrostiniDir, $Hostname.
+crostiniHostnameSetup() {
+  local backing=${CrostiniBacking:-/mnt/chromeos/MyFiles/Downloads}
+  [[ -d $backing ]] || { echo "fatal: ChromeOS shared storage not mounted at $backing" >&2; echo "Enable file sharing in ChromeOS Settings > Linux" >&2; return 1; }
+  mkdir -p "$CrostiniDir"
+  if [[ -n $Hostname ]]; then
+    lib.ValidateHostname "$Hostname" || return 1
+    echo "$Hostname" > "$CrostiniDir/hostname"
+  elif [[ ! -e $CrostiniDir/hostname ]]; then
+    echo "fatal: no Crostini hostname configured" >&2
+    echo "First run requires: update-env -1 <hostname>" >&2
+    return 1
+  fi
+}
+
 # convergeTaskBash -- after home-manager switch, re-source session vars to
 # pick up TASK_BASH_LIB from the new generation, then re-source task.bash
 # from the pinned store path. Ensures the rest of this run uses the
@@ -1634,5 +1652,12 @@ while [[ ${1:-} == -?* ]]; do
   esac
   shift
 done
+
+Hostname=
+if [[ $Stage == 1 && -n ${1:-} ]]; then
+  Hostname=$1
+  shift
+fi
+(( $# == 0 )) || { echo "fatal: unexpected argument: $1" >&2; exit 1; }
 
 main
