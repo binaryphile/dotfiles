@@ -66,15 +66,15 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 1. System upgrades (apt-get: crostini/debian only)
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation).
-4. Clone and link core dev tools via HTTPS (fp.bash, mk.bash, task.bash, tesht)
+3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation). Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts.
 
-**Stage 2** (credentials, projects, VPN):
+**Stage 2** (credentials, projects, dev tool repos, VPN):
 
-5. Re-run home-manager with full config (VPN packages). Installs `age`.
-6. Credential restore (Crostini only): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider.
-7. Platform-specific setup (crostini only)
-8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
+4. Re-run home-manager with full config (VPN packages). Installs `age`.
+5. Credential restore (Crostini only): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider.
+6. Platform-specific setup (crostini only)
+7. Clone dev tool repos for development (task.bash, fp.bash, mk.bash, tesht). Symlinked to `~/.local/bin/` for interactive use and executable overrides. Tools themselves already available via nix (step 3).
+8. Clone and link project repos (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
 10. Neovim plugins, daily notes
 
@@ -83,8 +83,8 @@ Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual 
 **Deployment terminology:**
 
 - **Stage** -- top-level division. Stage 1 = critical path (working shell). Stage 2 = credentials, projects, VPN.
-- **Step** -- a numbered item within a stage (1-10 above). Referenced as "step 4" or "steps 8-10".
-- **Phase** -- legacy label in `update-env` box comments (PHASE 1-7). Numbering does not map 1:1 to steps (two distinct PHASE 5 labels plus PHASE 5b; out-of-order numbering). Docs use "step" for the canonical sequence.
+- **Step** -- a numbered item within a stage (1-10 above). Referenced as "step 7" or "steps 8-10".
+- **Phase** -- legacy label in `update-env` box comments (PHASE 1-7). Numbering does not map 1:1 to steps. Docs use "step" for the canonical sequence.
 - **Section** -- progress marker emitted by `section <name>` calls in `update-env`; typically sub-step granularity (e.g. one `section` per repo clone within a step).
 
 All public repo clones use HTTPS fetch with SSH push URLs (idempotent remote migration on every run). Private repos use SSH with `try` wrappers.
@@ -98,7 +98,8 @@ Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -
 | Owner | What | Count | Why |
 |-------|------|-------|-----|
 | `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `context` -> active platform; `config.nix` -> nixpkgs; `home.nix` -> home-manager | 6 symlinks | Must exist before nix/HM runs. Shell init, nix config, and HM config are prerequisites for everything else. |
-| `update-env` (external) | Dev tool and project repos (steps 4, 8-10) cloned and linked to `~/.local/bin` or `~/.local/lib`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation -- cloned repos and secrets are not. |
+| `home-manager` (`bash-tools.nix`) | task.bash, mk.bash (libs) + mk, tesht (executables) | 3 derivations | Bash dev tools fetched from GitHub via `fetchFromGitHub`. Libraries to nix store (dependency-only); executables on PATH. Env vars `TASK_BASH_LIB`, `MK_BASH_LIB` inject store paths for automation scripts. Pins rev+hash; bump manually. |
+| `update-env` (external) | Dev tool and project repos (steps 7-10) cloned and linked to `~/.local/bin`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation -- cloned repos and secrets are not. Dev tool clones override nix executables via PATH for active development. |
 | `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3) | 10 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
 | `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies -- Claude Code may overwrite these, so HM restores them on switch. |
 | `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC; gpgui desktop entry | 3 symlinks + 1 generated + 1 symlink (`crostini/home.nix`) | Crostini-only scripts, generated config, and gpoc URL scheme handler. |

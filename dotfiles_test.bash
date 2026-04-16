@@ -103,6 +103,8 @@ RuntimeFactsFile=/tmp/dotfiles-test-facts
     [[ -d $CFGDIR ]] && echo "CFGDIR_DIR=yes" || echo "CFGDIR_DIR=no"
     [[ -d $SECRETS ]] && echo "SECRETS_DIR=yes" || echo "SECRETS_DIR=no"
     echo "$PATH" | tr ":" "\n" | grep -q "/.local/bin$" && echo "PATH_LOCAL=yes" || echo "PATH_LOCAL=no"
+    [[ -n ${TASK_BASH_LIB:-} && -r $TASK_BASH_LIB ]] && echo "TASK_BASH_LIB=yes" || echo "TASK_BASH_LIB=no"
+    [[ -n ${MK_BASH_LIB:-} && -r $MK_BASH_LIB ]] && echo "MK_BASH_LIB=yes" || echo "MK_BASH_LIB=no"
     echo "UMASK=$(umask)"
     bind -V 2>/dev/null | grep -q "editing-mode is set to.*vi" && echo "VI=yes" || echo "VI=no"
 
@@ -151,28 +153,73 @@ RuntimeFactsFile=/tmp/dotfiles-test-facts
   ' > "$RuntimeFactsFile"
 
 test_shell_environment() {
-  local got rc=0
-  got=$(< "$RuntimeFactsFile")
+  local -A case1=(
+    [name]='EDITOR executable'
+    [fact]='EDITOR_EXEC=yes'
+  )
+  local -A case2=(
+    [name]='PAGER executable'
+    [fact]='PAGER_EXEC=yes'
+  )
+  local -A case3=(
+    [name]='.local/bin in PATH'
+    [fact]='PATH_LOCAL=yes'
+  )
+  local -A case4=(
+    [name]='umask 0022'
+    [fact]='UMASK=0022'
+  )
+  local -A case5=(
+    [name]='vi mode active'
+    [fact]='VI=yes'
+  )
+  local -A case6=(
+    [name]='TASK_BASH_LIB set and readable'
+    [fact]='TASK_BASH_LIB=yes'
+  )
+  local -A case7=(
+    [name]='MK_BASH_LIB set and readable'
+    [fact]='MK_BASH_LIB=yes'
+  )
 
-  [[ $got == *"EDITOR_EXEC=yes"* ]] || { echo "error: EDITOR is not executable"; rc=1; }
-  [[ $got == *"PAGER_EXEC=yes"* ]]  || { echo "error: PAGER is not executable"; rc=1; }
-  [[ $got == *"CFGDIR_DIR=yes"* ]]  || { echo "error: CFGDIR directory does not exist"; rc=1; }
-  [[ $got == *"SECRETS_DIR=yes"* ]]  || { echo "error: SECRETS directory does not exist"; rc=1; }
-  [[ $got == *"PATH_LOCAL=yes"* ]]   || { echo "error: .local/bin not in PATH"; rc=1; }
-  [[ $got == *"UMASK=0022"* ]]       || { echo "error: umask not 0022"; rc=1; }
-  [[ $got == *"VI=yes"* ]]           || { echo "error: vi mode not active"; rc=1; }
-  return $rc
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+    local got
+    got=$(< "$RuntimeFactsFile")
+    [[ $got == *"$fact"* ]] || { echo "error: $name"; return 1; }
+  }
+
+  tesht.Run ${!case@}
 }
 
 test_git_workflow() {
-  local got rc=0
-  got=$(< "$RuntimeFactsFile")
+  local -A case1=(
+    [name]='gss (git status -s) works'
+    [fact]='GSS_RC=0'
+  )
+  local -A case2=(
+    [name]='git user.name configured'
+    [fact]='GIT_NAME=yes'
+  )
+  local -A case3=(
+    [name]='git user.email configured'
+    [fact]='GIT_EMAIL=yes'
+  )
+  local -A case4=(
+    [name]='reveal shows underlying command'
+    [fact]='REVEAL=yes'
+  )
 
-  [[ $got == *"GSS_RC=0"* ]]     || { echo "error: gss (git status -s) failed"; rc=1; }
-  [[ $got == *"GIT_NAME=yes"* ]] || { echo "error: git user.name not configured"; rc=1; }
-  [[ $got == *"GIT_EMAIL=yes"* ]]|| { echo "error: git user.email not configured"; rc=1; }
-  [[ $got == *"REVEAL=yes"* ]]   || { echo "error: reveal did not show underlying command"; rc=1; }
-  return $rc
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+    local got
+    got=$(< "$RuntimeFactsFile")
+    [[ $got == *"$fact"* ]] || { echo "error: $name"; return 1; }
+  }
+
+  tesht.Run ${!case@}
 }
 
 # Regression guards for known integration issues.
@@ -180,21 +227,46 @@ test_git_workflow() {
 # against the IFS/sourcing-order class of bugs that behavioral
 # tests alone cannot catch in a non-TTY environment.
 test_prompt_integration() {
+  local -A case1=(
+    [name]='liquidprompt _lp_load_color works (IFS-sensitive)'
+    [fact]='LP_LOAD=ok'
+  )
+  local -A case2=(
+    [name]='liquidprompt in PROMPT_COMMAND'
+    [fact]='LP_PRESENT=yes'
+  )
+  local -A case3=(
+    [name]='direnv in PROMPT_COMMAND'
+    [fact]='DV_PRESENT=yes'
+  )
+  local -A case4=(
+    [name]='liquidprompt before direnv in hook order'
+    [fact]='HOOK_ORDER=correct'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+    local got
+    got=$(< "$RuntimeFactsFile")
+    [[ $got == *"$fact"* ]] || { echo "error: $name"; return 1; }
+  }
+
+  tesht.Run ${!case@}
+}
+
+# Deployment-state tests: verify update-env stage 2 outcomes.
+# These test orchestration results, not config correctness.
+# They fail on machines where stage 2 hasn't run -- that's expected.
+
+test_deployment() {
   local got rc=0
   got=$(< "$RuntimeFactsFile")
 
-  [[ $got == *"LP_LOAD=ok"* ]]         || { echo "error: liquidprompt _lp_load_color failed (IFS issue?)"; rc=1; }
-  [[ $got == *"LP_PRESENT=yes"* ]]     || { echo "error: liquidprompt not in PROMPT_COMMAND"; rc=1; }
-  [[ $got == *"DV_PRESENT=yes"* ]]     || { echo "error: direnv not in PROMPT_COMMAND"; rc=1; }
-  [[ $got == *"HOOK_ORDER=correct"* ]] || { echo "error: liquidprompt must appear before direnv"; rc=1; }
+  [[ $got == *"CFGDIR_DIR=yes"* ]]  || { echo "error: CFGDIR directory does not exist"; rc=1; }
+  [[ $got == *"SECRETS_DIR=yes"* ]] || { echo "error: SECRETS directory does not exist"; rc=1; }
+  [[ $got == *"AGENT=yes"* ]]       || { echo "error: SSH agent not running or no keys loaded"; rc=1; }
   return $rc
-}
-
-test_ssh_agent() {
-  local got
-  got=$(< "$RuntimeFactsFile")
-
-  [[ $got == *"AGENT=yes"* ]] || { echo "error: SSH agent not running or no keys loaded"; return 1; }
 }
 
 test_direnv_activation() {

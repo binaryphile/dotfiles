@@ -36,7 +36,7 @@ FontAwesomeKeyFile=~/secrets/fontawesome.key
 
 ## boilerplate
 
-source ~/.local/lib/mk.bash 2>/dev/null || { echo 'fatal: mk.bash not found' >&2; exit 1; }
+source "${MK_BASH_LIB:?mk.bash not installed -- run home-manager switch}"
 
 IFS=$'\n'
 set -o noglob

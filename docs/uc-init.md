@@ -160,7 +160,7 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Trigger:** Login shell or reload
 - **Main Success Scenario:**
   1. Login shell starts
-  2. PATH includes .local/bin, .local/lib, /usr/local/bin
+  2. PATH includes .local/bin, /usr/local/bin
   3. EDITOR set to nvim, PAGER to less
   4. CFGDIR, SECRETS, XDG_CONFIG_HOME set to expected values
   5. Nix-managed session variables available
