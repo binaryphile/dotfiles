@@ -51,7 +51,7 @@ sshKeyEpilogue() {
       [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
       echo "Register this key with: GitHub, Codeberg, Bitbucket"
-      echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(machineHostname)' && git push"
+      echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(lib.MachineHostname)' && git push"
       echo "Until registered, private repos will be skipped."
       ;;
     generated_local_only)
@@ -62,15 +62,15 @@ sshKeyEpilogue() {
       echo
       echo "WARNING: Key exists locally but is NOT encrypted in the repo." >&2
       echo "This key WILL BE LOST on wipe. To back up, run:"
-      echo "  age -p -o ~/dotfiles/ssh/id_ed25519_$(machineHostname).age ~/.ssh/id_ed25519"
-      echo "  cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$(machineHostname).pub"
+      echo "  age -p -o ~/dotfiles/ssh/id_ed25519_$(lib.MachineHostname).age ~/.ssh/id_ed25519"
+      echo "  cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$(lib.MachineHostname).pub"
       echo "  cd ~/dotfiles && git add ssh/ && git commit && git push"
       echo
       echo "Register this key with: GitHub, Codeberg, Bitbucket"
       ;;
     restored)
       echo
-      echo "SSH key restored for $(machineHostname)."
+      echo "SSH key restored for $(lib.MachineHostname)."
       ;;
     missing_noninteractive)
       echo
@@ -239,7 +239,7 @@ stage2() {
         [tlilley-daily-notes.git]=main
         [urma-next-local.git]=main
       )
-      (cd $CrostiniDir/repos; glob * | keepIf isDir) |
+      (cd $CrostiniDir/repos; lib.Glob * | keepIf isDir) |
         map target '$CrostiniDir/repos/$target ~/projects/${target%.git} ${branches[$target]:-main}' |
         each task.GitClone
     fi
@@ -281,7 +281,7 @@ stage2() {
   try codebergCloneAndLinkTask tandem-protocol
   try scaffoldTask ~/projects/tandem-protocol
   try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
-  glob ~/projects/tandem-protocol/commands/* |
+  lib.Glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
@@ -770,7 +770,7 @@ sshKeygenTask() {
     read -sp "${NL}again: " passphrase2
     [[ $passphrase == $passphrase2 ]] || { echo "${NL}passphrase did not match"; return 1; }
     echo
-    $ssh_keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(machineHostname)"
+    $ssh_keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(lib.MachineHostname)"
     cat "$keyFilename.pub"
   }
   cmd generateKey
@@ -915,8 +915,8 @@ sshKeyAction() {
 
 restoreSshKeyImpl() {
   local hostname
-  hostname=$(machineHostname)
-  validateHostname "$hostname" || return 1
+  hostname=$(lib.MachineHostname)
+  lib.ValidateHostname "$hostname" || return 1
 
   local repoAge="$HOME/dotfiles/ssh/id_ed25519_${hostname}.age"
   local repoPub="$HOME/dotfiles/ssh/id_ed25519_${hostname}.pub"
@@ -1188,8 +1188,8 @@ restoreSecrets() { withCleanupTrap cleanupSecretsTmp restoreSecretsImpl; }
 
 restoreSecretsImpl() {
   local hostname
-  hostname=$(machineHostname)
-  validateHostname "$hostname" || return 1
+  hostname=$(lib.MachineHostname)
+  lib.ValidateHostname "$hostname" || return 1
   local secretsDir="$HOME/secrets"
   local repoBundle="$HOME/dotfiles/secrets/${hostname}.tar.age"
   local cacheDir="$CrostiniDir/secrets/$hostname"
@@ -1201,7 +1201,7 @@ restoreSecretsImpl() {
   [[ -f "$repoBundle" ]] && repoHash=$(sha256sum "$repoBundle" | awk '{print $1}')
 
   # Tier 1: local secrets exist -- check freshness
-  if [[ -n "$(glob "$secretsDir"/*)" ]]; then
+  if [[ -n "$(lib.Glob "$secretsDir"/*)" ]]; then
     local localHash=""
     [[ -f "$secretsDir/.bundle-hash" ]] && localHash=$(< "$secretsDir/.bundle-hash")
     if [[ -n "$repoHash" && -n "$localHash" && "$localHash" != "$repoHash" ]]; then
@@ -1214,7 +1214,7 @@ restoreSecretsImpl() {
   if [[ -d "$cacheDir" && -f "$cacheDir/.bundle-hash" ]]; then
     local cachedHash
     cachedHash=$(< "$cacheDir/.bundle-hash")
-    if [[ -z "$repoHash" || "$cachedHash" == "$repoHash" ]] && [[ -n "$(glob "$cacheDir"/*)" ]]; then
+    if [[ -z "$repoHash" || "$cachedHash" == "$repoHash" ]] && [[ -n "$(lib.Glob "$cacheDir"/*)" ]]; then
       echo "Restoring secrets from mount cache ($hostname)..."
       local stageDir
       stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
@@ -1352,7 +1352,7 @@ resolveSourceDir() {
 }
 
 # Shared helpers -- sourced from lib.bash to avoid duplication.
-# lib.bash provides: glob, machineHostname, validateHostname, validSecretName
+# lib.bash provides: lib.Glob, lib.MachineHostname, lib.ValidateHostname, lib.ValidSecretName
 _lib_dir=$(resolveSourceDir) 2>/dev/null
 if [[ -n "${_lib_dir:-}" && -f "$_lib_dir/scripts/lib.bash" ]]; then
   source "$_lib_dir/scripts/lib.bash"
@@ -1363,7 +1363,7 @@ unset -v _lib_dir
 
 # validateSecretsArchive TARFILE -- validate archive members before extraction.
 # Checks both names AND types. Accepts only flat regular files with names
-# matching validSecretName. Rejects symlinks, hardlinks, directories (except
+# matching lib.ValidSecretName. Rejects symlinks, hardlinks, directories (except
 # root "."), devices, fifos, and any invalid names.
 # Returns 1 with error to stderr on invalid entries or tar listing failure.
 validateSecretsArchive() {
@@ -1389,7 +1389,7 @@ validateSecretsArchive() {
     [[ $entry == */ ]] && { bad="$bad$NL  name: $entry (non-root directory)"; continue; }
     name=$entry
     [[ $name == ./* ]] && name=${name#./}
-    if ! validSecretName "$name"; then
+    if ! lib.ValidSecretName "$name"; then
       bad="$bad$NL  name: $entry"
     fi
   done <<< "$entries"

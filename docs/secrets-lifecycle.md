@@ -19,7 +19,7 @@ For how `update-env` decides which restore action to take, see the [decision tab
 
 **Hostname:** procedures below use `$HOST`. Set it before running any procedure:
 ```
-HOST=$(cd ~/dotfiles && source scripts/lib.bash && machineHostname)
+HOST=$(cd ~/dotfiles && source scripts/lib.bash && lib.MachineHostname)
 ```
 On Crostini this reads `$CrostiniDir/hostname`, not the system hostname. Always use this rather than bare `hostname`.
 
@@ -109,7 +109,7 @@ For snapshot semantics, restore behavior, and archive validation, see [design.md
 
 ### Add, update, remove
 
-**Add:** place the file in `~/secrets/`. Name must match `validSecretName`: `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`. No dotfiles, no paths, no spaces.
+**Add:** place the file in `~/secrets/`. Name must match `lib.ValidSecretName`: `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`. No dotfiles, no paths, no spaces.
 
 **Update:** edit the file in `~/secrets/`.
 
@@ -143,7 +143,7 @@ If `update-env` prints "secrets may be stale": re-encrypt local (`scripts/encryp
 - SSH key re-encryption (full procedure):
   ```
   cd ~/dotfiles
-  HOST=$(source scripts/lib.bash && machineHostname)
+  HOST=$(source scripts/lib.bash && lib.MachineHostname)
   tmp=$(mktemp -d) && chmod 700 "$tmp"
   trap 'rm -rf "$tmp"' EXIT INT TERM
   cp ~/.ssh/id_ed25519 "$tmp/id_ed25519" && chmod 600 "$tmp/id_ed25519"
