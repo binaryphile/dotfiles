@@ -333,10 +333,10 @@ Operator workflows (bootstrap, rotation, recovery, decommission): [secrets-lifec
 
 Per-machine secrets stored as age-encrypted tarballs: `secrets/<hostname>.tar.age`. Same three-tier restore model as SSH keys.
 
-**Filename policy:** `validSecretName` -- alphanumeric start, then `[a-zA-Z0-9._-]*`. No dotfiles, no paths, no spaces. Shared between `scripts/encrypt-secrets` (producer) and `restoreSecrets` (consumer) via `scripts/lib.bash`.
+**Filename policy:** `lib.ValidSecretName` -- alphanumeric start, then `[a-zA-Z0-9._-]*`. No dotfiles, no paths, no spaces. Shared between `scripts/encrypt-secrets` (producer) and `restoreSecrets` (consumer) via `scripts/lib.bash`.
 
 **Archive validation** (`validateSecretsArchive`): Pre-extraction validation in two passes:
-1. **Name pass** -- `tar tf`: accepts root (`.`/`./`), rejects non-root directories (`*/`), validates remaining names via `validSecretName`.
+1. **Name pass** -- `tar tf`: accepts root (`.`/`./`), rejects non-root directories (`*/`), validates remaining names via `lib.ValidSecretName`.
 2. **Type pass** -- `tar tvf`: accepts regular files (`-`) and root directory (`d` only for `.`/`./`). Rejects symlinks, hardlinks, devices, fifos. Requires at least one regular file.
 
 Fails closed: corrupt or non-tar input rejected before extraction. Post-extraction `find -not -type f` remains as defense-in-depth.
@@ -352,7 +352,7 @@ Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.m
 **Scripts:**
 - `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
 - `scripts/with-secret` -- injects file-based secret as env var into child process only. Last-resort shim for tools requiring env vars.
-- `scripts/lib.bash` -- shared helpers (`machineHostname`, `validateHostname`, `validSecretName`, `glob`). Sourced by both `update-env` and `encrypt-secrets`.
+- `scripts/lib.bash` -- shared helpers (`lib.MachineHostname`, `lib.ValidateHostname`, `lib.ValidSecretName`, `lib.Glob`). Sourced by both `update-env` and `encrypt-secrets`.
 
 ### VPN (UC-7)
 
