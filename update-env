@@ -1353,7 +1353,13 @@ resolveSourceDir() {
 
 # Shared helpers -- sourced from lib.bash to avoid duplication.
 # lib.bash provides: glob, machineHostname, validateHostname, validSecretName
-source "$(resolveSourceDir)/scripts/lib.bash" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
+_lib_dir=$(resolveSourceDir) 2>/dev/null
+if [[ -n "${_lib_dir:-}" && -f "$_lib_dir/scripts/lib.bash" ]]; then
+  source "$_lib_dir/scripts/lib.bash"
+else
+  eval "$(curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/scripts/lib.bash)" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
+fi
+unset -v _lib_dir
 
 # validateSecretsArchive TARFILE -- validate archive members before extraction.
 # Checks both names AND types. Accepts only flat regular files with names
