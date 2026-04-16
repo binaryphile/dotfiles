@@ -1,5 +1,8 @@
 { config, pkgs, ... }:
 
+let
+  bashTools = import ./bash-tools.nix { inherit pkgs; };
+in
 {
   home.packages = with pkgs; [
     age
@@ -33,7 +36,7 @@
     tree
     vpn-slice
     zip
-  ];
+  ] ++ [ bashTools.mkBash bashTools.tesht ];
 
   home.sessionVariables = {
     EDITOR = "nvim";
@@ -41,10 +44,11 @@
     CFGDIR = "$HOME/.config";
     SECRETS = "$HOME/secrets";
     XDG_CONFIG_HOME = "$HOME/.config";
+    TASK_BASH_LIB = "${bashTools.taskBash}/lib/task.bash";
+    MK_BASH_LIB = "${bashTools.mkBash}/lib/mk.bash";
   };
   home.sessionPath = [
     "$HOME/.local/bin"
-    "$HOME/.local/lib"
     "/usr/local/bin"
   ];
 

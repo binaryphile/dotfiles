@@ -27,7 +27,7 @@ let
   # on PATH for the unsudo'd gpauth invocation.
   vpn-connect = mkScriptBin {
     name = "vpn-connect";
-    src = ../scripts/vpn-connect;
+    src = ../../scripts/vpn-connect;
     substitutions = {
       "vpn-slice" = "${pkgs.vpn-slice}/bin/vpn-slice";
       "gpclient" = "${gpoc}/bin/gpclient";

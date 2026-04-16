@@ -201,9 +201,8 @@ FLAKE
 
 ## boilerplate
 
-Here=$(cd "$(dirname "$BASH_SOURCE")"; cd -P "$(dirname "$(readlink "$BASH_SOURCE" || echo .)")"; pwd)
-source ~/projects/task.bash/task.bash
-unset -v Here
+declare -F task.Ln >/dev/null ||
+  source "${TASK_BASH_LIB:?task.bash not installed -- run home-manager switch}"
 
 return 2>/dev/null    # stop if sourced, for use as library
 main "$@"
