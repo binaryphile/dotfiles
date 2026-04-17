@@ -1201,11 +1201,7 @@ restoreSecretsImpl() {
   local repoBundle="$HOME/dotfiles/secrets/${hostname}.tar.age"
   local cacheDir="$CrostiniDir/secrets/$hostname"
 
-  # Follow symlinks -- on Crostini, ~/secrets -> $CrostiniDir/secrets.
-  # mkdir -p fails on a symlink to a nonexistent directory, so resolve first.
-  local resolvedDir
-  resolvedDir=$(readlink -f "$secretsDir" 2>/dev/null) || resolvedDir=$secretsDir
-  mkdir -p "$resolvedDir" && chmod 700 "$resolvedDir"
+  mkdirp "$secretsDir" && chmod 700 "$secretsDir"
 
   # Repo bundle hash for freshness
   local repoHash=""
@@ -1348,6 +1344,10 @@ fatal() {
   echo "fatal: $msg"
   exit $rc
 }
+
+# mkdirp -- mkdir -p that follows symlinks. Plain mkdir -p fails on a
+# symlink to a nonexistent directory; this resolves first.
+mkdirp() { mkdir -p "$(readlink -f "$1" 2>/dev/null || echo "$1")"; }
 
 # crostiniHostnameSetup -- verify ChromeOS backing storage, create
 # $CrostiniDir, and write hostname file. Fatal on first run without
