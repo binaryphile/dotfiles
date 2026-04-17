@@ -1,8 +1,5 @@
-{ config, pkgs, ... }:
+{ config, pkgs, bashTools ? import ./bash-tools.nix { inherit pkgs; }, ... }:
 
-let
-  bashTools = import ./bash-tools.nix { inherit pkgs; };
-in
 {
   home.packages = with pkgs; [
     age
