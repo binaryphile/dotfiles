@@ -166,7 +166,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
 - **Minimal Manual Steps** (printed by update-env after completion):
   - Register SSH public key with: GitHub, Codeberg, Bitbucket (stash requires VPN first)
-    - Key settings: https://github.com/settings/keys, https://codeberg.org/user/settings/keys, https://bitbucket.org/account/settings/ssh-keys/
+    - Key settings: https://github.com/settings/keys, https://codeberg.org/user/settings/keys, https://stash.digi.com/plugins/servlet/ssh/account/keys
   - Crostini: configure ChromeOS Chrome proxy (per-network, one-time)
     - ChromeOS Settings > Network > connection > Proxy > Automatic configuration
     - URL: `http://127.0.0.1:8120/proxy.pac`
