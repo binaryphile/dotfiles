@@ -145,7 +145,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - UC-7 (VPN) -- depends on SSH keys registered with providers and gpoc installed
 - **Main Success Scenario:**
   1. Ted runs `update-env -1 <hostname>` (Crostini first run) or `update-env` (subsequent/other platforms). Hostname is written to persistent storage and identifies the machine for SSH keys and secrets.
-  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and applies home-manager configuration via flake (`nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin-bootstrap`), which installs nix-packaged dev tools, age, and sets env vars. No persistent `home-manager` installation -- it runs transiently via `nix run` from the lockfile-pinned flake input.
+  2. System installs prerequisites (including gpoc `.deb` from GitHub releases on Crostini), clones dotfiles via HTTPS, installs Nix and applies full home-manager configuration via flake (`nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin`), which installs packages (including VPN wrapper), dev tools, age, and sets env vars. VPN is available after stage 1. No persistent `home-manager` installation -- it runs transiently via `nix run` from the lockfile-pinned flake input.
   3. System restores SSH key and secrets from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset). Loads key into agent, validates provider auth. Working shell with full identity after stage 1.
   4. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
@@ -476,7 +476,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. NixOS, Crostini, Debian, macOS |
+| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell with VPN and identity, stage 2 = projects and dev tool repos. NixOS, Crostini, Debian, macOS |
 | UC-4a Rotate SSH Key | Working | Manual; no automated rotation command |
 | UC-4b Manage Secrets Bundle | Working | encrypt-secrets + commit |
 | UC-4c Recover from Credential Failure | Working | Passphrase, mismatch, collision, corrupt archive |

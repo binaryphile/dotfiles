@@ -1,19 +1,15 @@
-{ config, pkgs, lib, isBootstrap, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   linkHome = relPath:
     config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/${relPath}";
   linkDotfile = path: linkHome "dotfiles/${path}";
 
-  withVpn = !isBootstrap;
-
   mkScriptBin = import ../mkScriptBin.nix { inherit pkgs; };
 
-  # gpoc (GlobalProtect-openconnect) is installed via apt on crostini to
-  # avoid the multi-minute Rust compilation from the upstream flake.
+  # gpoc (GlobalProtect-openconnect) is installed via apt on crostini
+  # (update-env stage 1) to avoid the upstream flake's Rust build.
   # On NixOS, linux/home.nix receives gpoc as a flake input from nixos-config.
-  # Prerequisite: install gpoc deb from https://github.com/yuezk/GlobalProtect-openconnect/releases
-  # before running update-env stage 2 (VPN packages are stage 2, not bootstrap).
   gpclient = "/usr/bin/gpclient";
 
   # vpn-connect script wrapped with vpn-slice and gpclient absolute paths
@@ -92,7 +88,8 @@ in
     tinyproxy
     wl-clipboard
     xmlstarlet
-  ] ++ lib.optionals withVpn [ vpn-connect ];
+    vpn-connect
+  ];
 
   home.file = {
     # PAC file served by darkhttpd. Lives in its own directory so the
@@ -106,7 +103,6 @@ in
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
-  } // lib.optionalAttrs withVpn {
     # ChromeOS host Chrome dispatches custom URL schemes to in-container
     # handlers via garcon, but garcon only scans the standard XDG user dir
     # (~/.local/share/applications/), NOT ~/.nix-profile/share/. Symlink the
@@ -116,7 +112,7 @@ in
   };
 
   # Register gpclient as the URL scheme handler for globalprotectcallback://.
-  xdg.desktopEntries = lib.mkIf withVpn {
+  xdg.desktopEntries = {
     gpgui = {
       name = "GP Connect";
       comment = "A GUI client for GlobalProtect VPN";
@@ -131,7 +127,7 @@ in
 
   xdg.mimeApps = {
     enable = true;
-    defaultApplications = lib.optionalAttrs withVpn {
+    defaultApplications = {
       "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
     };
   };
