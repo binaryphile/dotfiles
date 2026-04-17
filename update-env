@@ -28,6 +28,9 @@ CrostiniDir=/mnt/chromeos/MyFiles/Downloads/crostini
 # Bare `update-env` runs both stages sequentially (backwards-compatible).
 main() {
   set -euo pipefail   # enable strict mode
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0=rebase.autoStash
+  export GIT_CONFIG_VALUE_0=true
   Platform=$(platform)
   readonly Platform
 
@@ -1302,7 +1305,7 @@ restoreSecretsImpl() {
 loadSshKey() {
   [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
   command -v -- "$keychain" >/dev/null 2>&1 || { echo "WARNING: $keychain not found"; return 0; } >&2
-  eval "$($keychain --eval --agents ssh id_ed25519)" || {
+  eval "$($keychain --eval id_ed25519)" || {
     echo "WARNING: keychain failed to load SSH key." >&2
   }
 }

@@ -133,39 +133,39 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 
 - **Primary Actor:** Ted
 - **Goal:** Working development environment on a new or rebuilt machine
-- **Scope:** update-env (deployment script)
+- **Scope:** User environment (all hosts)
 - **Level:** User goal
 - **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, or new NixOS host
-- **Preconditions:** Network connected. Crostini: ChromeOS file sharing enabled (shared Downloads visible at `/mnt/chromeos/MyFiles/Downloads`). Crostini first run: hostname argument required (`update-env -1 <hostname>`). NixOS: SSH keys pre-existing.
+- **Preconditions:** Network connected. Crostini: ChromeOS file sharing enabled. Crostini first run: hostname required. NixOS: SSH keys pre-existing.
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
   - Future Ted -- works without remembering steps; idempotent re-runs fix drift
   - Security -- keys encrypted at rest in repo; passphrase on generated keys; TOFU host-key model
   - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
-  - UC-7 (VPN) -- depends on SSH keys registered with providers and gpoc installed
+  - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
 - **Main Success Scenario:**
-  1. Ted runs `update-env -1 <hostname>` (Crostini first run) or `update-env` (subsequent/other platforms). Hostname is written to persistent storage and identifies the machine for SSH keys and secrets.
-  2. System installs prerequisites (including gpoc `.deb` from GitHub releases on Crostini), clones dotfiles via HTTPS, installs Nix and applies full home-manager configuration via flake (`nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin`), which installs packages (including VPN wrapper), dev tools, age, and sets env vars. VPN is available after stage 1. No persistent `home-manager` installation -- it runs transiently via `nix run` from the lockfile-pinned flake input.
-  3. System restores SSH key and secrets from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset). Loads key into agent, validates provider auth. Working shell with full identity after stage 1.
+  1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and passphrases.
+  2. System installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
+  3. System restores SSH key and secrets from encrypted repo (prompts for passphrase on powerwash; cached restore on container reset). Loads key into agent, validates provider auth. Working shell with full identity.
   4. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
-  - 1a. Crostini first run, no hostname arg -> fail with instructions (`update-env -1 <hostname>`)
-  - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions (enable file sharing in ChromeOS Settings)
-  - 1c. Hostname arg given with `-2` or without `-1` -> rejected (hostname only accepted with `-1`)
-  - 2a. apt lock held -> waits up to 60s; resume at step 2
-  - 3a. Key already exists locally, matches repo -> no decrypt needed; resume at step 3 (agent load)
-  - 3b. Mount cache valid -> restore without passphrase; resume at step 3 (agent load)
+  - 1a. Crostini first run, no hostname -> fail with instructions
+  - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions
+  - 2a. Package lock held -> waits; resume at step 2
+  - 3a. Key already exists locally, matches repo -> no decrypt needed; resume at step 3
+  - 3b. Mount cache valid -> restore without passphrase; resume at step 3
   - 3c. No TTY -> skip credentials; HTTPS clones still work; separate success
-  - 3d. No credentials in repo -> generate, encrypt, prompt to commit; resume at step 3 (agent load)
+  - 3d. No credentials in repo -> generate, encrypt, prompt to commit; resume at step 3
   - 3e. Local key mismatches repo -> collision error; fail
   - 3f. Agent load fails -> warn; preflight may report false negatives
-  - 3g. NixOS host -> system skips nix/home-manager and credential restore; resume at step 4
-  - 4a. Provider auth fails -> reports per provider; private repos skipped; separate success
-  - 4b. VPN-dependent repo unreachable -> fails fast; resume at next repo
+  - 3g. NixOS host -> skip package manager and credential restore; resume at step 4
+  - 4a. Repo has uncommitted local changes -> stash, update, restore; resume at step 4
+  - 4b. Provider auth fails -> reports per provider; private repos skipped; separate success
+  - 4c. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
-- **Success Guarantee:** Shell, git, editor, tmux, dev tools (nix-packaged + project repos), packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
-- **Technology:** update-env (bash), age (encryption), ssh-keygen, home-manager (flake-based, `flake = false` inputs for bash tools, `nix flake update` for version bumps), Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
+- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
+- **Technology:** update-env, age, ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
 
 ---
 
@@ -331,30 +331,30 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Primary Actor:** Ted
 - **Secondary Actors:** SAML IdP, GlobalProtect gateway
 - **Goal:** Reach work resources (git, build artifacts, internal services) from any host
-- **Scope:** vpn-connect wrapper (Nix-managed script)
+- **Scope:** VPN access to corporate network
 - **Level:** User goal
 - **Trigger:** Ted needs to access a host behind the corporate VPN
-- **Preconditions:** Network connected; VPN credentials valid; SAML SSO active in the default browser
+- **Preconditions:** Network connected; VPN credentials valid; SSO active in the default browser
 - **Stakeholders:**
   - Ted -- tunnel up with a single command, no manual cookie copying
   - UC-1 -- depends on this for any task that touches a corporate repo or service
   - UC-8 -- depends on this; VPN must be up before host-browser proxy access works
 - **Main Success Scenario:**
-  1. Ted runs `vpn-connect`
-  2. gpauth opens a SAML auth page in the default browser
-  3. Browser completes SSO authentication
-  4. gpauth captures the auth cookie and passes it to gpclient
-  5. gpclient brings up the tunnel; reconnect-loop keeps it alive
-  6. Ted reaches `stash.digi.com`, `gitlab.drm.ninja`, etc.
+  1. Ted runs the VPN connect command
+  2. Browser opens a SAML auth page
+  3. Ted completes SSO authentication
+  4. System captures the auth token and establishes the tunnel
+  5. Tunnel stays up with automatic reconnect; Ctrl-C exits
+  6. Ted reaches corporate resources (git servers, internal services)
 - **Extensions:**
-  - 1a. `vpn-connect` not on PATH -> rebuild (`home-manager switch` on Crostini, `nixos-rebuild switch` on NixOS); resume at step 1
-  - 2a. Browser doesn't open -> check `xdg-open` and URL scheme handler (see [docs/vpn.md](vpn.md)); resume at step 1
-  - 3a. SAML times out -> re-authenticate to the IdP; resume at step 1
-  - 4a. Callback not dispatched -> URL scheme handler isn't routing back to gpauth; on Crostini, verify `gpgui.desktop` symlink exists (see [docs/vpn.md](vpn.md)); resume at step 1
+  - 1a. VPN command not available -> re-run deployment (UC-4); resume at step 1
+  - 2a. Browser doesn't open -> check URL scheme handler (see [docs/vpn.md](vpn.md)); resume at step 1
+  - 3a. SAML times out -> re-authenticate; resume at step 1
+  - 4a. Auth callback not dispatched -> URL scheme handler misconfigured (see [docs/vpn.md](vpn.md)); resume at step 1
   - 5a. Reconnect loop hammers a dead gateway -> Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
-- **Success Guarantee:** `tun0` interface up, split-tunnel routes installed for corporate subnets (`10.0.0.0/8`, `172.26.0.0/16`) and configured AWS-hosted services, split-horizon `*.digi.com` hosts resolved to internal IPs via `/etc/hosts`, normal traffic stays on LAN
-- **Technology:** yuezk's globalprotect-openconnect (gpoc) Rust rewrite -- `gpauth` for SAML, `gpclient` for the openconnect-driven tunnel -- wrapped by `scripts/vpn-connect`. vpn-slice handles split-tunnel routing (CIDR ranges + per-host routes) and split-horizon DNS (positional hostnames -> `/etc/hosts` entries). See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
+- **Success Guarantee:** VPN tunnel up with split-tunnel routing for corporate subnets, internal hostnames resolved, normal traffic stays on LAN
+- **Technology:** globalprotect-openconnect (gpoc), vpn-slice, vpn-connect wrapper. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
 
 ---
 
