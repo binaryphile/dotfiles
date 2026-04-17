@@ -67,12 +67,12 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). Uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin-bootstrap` to apply the bootstrap config via the lockfile-pinned HM CLI exposed from the dotfiles flake. This defers VPN packages to avoid blocking the critical path. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age`.
+3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age`.
 4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider. After this step, `git push` and SSH clones work. Skipped if no hostname is set (re-run with hostname to fix).
 
-**Stage 2** (projects, dev tool repos, VPN):
+**Stage 2** (projects, dev tool repos):
 
-5. Re-run home-manager via `homeManagerFlakeSwitchTask penguin` (full config with VPN packages).
+5. Re-run home-manager (idempotent convergence -- no-op if stage 1 already applied the same config).
 6. Platform-specific setup (crostini only)
 7. Clone dev tool repos for development (task.bash, fp.bash, mk.bash, tesht). Symlinked to `~/.local/bin/` for interactive use and executable overrides. Tools themselves already available via nix (step 3).
 8. Clone and link project repos (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
@@ -359,7 +359,7 @@ Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.m
 ### VPN (UC-7)
 
 GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
-- **Crostini:** installed via apt from yuezk's GitHub releases (the upstream flake's Rust compilation takes several minutes and has no binary cache; `crostini/home.nix` references `/usr/bin/gpclient` directly). Prerequisite: install the gpoc `.deb` before running `update-env` stage 2. VPN packages are deferred to stage 2, so bootstrap completes without it.
+- **Crostini:** installed via apt by `update-env` stage 1 (`aptInstallGpocTask` downloads the `.deb` from yuezk's GitHub releases and installs with `dpkg`). The upstream flake's Rust compilation takes several minutes and has no binary cache. `crostini/home.nix` references `/usr/bin/gpclient` directly.
 - **NixOS:** proper flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation)
 
 Components:

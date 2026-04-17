@@ -122,12 +122,18 @@ stage1() {
     ~/dotfiles/bash/init.bash                     ~/.profile
   END
   #  +-------------------------------------------------------------+
-  #  | PHASE 3: Package Management (sections nix & home-manager)   |
+  #  | PHASE 3: Package Management (gpoc, nix, home-manager)       |
+  #  |   +-> [crostini] Install gpoc .deb from GitHub releases     |
   #  |   +-> Install Nix (Lix installer)                           |
   #  |   +-> Fix /nix ownership                                    |
-  #  |   +-> Add Home Manager channel                              |
-  #  |   +-> Apply Home Manager configuration                      |
+  #  |   +-> Apply Home Manager configuration (flake)              |
   #  +-------------------------------------------------------------+
+
+  case $Platform in crostini )
+    section gpoc
+    aptInstallGpocTask
+    ;;
+  esac
 
   case $Platform in crostini|debian|linux|macos )
     section nix
@@ -136,7 +142,7 @@ stage1() {
     loosely source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
     section home-manager
-    homeManagerFlakeSwitchTask penguin-bootstrap
+    homeManagerFlakeSwitchTask penguin
     convergeTaskBash
     ;;
   esac
@@ -181,10 +187,10 @@ stage2Preflight() {
 
 # Stage 2: projects, builds, and config -- all externals try-wrapped
 stage2() {
-  # Re-run home-manager with VPN packages (skipped in stage 1 to avoid
-  # gpoc Rust compilation on the critical path to a working shell).
+  # Re-run home-manager to converge (idempotent -- no-op if stage 1
+  # already applied the same config).
   case $Platform in crostini|debian|linux|macos )
-    section home-manager-full
+    section home-manager
     homeManagerFlakeSwitchTask penguin
     convergeTaskBash
     ;;
@@ -437,6 +443,27 @@ aptUpgradeTask() {
   unchg  '0 upgraded, 0 newly installed'
 
   cmd 'DEBIAN_FRONTEND=noninteractive apt-get update -o DPkg::Lock::Timeout=60 -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o DPkg::Lock::Timeout=60'
+}
+
+# aptInstallGpocTask installs GlobalProtect-openconnect (gpoc) from
+# yuezk's GitHub releases. Downloads the .deb and installs with dpkg.
+# Crostini-only -- NixOS gets gpoc from nixos-config's flake input.
+aptInstallGpocTask() {
+  desc   'install globalprotect-openconnect (gpoc)'
+  prog   on
+  exist  /usr/bin/gpclient
+
+  aptInstallGpoc() {
+    local version=2.5.1
+    local deb="globalprotect-openconnect_${version}-1_amd64.deb"
+    local url="https://github.com/yuezk/GlobalProtect-openconnect/releases/download/v${version}/${deb}"
+    local tmp
+    tmp=$(mktemp -d)
+    curl -fsSL "$url" -o "$tmp/$deb" || { rm -rf "$tmp"; echo "failed to download gpoc"; return 1; }
+    sudo dpkg -i "$tmp/$deb" || sudo apt-get install -f -y
+    rm -rf "$tmp"
+  }
+  cmd aptInstallGpoc
 }
 
 bitbucketCloneAndLinkTask() {
