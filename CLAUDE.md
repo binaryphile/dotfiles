@@ -40,7 +40,7 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 
 ## Development tools
 
-- **`flake.nix`** -- dev shell with kcov, scc, jq, and editor. Enter with `nix develop`.
+- **`flake.nix`** -- Crostini home-manager configs (`penguin`, `penguin-bootstrap`), lockfile-pinned bash tools, and multi-system dev shell. Enter dev shell with `nix develop`.
 - **`mk`** -- project command runner (uses mk.bash). Subcommands:
   - `mk test` -- run tesht, create test badge
   - `mk cover` -- run kcov coverage (Linux only), create coverage badge
