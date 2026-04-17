@@ -1,30 +1,48 @@
 {
   "nodes": {
-    "flake-utils": {
+    "home-manager": {
       "inputs": {
-        "systems": "systems"
+        "nixpkgs": [
+          "nixpkgs"
+        ]
       },
       "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "lastModified": 1776373306,
+        "narHash": "sha256-iAJIzHngGZeLIkjzuuWI6VBsYJ1n89a/Esq0m8R1vjs=",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "rev": "d401492e2acd4fea42f7705a3c266cea739c9c36",
         "type": "github"
       },
       "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "mk-bash-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1774894145,
+        "narHash": "sha256-iEpYRtKPYjlQwKprCqYrbosbrxXqoMbS5zz54B1/h2k=",
+        "owner": "binaryphile",
+        "repo": "mk.bash",
+        "rev": "8c074a9f831002cb4a4d7294e458743809790aae",
+        "type": "github"
+      },
+      "original": {
+        "owner": "binaryphile",
+        "repo": "mk.bash",
         "type": "github"
       }
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1775701739,
-        "narHash": "sha256-2FWWY1rr/+pGUJK1npcVcsWNEblzmKs6VxD3VEvwJSs=",
+        "lastModified": 1776255774,
+        "narHash": "sha256-psVTpH6PK3q1htMJpmdz1hLF5pQgEshu7gQWgKO6t6Y=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0f7663154ff2fec150f9dbf5f81ec2785dc1e0db",
+        "rev": "566acc07c54dc807f91625bb286cb9b321b5f42a",
         "type": "github"
       },
       "original": {
@@ -36,22 +54,42 @@
     },
     "root": {
       "inputs": {
-        "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
+        "home-manager": "home-manager",
+        "mk-bash-src": "mk-bash-src",
+        "nixpkgs": "nixpkgs",
+        "task-bash-src": "task-bash-src",
+        "tesht-src": "tesht-src"
       }
     },
-    "systems": {
+    "task-bash-src": {
+      "flake": false,
       "locked": {
-        "lastModified": 1681028828,
-        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "lastModified": 1775942344,
+        "narHash": "sha256-7m+/H+DajEjJUtZz1u9WxPSDtnee5lGuL3VSrcFOVqs=",
+        "owner": "binaryphile",
+        "repo": "task.bash",
+        "rev": "574e4750531cebfbb1ca79d75640322c1e17aa7e",
         "type": "github"
       },
       "original": {
-        "owner": "nix-systems",
-        "repo": "default",
+        "owner": "binaryphile",
+        "repo": "task.bash",
+        "type": "github"
+      }
+    },
+    "tesht-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773076958,
+        "narHash": "sha256-Jt/n7S+fxHvL5Gq0U5RbD2pm2o2krTFXQF1kxRJAhpQ=",
+        "owner": "binaryphile",
+        "repo": "tesht",
+        "rev": "8f5848ee3fe469eb4d3a288bdda7b8c5b09f3465",
+        "type": "github"
+      },
+      "original": {
+        "owner": "binaryphile",
+        "repo": "tesht",
         "type": "github"
       }
     }

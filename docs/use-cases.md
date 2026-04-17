@@ -145,7 +145,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - UC-7 (VPN) -- depends on SSH keys registered with providers and gpoc installed
 - **Main Success Scenario:**
   1. Ted runs `update-env -1 <hostname>` (Crostini first run) or `update-env` (subsequent/other platforms). Hostname is written to persistent storage and identifies the machine for SSH keys and secrets.
-  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and home-manager (which installs nix-packaged dev tools, age, and sets env vars)
+  2. System installs prerequisites, clones dotfiles via HTTPS, installs Nix and applies home-manager configuration via flake (`nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin-bootstrap`), which installs nix-packaged dev tools, age, and sets env vars. No persistent `home-manager` installation -- it runs transiently via `nix run` from the lockfile-pinned flake input.
   3. System restores SSH key and secrets from age-encrypted repo (prompts for age passphrase on powerwash; mount cache on container reset). Loads key into agent, validates provider auth. Working shell with full identity after stage 1.
   4. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
@@ -165,7 +165,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools (nix-packaged + project repos), packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
-- **Technology:** update-env (bash), age (encryption), ssh-keygen, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
+- **Technology:** update-env (bash), age (encryption), ssh-keygen, home-manager (flake-based, `flake = false` inputs for bash tools, `nix flake update` for version bumps), Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
 
 ---
 
@@ -483,7 +483,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-4d Decommission a Machine | Working | git rm + forge deregistration |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
-| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via getFlake, NixOS via flake input; SAML callback validated end-to-end on Crostini |
+| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via flake input; SAML callback validated end-to-end on Crostini |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |

@@ -31,7 +31,8 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 ```
 shared.nix                      # Shared packages, programs, config (imported by all contexts)
 home.nix                        # Symlink to active context's home.nix
-flake.nix, flake.lock           # Dev-shell flake (mk, kcov, scc, jq, editor)
+flake.nix, flake.lock           # Crostini HM configs, lockfile-pinned bash tools, multi-system dev shell
+bash-tools.nix                  # Bash dev tool derivations (flake sources or fetchFromGitHub fallback)
 update-env                      # Idempotent deployment script (installs nix, bootstraps shell)
 claude/                         # Claude Code config: settings.json + CLAUDE.md (managed by home.file)
 bash/
@@ -43,7 +44,7 @@ contexts/
   mkScriptBin.nix               # Shared helper: build wrapped script binaries with store-path substitutions
   linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, dotfile symlinks
   linux/home.nix                # NixOS-specific (imports linux-base.nix); gpoc, vpn-connect via flake input
-  crostini/home.nix             # Crostini-specific (imports linux-base.nix); gpoc, vpn-connect, tinyproxy + PAC for UC-8
+  crostini/home.nix             # Crostini-specific (imports linux-base.nix); vpn-connect (apt gpoc), tinyproxy + PAC for UC-8
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git
 tmux.conf                       # Context-dependent symlink
@@ -66,12 +67,12 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). On Crostini, `DOTFILES_STAGE1=1` defers VPN packages (gpoc Rust compilation). Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. Installs `age`.
+3. Install Nix + home-manager (crostini/debian/linux/macos -- skipped on NixOS). Uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin-bootstrap` to apply the bootstrap config via the lockfile-pinned HM CLI exposed from the dotfiles flake. This defers VPN packages to avoid blocking the critical path. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age`.
 4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider. After this step, `git push` and SSH clones work. Skipped if no hostname is set (re-run with hostname to fix).
 
 **Stage 2** (projects, dev tool repos, VPN):
 
-5. Re-run home-manager with full config (VPN packages).
+5. Re-run home-manager via `homeManagerFlakeSwitchTask penguin` (full config with VPN packages).
 6. Platform-specific setup (crostini only)
 7. Clone dev tool repos for development (task.bash, fp.bash, mk.bash, tesht). Symlinked to `~/.local/bin/` for interactive use and executable overrides. Tools themselves already available via nix (step 3).
 8. Clone and link project repos (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
@@ -97,8 +98,8 @@ Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -
 
 | Owner | What | Count | Why |
 |-------|------|-------|-----|
-| `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `context` -> active platform; `config.nix` -> nixpkgs; `home.nix` -> home-manager | 6 symlinks | Must exist before nix/HM runs. Shell init, nix config, and HM config are prerequisites for everything else. |
-| `home-manager` (`bash-tools.nix`) | task.bash, mk.bash (libs) + mk, tesht (executables) | 3 derivations | Bash dev tools fetched from GitHub via `fetchFromGitHub`. Libraries to nix store (dependency-only); executables on PATH. Env vars `TASK_BASH_LIB`, `MK_BASH_LIB` inject store paths for automation scripts. Pins rev+hash; bump manually. |
+| `update-env` (bootstrap) | `.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `context` -> active platform | 4 symlinks | Must exist before nix/HM runs. Shell init is a prerequisite for everything else. |
+| `home-manager` (`bash-tools.nix`) | task.bash, mk.bash (libs) + mk, tesht (executables) | 3 derivations | Bash dev tools pinned as `flake = false` inputs in `flake.nix`. Libraries to nix store (dependency-only); executables on PATH. Env vars `TASK_BASH_LIB`, `MK_BASH_LIB` inject store paths for automation scripts. Bump with `nix flake update <name>`. NixOS path (via shared.nix fallback) uses `fetchFromGitHub` with pinned hashes until nixos-config consumes flake outputs. |
 | `update-env` (external) | Dev tool and project repos (steps 7-10) cloned and linked to `~/.local/bin`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation -- cloned repos and secrets are not. Dev tool clones override nix executables via PATH for active development. |
 | `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3) | 10 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
 | `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies -- Claude Code may overwrite these, so HM restores them on switch. |
@@ -238,7 +239,7 @@ The home-manager import chain:
 
 `linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `linux/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
 
-gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses `builtins.getFlake` (requires `--impure`), NixOS uses a proper flake input from `nixos-config/flake.nix` (pure). Each platform builds an identical `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `linux/home.nix` respectively).
+gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses gpoc installed via apt (avoiding the multi-minute Rust build from the upstream flake), NixOS uses a proper flake input from `nixos-config/flake.nix` (pure). Each platform builds a `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `linux/home.nix` respectively). On Crostini, `gpclient` is referenced at `/usr/bin/gpclient`.
 
 Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config. This keeps platform config shared while allowing per-machine overrides.
 
@@ -254,7 +255,7 @@ Declared in `home.nix`. See the file for the current list. By category:
 
 **Apps (UC-2):** Firefox (via `programs.firefox`), Obsidian, signal-desktop
 
-**VPN (UC-7):** gpoc (yuezk Rust rewrite), vpn-slice, vpn-connect wrapper. On Crostini, gpoc comes via `builtins.getFlake` in `crostini/home.nix`; on NixOS, via a proper flake input in `nixos-config/flake.nix` passed through `extraSpecialArgs`. Both platforms use `mkScriptBin` to wrap `scripts/vpn-connect`. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
+**VPN (UC-7):** gpoc (yuezk Rust rewrite), vpn-slice, vpn-connect wrapper. On Crostini, gpoc comes from apt (avoiding the Rust build); on NixOS, via a proper flake input in `nixos-config/flake.nix` passed through `extraSpecialArgs`. Both platforms use `mkScriptBin` to wrap `scripts/vpn-connect`. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
 
 **Notifications (UC-9):** notify-send wrapper that bridges desktop notifications to ntfy.sh phone push. Drops in transparently as `notify-send` for any caller.
 
@@ -358,7 +359,7 @@ Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.m
 ### VPN (UC-7)
 
 GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
-- **Crostini:** `builtins.getFlake` in `crostini/home.nix` (requires `--impure` -- fine because crostini runs `home-manager switch` directly)
+- **Crostini:** installed via apt from yuezk's GitHub releases (the upstream flake's Rust compilation takes several minutes and has no binary cache; `crostini/home.nix` references `/usr/bin/gpclient` directly). Prerequisite: install the gpoc `.deb` before running `update-env` stage 2. VPN packages are deferred to stage 2, so bootstrap completes without it.
 - **NixOS:** proper flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation)
 
 Components:
@@ -534,6 +535,8 @@ globalprotect-openconnect = {
 ```
 
 NixOS imports `"${dotfiles}/contexts/linux/home.nix"` directly (the `home.nix` symlink chain doesn't resolve in the nix store) and layers Sway on top. The `globalprotect-openconnect` flake input provides gpoc as a pure flake reference; it's passed to home-manager via `extraSpecialArgs` as `gpoc` so `linux/home.nix` and `waybar.nix` can build the `vpn-connect` wrapper without `--impure`. Package changes happen here. The local path input means changes take effect on `nixos-rebuild switch` without pushing to GitHub first.
+
+Now that dotfiles has its own `flake.nix` (for Crostini home-manager configs), nixos-config should eventually switch `dotfiles` from `flake = false` to `flake = true`, set `dotfiles.inputs.nixpkgs.follows = "nixpkgs"` and `dotfiles.inputs.home-manager.follows = "home-manager"`, and consume dotfiles outputs instead of raw file paths.
 
 ## Operational Properties
 
