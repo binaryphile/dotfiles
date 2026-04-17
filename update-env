@@ -1201,7 +1201,11 @@ restoreSecretsImpl() {
   local repoBundle="$HOME/dotfiles/secrets/${hostname}.tar.age"
   local cacheDir="$CrostiniDir/secrets/$hostname"
 
-  mkdir -p "$secretsDir" && chmod 700 "$secretsDir"
+  # Follow symlinks -- on Crostini, ~/secrets -> $CrostiniDir/secrets.
+  # mkdir -p fails on a symlink to a nonexistent directory, so resolve first.
+  local resolvedDir
+  resolvedDir=$(readlink -f "$secretsDir" 2>/dev/null) || resolvedDir=$secretsDir
+  mkdir -p "$resolvedDir" && chmod 700 "$resolvedDir"
 
   # Repo bundle hash for freshness
   local repoHash=""
