@@ -31,33 +31,18 @@
       inherit task-bash-src mk-bash-src tesht-src;
     };
 
-    # isBootstrap must be in specialArgs (not a module arg default) because
-    # the HM module system resolves args via _module.args, which does not
-    # honor Nix's ? default syntax in function patterns.
     commonSpecialArgs = {
       inherit bashTools;
-      isBootstrap = false;
     };
-
-    mkHomeConfig = { module, extraSpecialArgs ? {} }:
-      home-manager.lib.homeManagerConfiguration {
-        pkgs = hmPkgs;
-        modules = [ module ];
-        extraSpecialArgs = commonSpecialArgs // extraSpecialArgs;
-      };
 
     # Multi-system outputs for dev shell (used on NixOS, Crostini, macOS).
     supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
     forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
   in {
-    homeConfigurations = {
-      penguin = mkHomeConfig {
-        module = ./contexts/crostini/home.nix;
-      };
-      penguin-bootstrap = mkHomeConfig {
-        module = ./contexts/crostini/home.nix;
-        extraSpecialArgs = { isBootstrap = true; };
-      };
+    homeConfigurations.penguin = home-manager.lib.homeManagerConfiguration {
+      pkgs = hmPkgs;
+      modules = [ ./contexts/crostini/home.nix ];
+      extraSpecialArgs = commonSpecialArgs;
     };
 
     packages.${hmSystem} = {
