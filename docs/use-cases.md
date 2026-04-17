@@ -164,6 +164,12 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 4c. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
+- **Minimal Manual Steps** (printed by update-env after completion):
+  - Register SSH public key with: GitHub, Codeberg, Bitbucket (stash requires VPN first)
+    - Key settings: https://github.com/settings/keys, https://codeberg.org/user/settings/keys, https://bitbucket.org/account/settings/ssh-keys/
+  - Crostini: configure ChromeOS Chrome proxy (per-network, one-time)
+    - ChromeOS Settings > Network > connection > Proxy > Automatic configuration
+    - URL: `http://127.0.0.1:8120/proxy.pac`
 - **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
 - **Technology:** update-env, age, ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
 
