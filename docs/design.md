@@ -34,7 +34,7 @@ home.nix                        # Symlink to active context's home.nix
 flake.nix, flake.lock           # Crostini HM configs, lockfile-pinned bash tools, multi-system dev shell
 bash-tools.nix                  # Bash dev tool derivations (flake sources or fetchFromGitHub fallback)
 update-env                      # Idempotent deployment script (installs nix, bootstraps shell)
-claude/                         # Claude Code config: settings.json + CLAUDE.md (managed by home.file)
+claude/                         # Claude Code config: settings.json + CLAUDE.md (base, stage 1) + CLAUDE-era.md (era/guides, stage 2)
 bash/
   init.bash                     # Entry point -> .bashrc, .bash_profile, .profile
   apps/                         # Per-app modules (env, init, cmds, deps)
@@ -46,15 +46,14 @@ contexts/
   linux/home.nix                # NixOS-specific (imports linux-base.nix); gpoc, vpn-connect via flake input
   crostini/home.nix             # Crostini-specific (imports linux-base.nix); vpn-connect (apt gpoc), tinyproxy + PAC for UC-8
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
-gitconfig, gitignore_global     # Git
+gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
 tmux.conf                       # Context-dependent symlink
 ssh/config, ssh/authorized_keys  # Tracked; HM-managed client config (symlinked via linux-base.nix)
-ssh/*.age, ssh/*.pub             # Gitignore-allowed; per-machine age-encrypted keys + public sidecars (present on machines that use them)
+ssh/*.pub                        # Per-machine public key sidecars (fingerprint validation only; no private keys or encrypted material in repo)
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
 scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, encrypt-secrets, with-secret, lib.bash, load-sparkline)
-secrets/                        # Per-machine age-encrypted secret bundles (.tar.age)
-docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
+docs/                           # use-cases.md, design.md, security.md, secrets-lifecycle.md, environment-lifecycle.md, vpn.md, uc-init.md
 ```
 
 ## Component Design
@@ -67,8 +66,8 @@ docs/                           # use-cases.md, design.md, vpn.md, uc-init.md
 
 1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age`.
-4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores SSH key from age-encrypted repo or mount cache. `restoreSecrets` restores secrets bundle. `loadSshKey` loads key into agent. `authPreflight` tests SSH auth to each provider. After this step, `git push` and SSH clones work. Skipped if no hostname is set (re-run with hostname to fix).
+3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age` (used by `scripts/encrypt-secrets` for local secrets backup -- not for repo storage; see [Security Model](#security-model)).
+4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores SSH key from local or mount cache; if neither exists, prompts Ted to retrieve from 1Password (see [Security Model](#security-model)). `restoreSecrets` restores secrets bundle from cache or 1Password. `loadSshKey` loads key into agent via keychain with `SSH_ASKPASS_REQUIRE=never` (the nix openssh derivation has a compiled-in askpass path that doesn't exist; without this override, `ssh-add` inside keychain's nested `$()` falls back to the broken askpass instead of prompting on `/dev/tty`). `authPreflight` checks that the key is loaded in the agent, then tests SSH auth to each provider -- distinguishes "key not in agent" from "key not registered" from "unreachable." After this step, `git push` and SSH clones work. Skipped if no hostname is set (re-run with hostname to fix).
 
 **Stage 2** (projects, dev tool repos):
 
@@ -90,7 +89,7 @@ Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual 
 
 All public repo clones use HTTPS fetch with SSH push URLs (idempotent remote migration on every run). Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git pull --rebase --autostash` so repos with uncommitted local changes are updated without losing work.
 
-Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> linux.
+Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> linux. For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
 
 **What belongs in update-env vs. home-manager:** The split is governed by one structural constraint and two categories:
 
@@ -102,7 +101,8 @@ Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -
 | `home-manager` (`bash-tools.nix`) | task.bash, mk.bash (libs) + mk, tesht (executables) | 3 derivations | Bash dev tools pinned as `flake = false` inputs in `flake.nix`. Libraries to nix store (dependency-only); executables on PATH. Env vars `TASK_BASH_LIB`, `MK_BASH_LIB` inject store paths for automation scripts. Bump with `nix flake update <name>`. NixOS path (via shared.nix fallback) uses `fetchFromGitHub` with pinned hashes until nixos-config consumes flake outputs. |
 | `update-env` (external) | Dev tool and project repos (steps 7-10) cloned and linked to `~/.local/bin`; `update-env` itself; `era-mcp.service`; neovim config; SSH keys; credential files; crostini mounts; scaffold-managed nix-wrapper + .envrc per project | ~30 symlinks + installs | External repos, credentials, and platform mounts that live outside the dotfiles tree. HM can only manage files whose source is inside the nix evaluation -- cloned repos and secrets are not. Dev tool clones override nix executables via PATH for active development. |
 | `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3) | 10 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
-| `home-manager` (`home.file`) | Claude settings + CLAUDE.md | 2 copies (`linux/home.nix`, `crostini/home.nix`, `macos/home.nix`) | `force: true` copies -- Claude Code may overwrite these, so HM restores them on switch. |
+| `home-manager` (`home.file`) | Claude settings + base CLAUDE.md (Conventions, Secrets) | 2 copies (`claude.nix`) | `force: true` copies -- Claude Code may overwrite these, so HM restores them on switch. Stage-1-safe only; no era/evtctl/guide dependencies. |
+| `update-env` (stage 2) | Claude era config (CLAUDE-era.md) + per-project memory redirects | ~15 files | Era-dependent Claude Code config: memory redirects point projects to era, CLAUDE-era.md adds era/evtctl/guide instructions. Requires era to be built and running. |
 | `home-manager` (`home.file`) | panel, vpn, digi-security-watch scripts; proxy PAC; gpgui desktop entry | 3 symlinks + 1 generated + 1 symlink (`crostini/home.nix`) | Crostini-only scripts, generated config, and gpoc URL scheme handler. |
 | `home-manager` (`programs.*`) | direnv, bat, firefox, khal, vdirsyncer | 5 modules | Declarative program config via HM modules -- not `home.file` but the same dependency tree. |
 
@@ -114,9 +114,7 @@ The `home.file` blocks use `mkOutOfStoreSymlink` to preserve edit-in-place seman
 
 The NixOS model copies config files into the read-only nix store, making them immune to runtime mutation. This is valuable when the consumer of a config is a program that might silently overwrite it. But the files managed here -- bash modules, tmux.conf, gitconfig, ssh config, ranger, liquidprompt -- are files the user writes and controls. No program writes back to them; the drift risk is zero. Symlinks give instant feedback: edit the source file, the change is live. Immutable copies would require a rebuild/deploy step for every edit, adding friction without solving a real problem. The `home.file` blocks that do exist (Claude config, gpgui desktop entry, proxy PAC) use `force: true` or are generated -- cases where immutability or atomic replacement actually matters. If a file were ever at risk of being silently modified by a program, the right move would be to promote it to a `home.file` block rather than building a parallel copy mechanism.
 
-**Post-install messages** (`postInstallMessages` function in `update-env`) write per-platform manual-setup instructions to a file under `~/.local/share/dotfiles/` (creating the file only if missing), then print a one-line reminder pointing at the file. Currently used on Crostini to document the ChromeOS Chrome PAC URL configuration for UC-8.
-
-The "create file if missing" pattern lets the user delete the file to regenerate it after instructions change, while keeping every routine `update-env` run quiet -- just a single line of output instead of a 20-line block. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
+**Post-install messages** -- `sshKeyEpilogue` prints registry SSH key URLs inline (copyable from terminal) when a key is generated. `postInstallMessages` prints Crostini-specific setup (PAC URL and ChromeOS proxy instructions) inline. All URLs are printed directly so Ted can copy them without opening a file. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
 
 All project repos -- including private repos like jeeves -- are cloned by update-env. Private repos use `try` so failures are non-fatal. All `*CloneAndLinkTask` functions default the branch to `main`.
 
@@ -154,7 +152,7 @@ App modules are directories under `bash/apps/<app>/` with:
 Current app modules:
 - `direnv` -- PROMPT_COMMAND hook (appends after liquidprompt)
 - `git` -- 44 shell aliases + workflow functions (europe, wolf, venice, etc.)
-- `keychain` -- SSH agent via keychain eval (id_ed25519, login hook)
+- `keychain` -- SSH agent via keychain eval (id_ed25519, login hook). Uses `SSH_ASKPASS_REQUIRE=never` to prevent nix openssh's broken compiled-in askpass fallback.
 - `mnencode` -- randword function
 - `pandoc` -- shannon (markdown reformatter) function
 - `stg` -- 30+ stgit aliases + workflow functions
@@ -286,75 +284,77 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 - Uses policies instead of per-profile config -- policies apply to all profiles regardless of profile path, which varies per machine
 - Works on both NixOS (home-manager as NixOS module) and Debian/Crostini (standalone home-manager) -- policies are baked into the wrapped Firefox package at build time
 
+### Security Model
+
+See [security.md](security.md) for the full security model: threat actors, trust boundaries, confidentiality and integrity models, accepted risks, and controls.
+
+**Key constraints for this section:** this repo is public. No encrypted secret material may be committed. Private keys and secrets are backed up to 1Password, not to the repo. The mount cache stores plaintext on ChromeOS-host-visible storage (accepted tradeoff). Fingerprint validation against repo `.pub` is self-consistency, not authenticity. All commits are SSH-signed; force-push is disallowed on `main`.
+
 ### SSH Key Bootstrap (UC-4)
 
-Per-machine SSH keys stored in the repo as age-encrypted bundles with plaintext `.pub` sidecars:
+Per-machine SSH keys identified by hostname. Public key sidecars committed to the repo for validation:
 
 ```
 ssh/
-  id_ed25519_calumny.age      # encrypted tarball (private + public key)
-  id_ed25519_calumny.pub      # plaintext public key (sidecar for validation)
+  id_ed25519_calumny.pub      # plaintext public key (for fingerprint validation)
 ```
 
-**Three-tier restore** (stage 2, after `age` is installed by home-manager):
-1. **Local** -- if `~/.ssh/id_ed25519` exists and `.pub` fingerprint matches repo `.pub`, accept
-2. **Mount cache** -- `$CrostiniDir/ssh/<hostname>/id_ed25519` with `.pub` fingerprint matching repo `.pub`
-3. **Age decrypt** -- decrypt `.age` bundle, validate bundled `.pub` against repo sidecar, install
+Private keys are stored in 1Password, not in the repo. See [Security Model](#security-model).
 
-On first-time machine setup (no `.age` in repo), generates a new passphrase-protected key, bundles private + public into an encrypted tarball, and commits `.age` + `.pub` to repo.
+**Restore priority** (stage 1 step 4):
+1. **Local** -- `~/.ssh/id_ed25519` exists and `.pub` fingerprint matches repo `.pub` -> accept
+2. **Mount cache** -- `$CrostiniDir/ssh/<hostname>/id_ed25519` with `.pub` fingerprint matching repo `.pub` -> restore, no passphrase needed
+3. **1Password** -- retrieve private key via `op` CLI (or manually from app) -> install to `~/.ssh/id_ed25519`
+4. **Generate** -- no key exists anywhere -> generate new passphrase-protected key, store in 1Password, commit `.pub` sidecar to repo
 
-**Trust model:** Private key is trusted to match `.pub` if the pair was produced together by `ssh-keygen` or extracted from the same age bundle. Manual `.pub` replacement is unsupported. Passphrase-protected private keys cannot be verified non-interactively -- this is an accepted design limitation. See `installKey` comments.
+**Trust model:** private key is trusted to match `.pub` if the pair was produced together by `ssh-keygen`. Fingerprint validation against the repo `.pub` is a self-consistency check, not an authenticity guarantee (see [Security Model](#security-model)). Manual `.pub` replacement is unsupported.
 
-**Hostname as machine identity:** Admin-assigned, stored in `$CrostiniDir/hostname` on Crostini, `$HOSTNAME` on NixOS. `penguin` (Crostini default) is rejected. Collision guard: repo `.pub` fingerprint vs local `.pub` fingerprint -- mismatch = collision error. Hostname validated with `[a-z0-9][a-z0-9-]*`.
+**Hostname as machine identity:** admin-assigned, stored in `$CrostiniDir/hostname` on Crostini, `$HOSTNAME` on NixOS. `penguin` (Crostini default) is rejected. Collision guard: repo `.pub` fingerprint vs local `.pub` fingerprint -- mismatch = collision error. Hostname validated with `[a-z0-9][a-z0-9-]*`.
 
 **Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines. Prevents interactive prompts during bootstrap while rejecting changed host keys on subsequent connections.
 
-**Auth preflight** (stage 2): Tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
+**Auth preflight** (stage 1 step 4): guards registry checks with a fingerprint-specific agent test -- gets the `.pub` fingerprint via `ssh-keygen -lf`, then checks `ssh-add -l` for that fingerprint. If the specific key is not in the agent (empty agent, wrong key loaded, or unreadable `.pub`), reports "key not in agent" and skips registry checks. This prevents the misleading "key not registered" diagnostic that `BatchMode=yes` SSH failures would otherwise produce (the failure looks identical whether the key was rejected by the registry or never offered). When the key is confirmed in the agent, tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
 
-**Decision logic** (`sshKeyAction` in `update-env`, lines 865-914): pure function mapping filesystem state to exactly one action. Code is authoritative; this table is a reading aid.
-
-*Invariant checks* (evaluated first): repo .age without .pub or vice versa -> error; repo .pub with empty fingerprint -> error.
+**Decision logic** (`sshKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action. Code is authoritative; this table is a reading aid.
 
 | State | Action | Notes |
 |-------|--------|-------|
 | local exists, localFp == repoFp | `present` | strongest match |
 | local exists, localFp != repoFp | `collision` | error: two keys for same hostname |
-| local exists, localFp unknown, cacheFp == repoFp | `backup_then_cache` | backup local, restore cache |
-| local exists, localFp unknown, repo .age + tty + age | `backup_then_age` | backup local, decrypt repo |
-| local exists, no repo state | `capture_to_repo` | encrypt local to repo |
-| no local, cacheFp == repoFp (or repoFp empty) | `restore_from_cache` | fast path. Weaker when repoFp empty |
-| no local, repo .age + tty + age | `restore_from_age` | passphrase required |
-| no local, no repo, tty | `generate` | new key, encrypt to repo |
-| any path needing tty but no tty | `missing_noninteractive` | CI: pre-provision required |
+| no local, cache exists, cacheFp matches | `restore_from_cache` | fast path (no passphrase) |
+| no local, `op` available | `restore_from_op` | retrieve from 1Password |
+| no local, no cache, no `op`, tty | `generate` | new key; store in 1Password manually |
+| any path needing tty but no tty | `missing_noninteractive` | pre-provision required |
 
-`SshKeyStatus` values (set by restore, read by `sshKeyEpilogue`): `present`, `restored`, `generated`, `generated_local_only`, `collision`, `missing_noninteractive`.
+`SshKeyStatus` values (set by restore, read by `sshKeyEpilogue`): `present`, `restored`, `generated`, `collision`, `missing_noninteractive`.
 
 Operator workflows (bootstrap, rotation, recovery, decommission): [secrets-lifecycle.md](secrets-lifecycle.md).
 
-### Secrets Bundling (UC-4)
+### Secrets Management (UC-4)
 
-Per-machine secrets stored as age-encrypted tarballs: `secrets/<hostname>.tar.age`. Same three-tier restore model as SSH keys.
+Per-machine secrets stored in `~/secrets/`. Backed up to 1Password -- not to the repo. See [Security Model](#security-model).
 
 **Filename policy:** `lib.ValidSecretName` -- alphanumeric start, then `[a-zA-Z0-9._-]*`. No dotfiles, no paths, no spaces. Shared between `scripts/encrypt-secrets` (producer) and `restoreSecrets` (consumer) via `scripts/lib.bash`.
 
-**Archive validation** (`validateSecretsArchive`): Pre-extraction validation in two passes:
+**Restore priority:**
+1. **Local** -- `~/secrets/` has non-dot files -> accept (no restore needed)
+2. **Mount cache** -- `$CrostiniDir/secrets/<hostname>/` with freshness check via `.bundle-hash` -> restore
+3. **1Password** -- retrieve via `op` CLI or manually from app -> populate `~/secrets/`
+
+**Restore behavior:** restore only runs when `~/secrets/` is empty (Tier 1 short-circuits if any non-dot files exist). Files are moved into `~/secrets/` additively; restore never overwrites existing secrets.
+
+**Archive validation** (`validateSecretsArchive`): when restoring from a bundle (cache or export), pre-extraction validation in two passes:
 1. **Name pass** -- `tar tf`: accepts root (`.`/`./`), rejects non-root directories (`*/`), validates remaining names via `lib.ValidSecretName`.
 2. **Type pass** -- `tar tvf`: accepts regular files (`-`) and root directory (`d` only for `.`/`./`). Rejects symlinks, hardlinks, devices, fifos. Requires at least one regular file.
 
 Fails closed: corrupt or non-tar input rejected before extraction. Post-extraction `find -not -type f` remains as defense-in-depth.
 
-**Snapshot semantics:** each bundle is a point-in-time snapshot from one machine. Last committed bundle wins -- no merge, no conflict resolution. Different machines may have different secret subsets.
-
-**Restore behavior:** restore only runs when `~/secrets/` is empty (Tier 1 short-circuits if any non-dot files exist). Files are moved into `~/secrets/` additively; restore never overwrites existing secrets.
-
-**Freshness:** Bundle hash (sha256 of `.tar.age` ciphertext) stored as `~/secrets/.bundle-hash`. Stale warning (advisory, not blocking) if local hash differs from repo. Known limitation: re-encryption changes hash even with identical plaintext.
-
-Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.md](secrets-lifecycle.md).
-
 **Scripts:**
-- `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
+- `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball for local backup or 1Password export. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
 - `scripts/with-secret` -- injects file-based secret as env var into child process only. Last-resort shim for tools requiring env vars.
 - `scripts/lib.bash` -- shared helpers (`lib.MachineHostname`, `lib.ValidateHostname`, `lib.ValidSecretName`, `lib.Glob`). Sourced by both `update-env` and `encrypt-secrets`.
+
+Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.md](secrets-lifecycle.md).
 
 ### VPN (UC-7)
 
