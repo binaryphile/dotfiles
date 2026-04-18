@@ -39,7 +39,7 @@
     supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
     forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
   in {
-    homeConfigurations.penguin = home-manager.lib.homeManagerConfiguration {
+    homeConfigurations.crostini = home-manager.lib.homeManagerConfiguration {
       pkgs = hmPkgs;
       modules = [ ./contexts/crostini/home.nix ];
       extraSpecialArgs = commonSpecialArgs;

@@ -23,6 +23,23 @@
 # it does not have spaces and is exempt from quoting
 CrostiniDir=/mnt/chromeos/MyFiles/Downloads/crostini
 
+usageText() {
+  cat <<'EOF'
+Usage: update-env [-1 [hostname] | -2 | -c] [-s] [-x]
+
+  -1, --stage1 [hostname]  Stage 1: system, packages, credentials
+  -2, --stage2             Stage 2: projects, dev tools, config
+  -c, --credential         Credential setup only (SSH key, signing key, secrets)
+  -s, --short              Short run (skip unchanged tasks)
+  -x, --trace              Enable bash trace output
+  -h, --help               Show this help
+
+  Bare 'update-env' runs both stages sequentially.
+  Hostname is required on first Crostini run with -1.
+  -c requires prior completion of stage 1 phases 1-3.
+EOF
+}
+
 # Two-stage execution: stage 1 delivers a working shell (phases 1-3 + core
 # tools); stage 2 handles remaining projects, builds, and config.
 # Bare `update-env` runs both stages sequentially (backwards-compatible).
@@ -36,9 +53,10 @@ main() {
   readonly Platform
 
   case $Stage in
-    1   ) stage1; stage1Epilogue;;
-    2   ) stage2Preflight; stage2;;
-    all ) stage1; stage2;;
+    1          ) stage1; stage1Epilogue;;
+    2          ) stage2Preflight; stage2;;
+    credential ) credentialPreflight; credentialStage;;
+    all        ) stage1; stage2;;
   esac
 
   task.Summarize
@@ -49,38 +67,21 @@ main() {
 sshKeyEpilogue() {
   case $SshKeyStatus in
     generated)
+      local hostname
+      hostname=$(lib.MachineHostname)
       echo
-      echo "=== NEW SSH KEY GENERATED AND BACKED UP ==="
-      echo "Public key: ~/.ssh/id_ed25519.pub"
-      [[ -f $HOME/.ssh/id_ed25519.pub ]] && cat "$HOME/.ssh/id_ed25519.pub"
+      echo "=== NEW SSH KEY GENERATED ==="
       echo
-      echo "Register this key with:"
-      echo "  https://github.com/settings/keys"
-      echo "  https://codeberg.org/user/settings/keys"
-      echo "  https://bitbucket.org/account/settings/ssh-keys/"
-      echo "  https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN)"
+      echo "1. Store in 1Password as: $hostname SSH Key (Private vault)"
       echo
-      echo "Then commit and push:"
-      echo "  cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(lib.MachineHostname)' && git push"
-      echo "Until registered, private repos will be skipped."
-      ;;
-    generated_local_only)
+      echo "2. Register via 1Password browser extension:"
+      echo "     https://github.com/settings/keys (Authentication Key)"
+      echo "     https://codeberg.org/user/settings/keys (Authentication Key)"
+      echo "     https://bitbucket.org/account/settings/ssh-keys/"
+      echo "     https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN)"
       echo
-      echo "=== NEW SSH KEY GENERATED (LOCAL ONLY -- NOT BACKED UP) ==="
-      echo "Public key: ~/.ssh/id_ed25519.pub"
-      [[ -f $HOME/.ssh/id_ed25519.pub ]] && cat "$HOME/.ssh/id_ed25519.pub"
-      echo
-      echo "WARNING: Key exists locally but is NOT encrypted in the repo." >&2
-      echo "This key WILL BE LOST on wipe. To back up, run:"
-      echo "  age -p -o ~/dotfiles/ssh/id_ed25519_$(lib.MachineHostname).age ~/.ssh/id_ed25519"
-      echo "  cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$(lib.MachineHostname).pub"
-      echo "  cd ~/dotfiles && git add ssh/ && git commit && git push"
-      echo
-      echo "Register this key with:"
-      echo "  https://github.com/settings/keys"
-      echo "  https://codeberg.org/user/settings/keys"
-      echo "  https://bitbucket.org/account/settings/ssh-keys/"
-      echo "  https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN)"
+      echo "3. Commit and push:"
+      echo "     cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $hostname' && git push"
       ;;
     restored)
       echo
@@ -157,7 +158,7 @@ stage1() {
     verifyNixFlakes
 
     section home-manager
-    homeManagerFlakeSwitchTask penguin
+    homeManagerFlakeSwitchTask crostini
     convergeTaskBash
     ;;
   esac
@@ -201,13 +202,48 @@ stage2Preflight() {
   fi
 }
 
+credentialPreflight() {
+  case $Platform in
+    crostini ) ;;
+    * )
+      echo "Credential setup is only supported on Crostini."
+      echo "On this platform ($Platform), credentials are managed separately."
+      exit 2
+      ;;
+  esac
+  local missing=()
+  command -v age &>/dev/null          || missing+=("age")
+  [[ -d ~/dotfiles ]]                 || missing+=("~/dotfiles")
+  [[ -f $CrostiniDir/hostname ]]      || missing+=("hostname (run 'update-env -1 <hostname>' first)")
+  if (( ${#missing[@]} )); then
+    echo "Credential stage requires: ${missing[*]}"
+    echo "Run 'update-env -1' first, then 'exec bash'."
+    exit 2
+  fi
+}
+
+# Credential-only stage: runs SSH key, signing key, secrets, agent load,
+# and auth preflight without re-running system setup or packages. Useful
+# when stage 1 completed phases 1-3 but credentials need interactive
+# completion (e.g., interrupted bootstrap, key generation deferred from
+# non-interactive run).
+credentialStage() {
+  section credential
+  try restoreSshKey
+  try restoreSigningKey
+  try restoreSecrets
+  try loadSshKey
+  section auth-preflight
+  try authPreflight
+}
+
 # Stage 2: projects, builds, and config -- all externals try-wrapped
 stage2() {
   # Re-run home-manager to converge (idempotent -- no-op if stage 1
   # already applied the same config).
   case $Platform in crostini|debian|linux|macos )
     section home-manager
-    homeManagerFlakeSwitchTask penguin
+    homeManagerFlakeSwitchTask crostini
     convergeTaskBash
     ;;
   esac
@@ -787,7 +823,11 @@ installNix() {
     return 1
   }
   chmod +x "$tmp/$binary"
-  "$tmp/$binary" install --no-confirm --init none
+  local os=${uname_s:-$(uname -s)}
+  case $os in
+    Linux )  "$tmp/$binary" install linux --no-confirm --init none;;
+    Darwin ) "$tmp/$binary" install --no-confirm;;
+  esac
   local rc=$?
   rm -rf "$tmp"
   return $rc
@@ -990,27 +1030,24 @@ withCleanupTrap() {
 #
 # Returns 0 always. Prints exactly one action from this closed set:
 #   present | collision | capture_to_repo
-#   backup_then_cache | backup_then_age | backup_then_fail
-#   restore_from_cache | restore_from_age | generate
+#   backup_then_cache | backup_then_op | backup_then_fail
+#   restore_from_cache | restore_from_op | generate
 #   missing_noninteractive
-#   error_age_without_pub | error_pub_without_age | error_malformed_pub
-#   error_age_not_found
+#   error_malformed_pub
 #
 # Decision table (abbreviated, see tests for full coverage):
 #   local exists + repo match       -> present
 #   local exists + repo mismatch    -> collision
-#   local exists + repo unverifiable -> backup_then_{cache|age|fail}
+#   local exists + repo unverifiable -> backup_then_{cache|op|fail}
 #   local exists + no repo          -> capture_to_repo
 #   cache valid + repo match/absent -> restore_from_cache
-#   repo age available + tty + age  -> restore_from_age
+#   op ready + item exists          -> restore_from_op
 #   nothing + tty                   -> generate
 #   nothing + no tty                -> missing_noninteractive
 sshKeyAction() {
   local -n STATE=$1
 
-  # Pair invariant
-  if (( STATE[repoHasAge] && !STATE[repoHasPub] )); then echo error_age_without_pub; return 0; fi
-  if (( STATE[repoHasPub] && !STATE[repoHasAge] )); then echo error_pub_without_age; return 0; fi
+  # Pub sidecar validation
   if (( STATE[repoHasPub] )) && [[ -z ${STATE[repoFp]} ]]; then echo error_malformed_pub; return 0; fi
 
   # Tier 1: local key exists
@@ -1018,16 +1055,14 @@ sshKeyAction() {
     if [[ -n ${STATE[repoFp]} ]]; then
       if [[ -n ${STATE[localFp]} && ${STATE[localFp]} == "${STATE[repoFp]}" ]]; then echo present; return 0; fi
       if [[ -n ${STATE[localFp]} && ${STATE[localFp]} != "${STATE[repoFp]}" ]]; then echo collision; return 0; fi
-      # localFp empty = unverifiable -- backup, then try cache/age/fail
+      # localFp empty = unverifiable -- backup, then try cache/op/fail
       if (( STATE[cacheExists] )) && [[ -n ${STATE[cacheFp]} ]]; then
         if [[ -z ${STATE[repoFp]} || ${STATE[cacheFp]} == "${STATE[repoFp]}" ]]; then
           echo backup_then_cache; return 0
         fi
       fi
-      if (( STATE[repoHasAge] )); then
-        if (( !STATE[hasTty] )); then echo missing_noninteractive; return 0; fi
-        if (( !STATE[hasAge] )); then echo error_age_not_found; return 0; fi
-        echo backup_then_age; return 0
+      if (( STATE[opReady] && STATE[opHasItem] )); then
+        echo backup_then_op; return 0
       fi
       echo backup_then_fail; return 0
     else
@@ -1044,11 +1079,9 @@ sshKeyAction() {
     fi
   fi
 
-  # Tier 3: age decrypt
-  if (( STATE[repoHasAge] )); then
-    if (( !STATE[hasTty] )); then echo missing_noninteractive; return 0; fi
-    if (( !STATE[hasAge] )); then echo error_age_not_found; return 0; fi
-    echo restore_from_age; return 0
+  # Tier 3: 1Password
+  if (( STATE[opReady] && STATE[opHasItem] )); then
+    echo restore_from_op; return 0
   fi
 
   # Tier 4: generate
@@ -1061,24 +1094,24 @@ restoreSshKeyImpl() {
   hostname=$(lib.MachineHostname)
   lib.ValidateHostname $hostname || return 1
 
-  local repoAge="$HOME/dotfiles/ssh/id_ed25519_${hostname}.age"
   local repoPub="$HOME/dotfiles/ssh/id_ed25519_${hostname}.pub"
   local localKey="$HOME/.ssh/id_ed25519"
   local cacheDir="$CrostiniDir/ssh/$hostname"
   local cacheKey="$cacheDir/id_ed25519"
+  local opItem="$hostname SSH Key"
 
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   rm -f "$CrostiniDir/np_id_ed25519" "$CrostiniDir/np_id_ed25519.pub"
 
   # Classify filesystem state into decision inputs
   local -A state=(
-    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=""
+    [repoHasPub]=0 [repoFp]=""
     [localExists]=0 [localFp]=""
     [cacheExists]=0 [cacheFp]=""
-    [hasTty]=0 [hasAge]=0
+    [hasTty]=0
+    [opReady]=0 [opHasItem]=0
   )
 
-  [[ -f $repoAge ]] && state[repoHasAge]=1
   [[ -f $repoPub ]] && state[repoHasPub]=1
   (( state[repoHasPub] )) && state[repoFp]=$(pubFingerprint "$repoPub")
   [[ -f $localKey && -s $localKey ]] && state[localExists]=1
@@ -1086,14 +1119,15 @@ restoreSshKeyImpl() {
   [[ -f $cacheKey && -f $cacheKey.pub ]] && state[cacheExists]=1
   (( state[cacheExists] )) && state[cacheFp]=$(pubFingerprint "$cacheKey.pub")
   [[ -t 0 ]] && state[hasTty]=1
-  command -v -- $age >/dev/null 2>&1 && state[hasAge]=1
+  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
+    state[opReady]=1
+    $op item get "$opItem" --vault Private >/dev/null 2>&1 && state[opHasItem]=1
+  fi
 
   local action
   action=$(sshKeyAction state)
 
-  # Dispatch -- mostly mechanical. capture_to_repo has additional runtime
-  # checks (tty, age availability, .pub validity) that determine whether
-  # capture is attempted. Capture failure is non-fatal (key is local-only).
+  # Dispatch
   case $action in
     error_*)
       echo ERROR: ${action#error_} >&2
@@ -1101,8 +1135,6 @@ restoreSshKeyImpl() {
       ;;
 
     present)
-      # Trust: local .pub fingerprint matches repo .pub. Private key is trusted
-      # to match .pub if the pair was produced by ssh-keygen or installKey.
       chmod 600 "$localKey"
       if [[ -d $CrostiniDir ]]; then
         mkdir -p "$cacheDir" 2>/dev/null
@@ -1129,39 +1161,30 @@ restoreSshKeyImpl() {
       return 0
       ;;
 
-    backup_then_age)
+    backup_then_op)
       sshKeyBackupLocal $localKey || return 1
-      sshKeyDecryptAndInstall $repoAge $repoPub ${state[repoFp]} $localKey $cacheDir $cacheKey
+      sshKeyRestoreFromOp "$opItem" "$localKey" "$repoPub" "$cacheDir" "$cacheKey"
       return
       ;;
 
     backup_then_fail)
       sshKeyBackupLocal $localKey || return 1
-      echo "ERROR: cannot restore key (no cache or age available after backup)." >&2
+      echo "ERROR: cannot restore key (no cache or 1Password available after backup)." >&2
       return 1
       ;;
 
     capture_to_repo)
       # Local key usable regardless of capture outcome.
-      # Capture is best-effort -- requires tty, age, and valid .pub.
+      # Copy .pub sidecar to repo for fingerprint validation.
       chmod 600 "$localKey"
-      if (( state[hasTty] && state[hasAge] )) && [[ -f $localKey.pub && -s $localKey.pub ]]; then
-        local pubFp
-        pubFp=$(pubFingerprint "$localKey.pub")
-        if [[ -z $pubFp ]]; then
-          echo "WARNING: local .pub is malformed. Cannot capture to repo." >&2
-          echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
-        elif ! sshKeyEncryptToRepo $localKey $repoAge $repoPub $hostname; then
-          echo "WARNING: repo backup failed. Key is local-only -- will be lost on wipe." >&2
-        fi
+      if [[ -f $localKey.pub && -s $localKey.pub ]]; then
+        cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       fi
       SshKeyStatus=present
       return 0
       ;;
 
     restore_from_cache)
-      # Trust: cache .pub fingerprint matches repo .pub. Private key trusted
-      # to match .pub -- pair was installed together by installKey.
       echo "Restoring SSH key from mount cache ($hostname)..."
       if ! installKey $cacheKey $localKey; then
         echo "ERROR: cache restore failed." >&2
@@ -1170,16 +1193,13 @@ restoreSshKeyImpl() {
       SshKeyStatus=restored
       ;;
 
-    restore_from_age)
-      # Trust: age bundle contains both private + public from same generation.
-      # Bundled .pub fingerprint is validated against repo .pub sidecar after
-      # decryption -- strongest verification path.
-      sshKeyDecryptAndInstall $repoAge $repoPub ${state[repoFp]} $localKey $cacheDir $cacheKey
+    restore_from_op)
+      sshKeyRestoreFromOp "$opItem" "$localKey" "$repoPub" "$cacheDir" "$cacheKey"
       return
       ;;
 
     generate)
-      sshKeyGenerate $localKey $repoAge $repoPub $hostname $cacheDir $cacheKey
+      sshKeyGenerate $localKey $repoPub $hostname $cacheDir $cacheKey
       return
       ;;
 
@@ -1194,6 +1214,28 @@ restoreSshKeyImpl() {
       return 1
       ;;
   esac
+}
+
+# sshKeyRestoreFromOp -- retrieve SSH key from 1Password, install, cache.
+# Same pattern as restoreSigningKey's restore_from_op dispatch.
+sshKeyRestoreFromOp() {
+  local opItem=$1 localKey=$2 repoPub=$3 cacheDir=$4 cacheKey=$5
+  echo "Restoring SSH key from 1Password ($opItem)..."
+  $op read --out-file "$localKey" "op://Private/$opItem/private key?ssh-format=openssh" || {
+    echo "ERROR: 1Password SSH key retrieval failed." >&2
+    return 1
+  }
+  chmod 600 "$localKey"
+  $ssh_keygen -y -f "$localKey" >"$localKey.pub" 2>/dev/null
+  chmod 644 "$localKey.pub"
+  # Copy .pub sidecar to repo for fingerprint validation
+  cp "$localKey.pub" "$repoPub" 2>/dev/null || true
+  # Cache to mount
+  if [[ -d $CrostiniDir ]]; then
+    mkdir -p "$cacheDir" 2>/dev/null
+    installKey $localKey $cacheKey
+  fi 2>/dev/null || echo "WARNING: mount cache write failed" >&2
+  SshKeyStatus=restored
 }
 
 # sshKeyBackupLocal -- back up local key before overwriting. Returns 1 on failure.
@@ -1289,9 +1331,9 @@ sshKeyEncryptToRepo() {
   rm -rf "$stageDir"; SshStageDir=""
 }
 
-# sshKeyGenerate -- tier 4 implementation: generate new key, encrypt to repo, cache.
+# sshKeyGenerate -- tier 4 implementation: generate new key, copy .pub to repo, cache.
 sshKeyGenerate() {
-  local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4 cacheDir=$5 cacheKey=$6
+  local localKey=$1 repoPub=$2 hostname=$3 cacheDir=$4 cacheKey=$5
   command -v -- $ssh_keygen >/dev/null 2>&1 || { echo $ssh_keygen not found; return 1; }
   echo No SSH key for $hostname. Generating...
   echo "(SSH key passphrase -- protects the key on disk)"
@@ -1301,25 +1343,15 @@ sshKeyGenerate() {
   fi
   chmod 644 "$localKey.pub"
 
-  local backedUp=0
-  if command -v -- $age >/dev/null 2>&1; then
-    if sshKeyEncryptToRepo $localKey $repoAge $repoPub $hostname; then
-      backedUp=1
-    else
-      echo "WARNING: key generated locally but NOT backed up to repo. Will be lost on wipe." >&2
-    fi
-  fi
+  # Copy .pub sidecar to repo for fingerprint validation
+  cp "$localKey.pub" "$repoPub" 2>/dev/null || true
 
   if [[ -d $CrostiniDir ]]; then
     mkdir -p "$cacheDir" 2>/dev/null
     installKey $localKey $cacheKey
   fi 2>/dev/null || echo "WARNING: mount cache write failed" >&2
 
-  if (( backedUp )); then
-    SshKeyStatus=generated
-  else
-    SshKeyStatus=generated_local_only
-  fi
+  SshKeyStatus=generated
 }
 
 restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
@@ -1504,12 +1536,19 @@ restoreSigningKey() {
   case $action in
     present )
       chmod 600 "$localKey"
+      if (( state[opReady] && !state[opHasItem] )); then
+        echo "Signing key exists locally but not in 1Password."
+        echo "  Store as: $opItem (Private vault)"
+      fi
       ;;
 
     present_no_sidecar )
       chmod 600 "$localKey"
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       echo "Signing key .pub sidecar added to repo. Commit and push."
+      if (( state[opReady] && !state[opHasItem] )); then
+        echo "  Also store in 1Password as: $opItem (Private vault)"
+      fi
       ;;
 
     collision )
@@ -1528,10 +1567,9 @@ restoreSigningKey() {
       chmod 644 "$localKey.pub"
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       echo "Signing key restored from 1Password."
-      echo "Register as a signing key if not already registered:"
-      echo "  GitHub:   https://github.com/settings/keys (Signing Key)"
-      echo "  Codeberg: https://codeberg.org/user/settings/keys (Signing Key)"
-      echo "  $(cat "$localKey.pub")"
+      echo "Register via 1Password browser extension if not already registered:"
+      echo "  https://github.com/settings/keys (Signing Key)"
+      echo "  https://codeberg.org/user/settings/keys (Signing Key)"
       ;;
 
     generate )
@@ -1543,13 +1581,16 @@ restoreSigningKey() {
       chmod 600 "$localKey"
       chmod 644 "$localKey.pub"
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
-      echo "Signing key generated: $localKey"
-      echo "Store in 1Password as: $hostname signing SSH Key"
-      echo "Register as a signing key:"
-      echo "  GitHub:   https://github.com/settings/keys (Signing Key)"
-      echo "  Codeberg: https://codeberg.org/user/settings/keys (Signing Key)"
-      echo "  $(cat "$localKey.pub")"
-      echo "Then: cd ~/dotfiles && git add ssh/ && git commit && git push"
+      echo "Signing key generated."
+      echo
+      echo "1. Store in 1Password as: $hostname signing SSH Key (Private vault)"
+      echo
+      echo "2. Register via 1Password browser extension:"
+      echo "     https://github.com/settings/keys (Signing Key)"
+      echo "     https://codeberg.org/user/settings/keys (Signing Key)"
+      echo
+      echo "3. Commit and push:"
+      echo "     cd ~/dotfiles && git add ssh/ && git commit && git push"
       ;;
   esac
 }
@@ -1913,7 +1954,7 @@ Stage=all
 # parse options
 while [[ ${1:-} == -?* ]]; do
   case $1 in
-    -h|--help   ) [[ -v Usage_ ]] && echo "$Usage_"; exit;;
+    -h|--help   ) usageText; exit;;
     -x|--trace  ) set -x;;
 
     -s|--short )
@@ -1921,8 +1962,9 @@ while [[ ${1:-} == -?* ]]; do
       IsShortRun=1
       ;;
 
-    -1|--stage1 ) Stage=1;;
-    -2|--stage2 ) Stage=2;;
+    -1|--stage1     ) Stage=1;;
+    -2|--stage2     ) Stage=2;;
+    -c|--credential ) Stage=credential;;
 
     -- ) shift; break;;
   esac

@@ -11,7 +11,7 @@ A bare machine reaches productive state via `update-env`. For the detailed step-
 - **Stage 1** (`update-env -1 <hostname>`) -- system setup, packages, credential restore. After this: working shell, VPN, SSH identity.
 - **Stage 2** (`update-env -2`) -- project repos, dev tool clones, neovim. After this: full development environment.
 
-`update-env` is idempotent. First run does everything; re-runs converge. Hostname is required on first Crostini run, optional thereafter. Bare `update-env` runs both stages; `-1`/`-2` flags run individual stages.
+`update-env` is idempotent. First run does everything; re-runs converge. Hostname is required on first Crostini run, optional thereafter. Bare `update-env` runs both stages; `-1`/`-2` flags run individual stages; `-c`/`--credential` runs only credential setup (SSH key, signing key, secrets, agent, auth preflight) for completing identity after an interrupted or non-interactive stage 1.
 
 ### Maintenance
 
