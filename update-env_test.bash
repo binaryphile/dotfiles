@@ -917,6 +917,273 @@ test_authPreflight() {
   tesht.Run ${!case@}
 }
 
+# test_restoreSigningKey tests that restoreSigningKey correctly restores,
+# generates, or retrieves the per-machine commit signing key.
+# op, ssh_keygen are inter-system dependencies (external commands), mocked
+# per Khorikov via function-name DI (local variable assignment).
+test_restoreSigningKey() {
+  local -A case1=(
+    [name]='local key exists -- accepts and ensures repo sidecar'
+  )
+  local -A case2=(
+    [name]='local key exists, repo sidecar already present -- no-op'
+  )
+  local -A case3=(
+    [name]='no local key, op authenticated, item exists -- restores from 1Password'
+  )
+  local -A case4=(
+    [name]='no local key, op not available -- generates new key'
+  )
+  local -A case5=(
+    [name]='no local key, op authenticated, item missing -- generates new key'
+  )
+  local -A case6=(
+    [name]='no local key, op authenticated, read fails -- returns error'
+  )
+  local -A case7=(
+    [name]='local key exists but pub fingerprint differs from repo sidecar -- collision'
+  )
+
+  # Mock functions -- assigned to DI variables via local scoping
+
+  mockSshKeygenGenerate() {
+    local args_=("$@") path
+    for (( i=0; i < ${#args_[@]}; i++ )); do
+      [[ ${args_[$i]} == -f ]] && { path=${args_[$((i+1))]}; break; }
+    done
+    [[ -n ${path:-} ]] || return 1
+    echo "-----BEGIN OPENSSH PRIVATE KEY-----" >$path
+    echo "fake-signing-key" >>$path
+    echo "-----END OPENSSH PRIVATE KEY-----" >>$path
+    chmod 600 "$path"
+    echo "ssh-ed25519 AAAA-mock-signing ted@test-signing" >"$path.pub"
+    chmod 644 "$path.pub"
+  }
+
+  mockSshKeygen() {
+    case $1 in
+      -y ) echo "ssh-ed25519 AAAA-mock-signing ted@test-signing";;
+      -lf ) echo "256 SHA256:signingfp $2 (ED25519)";;
+      * ) mockSshKeygenGenerate "$@";;
+    esac
+  }
+
+  mockOpAuthenticated() {
+    case $1 in
+      whoami ) return 0;;
+      item ) return 0;;
+      read )
+        shift
+        local outfile
+        while (( $# )); do
+          if [[ $1 == --out-file ]]; then
+            outfile=$2; shift 2; continue
+          fi
+          shift
+        done
+        [[ -n ${outfile:-} ]] || return 1
+        echo "-----BEGIN OPENSSH PRIVATE KEY-----" >$outfile
+        echo "fake-1password-key" >>$outfile
+        echo "-----END OPENSSH PRIVATE KEY-----" >>$outfile
+        chmod 600 "$outfile"
+        ;;
+    esac
+  }
+
+  mockOpItemMissing() {
+    case $1 in
+      whoami ) return 0;;
+      item ) return 1;;
+      * ) return 1;;
+    esac
+  }
+
+  mockOpReadFails() {
+    case $1 in
+      whoami ) return 0;;
+      item ) return 0;;
+      read ) return 1;;
+    esac
+  }
+
+  mockOpNotInstalled() { return 127; }
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    ## arrange
+    local dir
+    tesht.MktempDir dir || return 128
+
+    mkdir -p "$dir/.ssh"
+    mkdir -p "$dir/dotfiles/ssh"
+
+    lib.MachineHostname() { echo testhost; }
+
+    local got rc
+    case $casename in
+      case1)
+        echo "fake-private-key" >"$dir/.ssh/id_ed25519_signing"
+        echo "ssh-ed25519 AAAA-mock-signing ted@test-signing" >"$dir/.ssh/id_ed25519_signing.pub"
+        local ssh_keygen=mockSshKeygen
+        local op=mockOpNotInstalled
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc == 0 )) || {
+          echo "should succeed, got rc=$rc: $got"
+          return 1
+        }
+        [[ -f $dir/dotfiles/ssh/id_ed25519_signing_testhost.pub ]] || {
+          echo "should create repo sidecar"
+          return 1
+        }
+        ;;
+
+      case2)
+        echo "fake-private-key" >"$dir/.ssh/id_ed25519_signing"
+        echo "ssh-ed25519 AAAA-mock-signing ted@test-signing" >"$dir/.ssh/id_ed25519_signing.pub"
+        echo "ssh-ed25519 AAAA-mock-signing ted@test-signing" >"$dir/dotfiles/ssh/id_ed25519_signing_testhost.pub"
+        local ssh_keygen=mockSshKeygen
+        local op=mockOpNotInstalled
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc == 0 )) || {
+          echo "should succeed, got rc=$rc: $got"
+          return 1
+        }
+        [[ $got != *"sidecar added"* ]] || {
+          echo "should not report sidecar added when already present"
+          return 1
+        }
+        ;;
+
+      case3)
+        local op=mockOpAuthenticated
+        local ssh_keygen=mockSshKeygen
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc == 0 )) || {
+          echo "should succeed, got rc=$rc: $got"
+          return 1
+        }
+        [[ -f $dir/.ssh/id_ed25519_signing ]] || {
+          echo "should create local signing key"
+          return 1
+        }
+        [[ $got == *"Restoring signing key from 1Password"* ]] || {
+          echo "should report 1Password restore, got: $got"
+          return 1
+        }
+        ;;
+
+      case4)
+        local op=mockOpNotInstalled
+        local ssh_keygen=mockSshKeygenGenerate
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc == 0 )) || {
+          echo "should succeed (generate), got rc=$rc: $got"
+          return 1
+        }
+        [[ -f $dir/.ssh/id_ed25519_signing ]] || {
+          echo "should generate local signing key"
+          return 1
+        }
+        [[ $got == *"Generating"* ]] || {
+          echo "should report generation, got: $got"
+          return 1
+        }
+        ;;
+
+      case5)
+        local op=mockOpItemMissing
+        local ssh_keygen=mockSshKeygenGenerate
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc == 0 )) || {
+          echo "should succeed (generate), got rc=$rc: $got"
+          return 1
+        }
+        [[ $got == *"Generating"* ]] || {
+          echo "should fall through to generation when item missing, got: $got"
+          return 1
+        }
+        ;;
+
+      case6)
+        local op=mockOpReadFails
+        local ssh_keygen=mockSshKeygen
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc != 0 )) || {
+          echo "should fail when op read fails, got rc=$rc: $got"
+          return 1
+        }
+        [[ $got == *"retrieval failed"* ]] || {
+          echo "should report retrieval failure, got: $got"
+          return 1
+        }
+        ;;
+
+      case7)
+        echo "fake-private-key" >"$dir/.ssh/id_ed25519_signing"
+        echo "ssh-ed25519 AAAA-local-key ted@test-signing" >"$dir/.ssh/id_ed25519_signing.pub"
+        echo "ssh-ed25519 AAAA-different-key ted@test-signing" >"$dir/dotfiles/ssh/id_ed25519_signing_testhost.pub"
+
+        # return different fingerprints based on which file is being checked
+        mockSshKeygenDiffFp() {
+          case $1 in
+            -lf )
+              if [[ $2 == *dotfiles/ssh* ]]; then
+                echo "256 SHA256:repofp $2 (ED25519)"
+              else
+                echo "256 SHA256:localfp $2 (ED25519)"
+              fi
+              ;;
+            * ) mockSshKeygen "$@";;
+          esac
+        }
+        local ssh_keygen=mockSshKeygenDiffFp
+        local op=mockOpNotInstalled
+
+        ## act
+        got=$(HOME=$dir restoreSigningKey 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        (( rc != 0 )) || {
+          echo "should fail on fingerprint mismatch, got rc=$rc: $got"
+          return 1
+        }
+        [[ $got == *"mismatch"* || $got == *"collision"* ]] || {
+          echo "should report mismatch/collision, got: $got"
+          return 1
+        }
+        ;;
+    esac
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecretMissingFile tests with-secret fails on missing file.
 test_withSecretMissingFile() {
   local rc
