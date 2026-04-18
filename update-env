@@ -1350,6 +1350,29 @@ loadSshKey() {
   }
 }
 
+# signingKeyAction -- pure function mapping filesystem state to action.
+# Same pattern as sshKeyAction. Input: associative array name with state flags.
+# Output: action string to stdout. No side effects.
+signingKeyAction() {
+  local -n STATE=$1
+
+  if (( STATE[localExists] )); then
+    if (( STATE[repoHasPub] )); then
+      if [[ ${STATE[localFp]} != "${STATE[repoFp]}" ]]; then
+        echo collision; return 0
+      fi
+      echo present; return 0
+    fi
+    echo present_no_sidecar; return 0
+  fi
+
+  if (( STATE[opReady] && STATE[opHasItem] )); then
+    echo restore_from_op; return 0
+  fi
+
+  echo generate; return 0
+}
+
 # restoreSigningKey -- ensure a per-machine git commit signing key exists.
 # Separate from auth key per crypto practice (keys not reused across purposes).
 # No passphrase (used on every commit), no mount cache (trivially regenerated).
@@ -1361,27 +1384,44 @@ restoreSigningKey() {
   local localKey=$HOME/.ssh/id_ed25519_signing
   local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
 
-  [[ -f $localKey ]] && {
-    # Signing key exists locally. Validate against repo sidecar if present.
-    if [[ -f $repoPub ]]; then
-      local localFp repoFp
-      localFp=$($ssh_keygen -lf "$localKey.pub" 2>/dev/null | awk '{print $2}')
-      repoFp=$($ssh_keygen -lf "$repoPub" 2>/dev/null | awk '{print $2}')
-      if [[ -n $localFp && -n $repoFp && $localFp != "$repoFp" ]]; then
-        echo "ERROR: signing key fingerprint mismatch -- local ($localFp) != repo ($repoFp)" >&2
-        return 1
-      fi
-    else
+  # Classify filesystem state into decision inputs
+  local -A state=(
+    [localExists]=0 [localFp]=""
+    [repoHasPub]=0 [repoFp]=""
+    [opReady]=0 [opHasItem]=0
+  )
+
+  [[ -f $localKey ]] && state[localExists]=1
+  (( state[localExists] )) && [[ -f $localKey.pub ]] && state[localFp]=$($ssh_keygen -lf "$localKey.pub" 2>/dev/null | awk '{print $2}')
+  [[ -f $repoPub ]] && state[repoHasPub]=1
+  (( state[repoHasPub] )) && state[repoFp]=$($ssh_keygen -lf "$repoPub" 2>/dev/null | awk '{print $2}')
+  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
+    state[opReady]=1
+    local opItem="$hostname signing SSH Key"
+    $op item get "$opItem" --vault Private >/dev/null 2>&1 && state[opHasItem]=1
+  fi
+
+  local action
+  action=$(signingKeyAction state)
+
+  # Dispatch
+  case $action in
+    present )
+      chmod 600 "$localKey"
+      ;;
+
+    present_no_sidecar )
+      chmod 600 "$localKey"
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       echo "Signing key .pub sidecar added to repo. Commit and push."
-    fi
-    return 0
-  }
+      ;;
 
-  # Try 1Password retrieval
-  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
-    local opItem="$hostname signing SSH Key"
-    if $op item get "$opItem" --vault Private >/dev/null 2>&1; then
+    collision )
+      echo "ERROR: signing key fingerprint mismatch -- local (${state[localFp]}) != repo (${state[repoFp]})" >&2
+      return 1
+      ;;
+
+    restore_from_op )
       echo "Restoring signing key from 1Password ($opItem)..."
       $op read --out-file "$localKey" "op://Private/$opItem/private key?ssh-format=openssh" || {
         echo "ERROR: 1Password signing key retrieval failed." >&2
@@ -1392,26 +1432,30 @@ restoreSigningKey() {
       chmod 644 "$localKey.pub"
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       echo "Signing key restored from 1Password."
-      return 0
-    fi
-  fi
+      echo "Register as a signing key if not already registered:"
+      echo "  GitHub:   https://github.com/settings/keys (Signing Key)"
+      echo "  Codeberg: https://codeberg.org/user/settings/keys (Signing Key)"
+      echo "  $(cat "$localKey.pub")"
+      ;;
 
-  # Generate new signing key (no passphrase)
-  echo "Generating git commit signing key for $hostname..."
-  $ssh_keygen -t ed25519 -f "$localKey" -N "" -C "ted@${hostname}-signing" || {
-    echo "ERROR: signing key generation failed." >&2
-    return 1
-  }
-  chmod 600 "$localKey"
-  chmod 644 "$localKey.pub"
-  cp "$localKey.pub" "$repoPub" 2>/dev/null || true
-
-  echo "Signing key generated: $localKey"
-  echo "Store in 1Password as: $hostname signing SSH Key"
-  echo "Register as a signing key on GitHub: https://github.com/settings/keys"
-  echo "  Key type: Signing Key"
-  echo "  $(cat "$localKey.pub")"
-  echo "Then: cd ~/dotfiles && git add ssh/ && git commit && git push"
+    generate )
+      echo "Generating git commit signing key for $hostname..."
+      $ssh_keygen -t ed25519 -f "$localKey" -N "" -C "ted@${hostname}-signing" || {
+        echo "ERROR: signing key generation failed." >&2
+        return 1
+      }
+      chmod 600 "$localKey"
+      chmod 644 "$localKey.pub"
+      cp "$localKey.pub" "$repoPub" 2>/dev/null || true
+      echo "Signing key generated: $localKey"
+      echo "Store in 1Password as: $hostname signing SSH Key"
+      echo "Register as a signing key:"
+      echo "  GitHub:   https://github.com/settings/keys (Signing Key)"
+      echo "  Codeberg: https://codeberg.org/user/settings/keys (Signing Key)"
+      echo "  $(cat "$localKey.pub")"
+      echo "Then: cd ~/dotfiles && git add ssh/ && git commit && git push"
+      ;;
+  esac
 }
 
 authPreflight() {

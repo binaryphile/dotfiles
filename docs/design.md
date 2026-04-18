@@ -320,6 +320,16 @@ Private keys are stored in 1Password, not in the repo. See [Security Model](#sec
 2. **1Password** -- `op` authenticated and item `<hostname> signing SSH Key` exists in Private vault -> retrieve via `op read "op://Private/<hostname> signing SSH Key/private key?ssh-format=openssh"`, derive `.pub` via `ssh-keygen -y`
 3. **Generate** -- no key in 1Password -> generate with `ssh-keygen -t ed25519 -N ""`, prompt to store in 1Password and register on GitHub/Codeberg as a signing key
 
+**Decision logic** (`signingKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action, same pattern as `sshKeyAction` for auth keys. Code is authoritative; this table is a reading aid.
+
+| State | Action | Notes |
+|-------|--------|-------|
+| local exists, repo sidecar exists, fingerprints match | `present` | no-op |
+| local exists, repo sidecar exists, fingerprints differ | `collision` | error |
+| local exists, no repo sidecar | `present_no_sidecar` | copy .pub to repo |
+| no local, `op` authenticated, item exists | `restore_from_op` | retrieve from 1Password |
+| no local, no `op` or item missing | `generate` | new key; store in 1Password manually |
+
 The signing key is simpler than the auth key: no passphrase, no mount cache, no age encryption.
 
 **Why no passphrase:** the signing key is used on every commit. A passphrase would prompt on every `git commit`, which is too much friction for a key whose compromise model is the same as local filesystem access -- an attacker who can read the signing key file can also read the auth key, secrets, and agent socket. The passphrase on the auth key protects against offline key theft (e.g., from a backup); the signing key is not cached on the mount and is not worth that tradeoff.
@@ -335,6 +345,8 @@ The 1Password item name follows the convention `<hostname> signing SSH Key` (e.g
 **Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines. Prevents interactive prompts during bootstrap while rejecting changed host keys on subsequent connections.
 
 **Auth preflight** (stage 1 step 4): guards registry checks with a fingerprint-specific agent test -- gets the `.pub` fingerprint via `ssh-keygen -lf`, then checks `ssh-add -l` for that fingerprint. If the specific key is not in the agent (empty agent, wrong key loaded, or unreadable `.pub`), reports "key not in agent" and skips registry checks. This prevents the misleading "key not registered" diagnostic that `BatchMode=yes` SSH failures would otherwise produce (the failure looks identical whether the key was rejected by the registry or never offered). When the key is confirmed in the agent, tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
+
+**Signing key preflight** (stage 1, after auth preflight): warns if the signing key exists locally but its `.pub` sidecar is not committed to the repo, or if the signing key was newly generated and needs registration on GitHub/Codeberg. Prevents the confusing failure mode where commits are signed but rejected by a protected branch because the key isn't registered. Non-blocking -- prints a warning with registration URLs, does not prevent `update-env` from completing.
 
 **Decision logic** (`sshKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action. Code is authoritative; this table is a reading aid.
 
