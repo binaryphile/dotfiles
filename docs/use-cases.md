@@ -150,6 +150,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   4. System restores signing key from local or 1Password (or generates new). Warns if signing key needs registration on GitHub/Codeberg.
   5. System restores secrets from local, mount cache, or 1Password.
   6. System clones dev tool and project repos, prints remaining manual steps
+  Credential-only mode (`update-env -c`): runs steps 3-5 only, for completing identity setup after stage 1 without re-running the full pipeline. Requires stage 1 phases 1-3 to have completed previously (nix, home-manager, hostname configured).
 - **Extensions:**
   - 1a. Crostini first run, no hostname -> fail with instructions
   - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions
@@ -164,22 +165,20 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 4a. Signing key exists locally -> accept; resume at step 5
   - 4b. Signing key in 1Password -> restore; resume at step 5
   - 4c. Signing key missing everywhere -> generate, prompt to store in 1Password and register on GitHub/Codeberg; resume at step 5
+  - 3h. Credential setup needed after interrupted stage 1 -> `update-env -c` runs credentials only; resume at step 6
   - 5a. NixOS host -> skip credential restore; resume at step 6
   - 6a. Repo has uncommitted local changes -> stash, update, restore; resume at step 6
   - 6b. Provider auth fails -> reports per provider; private repos skipped; separate success
   - 6c. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges.
-- **Minimal Manual Steps** (printed inline by update-env with copyable URLs):
-  - Register SSH auth key with each registry (URLs printed in output):
-    - https://github.com/settings/keys (Authentication Key)
-    - https://codeberg.org/user/settings/keys (Authentication Key)
-    - https://bitbucket.org/account/settings/ssh-keys/
-    - https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN required)
-  - Register SSH signing key on platforms that verify commit signatures:
-    - https://github.com/settings/keys (Signing Key)
-    - https://codeberg.org/user/settings/keys (Signing Key)
-  - Store signing key in 1Password (if newly generated)
+- **Minimal Manual Steps** (printed inline by update-env with registry URLs):
+  - Store keys in 1Password (if newly generated):
+    - Auth key: `<hostname> SSH Key` in Private vault
+    - Signing key: `<hostname> signing SSH Key` in Private vault
+  - Register keys with registries via the 1Password browser extension (open the registry URL, use 1Password to fill the key directly from the vault item):
+    - Auth key: GitHub, Codeberg, Bitbucket, Stash (VPN required)
+    - Signing key: GitHub, Codeberg (Signing Key type)
   - Crostini: configure ChromeOS Chrome proxy (per-network, one-time; instructions printed in output):
     - ChromeOS Settings > Network > connection > Proxy > Automatic proxy configuration
     - URL: `http://127.0.0.1:8120/proxy.pac`
@@ -456,7 +455,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Scope:** panel script + probe-lib.bash
 - **Level:** User goal
 - **Trigger:** Ted opens a tmux session
-- **Preconditions:** tmux 3.2+ (for `display-popup`), `panel` script on PATH
+- **Preconditions:** tmux 3.2+ (for `display-popup`); panel nix-packaged as a tmux dependency (available on tmux's PATH regardless of session environment)
 - **Stakeholders:**
   - Ted -- same ambient awareness as NixOS waybar, "quiet by default, loud when something needs attention"
   - UC-7 -- VPN status always shown; VPN-gated widgets hidden when tunnel is down

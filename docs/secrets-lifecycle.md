@@ -35,9 +35,9 @@ No key exists anywhere for this hostname. Path: `generate`.
 4. `authPreflight` reports "key not registered" for all providers
 
 **Post-steps (manual):**
-- Store private key in 1Password (vault item named `SSH <hostname>`)
+- Store private key in 1Password as `<hostname> SSH Key` (Private vault)
+- Register via 1Password browser extension: GitHub, Codeberg, Bitbucket, Stash (VPN)
 - `cd ~/dotfiles && git add ssh/id_ed25519_<hostname>.pub && git commit && git push`
-- Register `~/.ssh/id_ed25519.pub` with GitHub, Codeberg, Bitbucket settings
 
 **Machine replacement** is the same workflow. New hostname = no state for that hostname.
 

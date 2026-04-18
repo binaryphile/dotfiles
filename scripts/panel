@@ -42,12 +42,25 @@ set -uo pipefail
 
 State=${XDG_RUNTIME_DIR:-/tmp}/panel
 
+# Resolve script directory for sibling file references (probe-lib.bash,
+# load-sparkline). When nix-packaged, substituteInPlace replaces @here@
+# with the store path containing the sibling files. When running from
+# source (dev, NixOS waybar), the literal '@here@' is still present and
+# the fallback resolves via BASH_SOURCE.
+_here_marker='@here@'
+if [[ $_here_marker == '@''here''@' ]]; then
+  Here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+else
+  Here=$_here_marker
+fi
+unset -v _here_marker
+
 # Source the shared probe library. State/probes/refresh/etc. live here
 # so the same logic can be reused by waybar's widget-status script on
-# the NixOS side. Path is identical on both machines (~/dotfiles).
+# the NixOS side.
 # probe-lib creates $State if missing and fails fast if it can't.
 # shellcheck source=./probe-lib.bash
-source "$HOME/dotfiles/scripts/probe-lib.bash"
+source "$Here/probe-lib.bash"
 
 # fg colorizes text using a tmux inline format code.
 fg() { printf '#[fg=%s]%s#[default]' "$1" "$2"; }

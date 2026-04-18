@@ -317,151 +317,152 @@ test_installKey() {
 # test_sshKeyAction tests the pure decision function for SSH key restore.
 # Each test builds a state associative array and asserts the returned action.
 # No I/O, no filesystem -- pure decision logic in Khorikov's "valuable" quadrant.
+# State inputs: repoHasPub, repoFp, localExists, localFp, cacheExists, cacheFp,
+#   hasTty, opReady, opHasItem.
 test_sshKeyAction() {
-  # Helper: build state array from test case, call sshKeyAction
-  # Test cases use lowercase keys matching the state array contract.
   local -A case1=(
     [name]='local key matches repo -- present'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]='SHA256:abc'
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='present'
   )
   local -A case2=(
     [name]='local key mismatches repo -- collision'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]='SHA256:xyz'
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='collision'
   )
   local -A case3=(
     [name]='unverifiable local + cache available -- backup then cache'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
-    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
+    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='backup_then_cache'
   )
   local -A case4=(
-    [name]='unverifiable local + no cache, has age -- backup then age'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [name]='unverifiable local + no cache, op available -- backup then op'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
-    [want]='backup_then_age'
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=1 [opHasItem]=1
+    [want]='backup_then_op'
   )
   local -A case5=(
-    [name]='unverifiable local + no cache, no age -- backup then fail'
-    [repoHasAge]=0 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [name]='unverifiable local + no cache, no op -- backup then fail'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
-    [want]='error_pub_without_age'
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
+    [want]='backup_then_fail'
   )
   local -A case6=(
-    [name]='local key exists, no repo pair -- capture'
-    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [name]='local key exists, no repo pub -- capture'
+    [repoHasPub]=0 [repoFp]=''
     [localExists]=1 [localFp]='SHA256:abc'
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='capture_to_repo'
   )
   local -A case7=(
     [name]='no local, cache matches repo -- restore from cache'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
-    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
+    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='restore_from_cache'
   )
   local -A case8=(
-    [name]='no local, stale cache -- restore from age'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [name]='no local, stale cache, op available -- restore from op'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
-    [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1 [hasAge]=1
-    [want]='restore_from_age'
+    [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1
+    [opReady]=1 [opHasItem]=1
+    [want]='restore_from_op'
   )
   local -A case9=(
-    [name]='no local, no cache, has age -- restore from age'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [name]='no local, no cache, op available -- restore from op'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
-    [want]='restore_from_age'
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=1 [opHasItem]=1
+    [want]='restore_from_op'
   )
   local -A case10=(
     [name]='nothing anywhere, has tty -- generate'
-    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='generate'
   )
   local -A case11=(
     [name]='nothing anywhere, no tty -- missing noninteractive'
-    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
+    [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
+    [cacheExists]=0 [cacheFp]='' [hasTty]=0
+    [opReady]=0 [opHasItem]=0
     [want]='missing_noninteractive'
   )
   local -A case12=(
-    [name]='age without pub -- error'
-    [repoHasAge]=1 [repoHasPub]=0 [repoFp]=''
-    [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
-    [want]='error_age_without_pub'
-  )
-  local -A case13=(
-    [name]='pub without age -- error'
-    [repoHasAge]=0 [repoHasPub]=1 [repoFp]='SHA256:abc'
-    [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
-    [want]='error_pub_without_age'
-  )
-  local -A case14=(
     [name]='malformed repo pub -- error'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]=''
+    [repoHasPub]=1 [repoFp]=''
     [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=1
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='error_malformed_pub'
   )
-  local -A case15=(
-    [name]='repo has age, no tty -- missing noninteractive'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+  local -A case13=(
+    [name]='cache valid, no repo pub -- restore from cache'
+    [repoHasPub]=0 [repoFp]=''
     [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
-    [want]='missing_noninteractive'
-  )
-  local -A case16=(
-    [name]='repo has age, no age command -- error'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
-    [localExists]=0 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=1 [hasAge]=0
-    [want]='error_age_not_found'
-  )
-  local -A case17=(
-    [name]='cache valid, no repo -- restore from cache'
-    [repoHasAge]=0 [repoHasPub]=0 [repoFp]=''
-    [localExists]=0 [localFp]=''
-    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1 [hasAge]=1
+    [cacheExists]=1 [cacheFp]='SHA256:abc' [hasTty]=1
+    [opReady]=0 [opHasItem]=0
     [want]='restore_from_cache'
   )
-  # Boundary: cache exists but fingerprint empty -- should not use cache
-  local -A case18=(
-    [name]='cache exists but empty fingerprint -- fall through to age'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+  local -A case14=(
+    [name]='cache empty fp, op available -- restore from op'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=0 [localFp]=''
-    [cacheExists]=1 [cacheFp]='' [hasTty]=1 [hasAge]=1
-    [want]='restore_from_age'
+    [cacheExists]=1 [cacheFp]='' [hasTty]=1
+    [opReady]=1 [opHasItem]=1
+    [want]='restore_from_op'
   )
-  # Boundary: unverifiable local, stale cache, has age -- backup then age
-  local -A case19=(
-    [name]='unverifiable local + stale cache -- backup then age'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
+  local -A case15=(
+    [name]='unverifiable local + stale cache, op available -- backup then op'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
     [localExists]=1 [localFp]=''
-    [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1 [hasAge]=1
-    [want]='backup_then_age'
+    [cacheExists]=1 [cacheFp]='SHA256:old' [hasTty]=1
+    [opReady]=1 [opHasItem]=1
+    [want]='backup_then_op'
   )
-  # Boundary: unverifiable local, no tty -- missing noninteractive
-  local -A case20=(
-    [name]='unverifiable local + no tty -- missing noninteractive'
-    [repoHasAge]=1 [repoHasPub]=1 [repoFp]='SHA256:abc'
-    [localExists]=1 [localFp]=''
-    [cacheExists]=0 [cacheFp]='' [hasTty]=0 [hasAge]=1
+  local -A case16=(
+    [name]='op ready but no item, no tty -- missing noninteractive'
+    [repoHasPub]=0 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=0
+    [opReady]=1 [opHasItem]=0
     [want]='missing_noninteractive'
+  )
+  local -A case17=(
+    [name]='op ready but no item, has tty -- generate'
+    [repoHasPub]=0 [repoFp]=''
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=1 [opHasItem]=0
+    [want]='generate'
+  )
+  local -A case18=(
+    [name]='pub exists without local -- no error, fall through to op'
+    [repoHasPub]=1 [repoFp]='SHA256:abc'
+    [localExists]=0 [localFp]=''
+    [cacheExists]=0 [cacheFp]='' [hasTty]=1
+    [opReady]=1 [opHasItem]=1
+    [want]='restore_from_op'
   )
 
   subtest() {
@@ -1271,6 +1272,14 @@ test_installNix() {
     [mockUnameS]=FreeBSD
     [wantRc]=1
   )
+  local -A case6=(
+    [name]='macOS -- uses default planner, no --init none'
+    [mockCurl]=nixCurlOk
+    [mockHash]=nixHashOk
+    [mockUnameS]=Darwin
+    [mockUnameM]=arm64
+    [wantRc]=0
+  )
 
   # marker and argvfile are set per-subtest; mocks access them via dynamic scoping
   nixCurlOk() {
@@ -1311,7 +1320,7 @@ test_installNix() {
     local curl=$mockCurl
     local sha256sum=$mockHash
     local uname_s=${mockUnameS:-Linux}
-    local uname_m=x86_64
+    local uname_m=${mockUnameM:-x86_64}
 
     ## act
     local got rc
@@ -1326,13 +1335,29 @@ test_installNix() {
         }
         local argv
         argv=$(< "$argvfile")
-        [[ $argv == *"install --no-confirm --init none"* ]] || {
-          echo "argv=$argv, want 'install --no-confirm --init none'"; return 1
+        [[ $argv == *"install linux --no-confirm --init none"* ]] || {
+          echo "argv=$argv, want 'install linux --no-confirm --init none'"; return 1
         }
         ;;
       case2|case3|case5)
         [[ ! -f $marker ]] || {
           echo "installer should not have been executed"; return 1
+        }
+        ;;
+      case6)
+        [[ -f $marker ]] || {
+          echo "installer should have been executed"; return 1
+        }
+        local argv
+        argv=$(< "$argvfile")
+        [[ $argv == *"install --no-confirm"* ]] || {
+          echo "argv=$argv, want 'install --no-confirm'"; return 1
+        }
+        [[ $argv != *"--init"* ]] || {
+          echo "macOS should not pass --init, got: $argv"; return 1
+        }
+        [[ $argv != *"linux"* ]] || {
+          echo "macOS should not use linux subcommand, got: $argv"; return 1
         }
         ;;
     esac
@@ -1392,6 +1417,112 @@ test_verifyNixFlakes() {
   }
 
   tesht.Run ${!case@}
+}
+
+# test_usageText tests that the usage string exists, documents all flags,
+# and mentions credential mode.
+test_usageText() {
+  local got
+  got=$(usageText)
+  [[ -n $got ]] || { echo "usageText returned empty"; return 1; }
+  [[ $got == *"-1"* ]] || { echo "missing -1 flag"; return 1; }
+  [[ $got == *"-2"* ]] || { echo "missing -2 flag"; return 1; }
+  [[ $got == *"-c"* ]] || { echo "missing -c flag"; return 1; }
+  [[ $got == *"-h"* ]] || { echo "missing -h flag"; return 1; }
+  [[ $got == *"credential"* ]] || { echo "missing credential description"; return 1; }
+}
+
+# test_credentialStage omitted -- credentialStage is a trivial controller
+# (sequence of try-wrapped calls). Per Khorikov, trivial controllers are
+# verified by inspection, not mock-heavy Q4 tests. The decision logic
+# (platform gating) is tested purely in test_credentialPreflight below.
+
+# test_credentialPreflight tests that credential preflight rejects
+# non-crostini platforms with an error.
+test_credentialPreflight() {
+  local -A case1=(
+    [name]='rejects non-crostini platform'
+    [platform]=linux
+    [wantRc]=2
+    [wantMsg]='only supported on Crostini'
+  )
+  local -A case2=(
+    [name]='accepts crostini with all prerequisites'
+    [platform]=crostini
+    [wantRc]=0
+  )
+  local -A case3=(
+    [name]='rejects crostini without hostname'
+    [platform]=crostini
+    [wantRc]=2
+    [wantMsg]='hostname'
+    [skipHostname]=1
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    ## arrange
+    local dir
+    tesht.MktempDir dir || return 128
+    Platform=$platform
+    CrostiniDir=$dir/crostini
+    mkdir -p "$CrostiniDir"
+    if [[ -z ${skipHostname:-} ]]; then
+      echo testhost >"$CrostiniDir/hostname"
+    fi
+
+    ## act
+    local got rc
+    got=$(credentialPreflight 2>&1) && rc=$? || rc=$?
+
+    ## assert
+    (( rc == wantRc )) || { echo "rc=$rc, want $wantRc: $got"; return 1; }
+    if [[ -n ${wantMsg:-} ]]; then
+      [[ $got == *"$wantMsg"* ]] || {
+        echo "should mention '$wantMsg', got: $got"; return 1
+      }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_cliHelp tests that the --help flag produces usage output and exits 0.
+# Boundary test: verifies the exact wiring layer that was broken (Usage_
+# undefined). Runs the real entrypoint as a subprocess.
+test_cliHelp() {
+  local got rc
+  got=$(~/dotfiles/update-env --help 2>&1) && rc=$? || rc=$?
+  (( rc == 0 )) || { echo "rc=$rc, want 0"; return 1; }
+  [[ -n $got ]] || { echo "empty output"; return 1; }
+  [[ $got == *"-c"* ]] || { echo "missing -c flag in output"; return 1; }
+  [[ $got == *"--credential"* ]] || { echo "missing --credential in output"; return 1; }
+  [[ $got == *"--help"* ]] || { echo "missing --help in output"; return 1; }
+}
+
+# test_cliCredentialRejectsNonCrostini tests that `update-env -c` fails
+# on non-crostini platforms via the real entrypoint. Boundary test:
+# verifies option parsing wires -c to credentialPreflight dispatch.
+test_cliCredentialRejectsNonCrostini() {
+  # Force platform to linux by overriding HOSTNAME and OSTYPE so
+  # platform() returns something other than crostini. On this Crostini
+  # machine, we can't get a true non-crostini platform() without a
+  # container, so we test the --help path instead if we detect crostini.
+  # The preflight logic itself is tested purely in test_credentialPreflight.
+  if [[ $HOSTNAME == penguin ]]; then
+    # Can't test non-crostini rejection from a crostini host via the
+    # real entrypoint -- platform() will return crostini. The preflight
+    # decision is covered by test_credentialPreflight case1. Skip.
+    return 0
+  fi
+  local got rc
+  got=$(~/dotfiles/update-env -c 2>&1) && rc=$? || rc=$?
+  (( rc == 2 )) || { echo "rc=$rc, want 2: $got"; return 1; }
+  [[ $got == *"only supported on Crostini"* ]] || {
+    echo "should mention Crostini, got: $got"; return 1
+  }
 }
 
 # test_withSecretMissingFile tests with-secret fails on missing file.

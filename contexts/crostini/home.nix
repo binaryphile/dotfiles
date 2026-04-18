@@ -96,10 +96,10 @@ in
     # static server can be pointed at the directory and only serve this.
     ".local/share/proxy-pac/proxy.pac".source = proxyPac;
 
-    # Crostini-only user scripts: tmux status bar widgets, vpn ergonomic
-    # wrapper, and the Digi security advisory watcher. Live symlinks via
-    # mkOutOfStoreSymlink so edits in the repo take effect immediately.
-    ".local/bin/panel".source                = linkDotfile "scripts/panel";
+    # Crostini-only user scripts: vpn ergonomic wrapper and the Digi
+    # security advisory watcher. Live symlinks via mkOutOfStoreSymlink so
+    # edits in the repo take effect immediately. Panel is nix-packaged as
+    # a tmux dependency in linux-base.nix (not a live symlink).
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
