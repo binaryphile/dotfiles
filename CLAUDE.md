@@ -19,7 +19,7 @@ Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.
 - Top-level `home.nix`, `gitconfig`, `tmux.conf` -- symlinks to the active context's versions.
 - `bash/apps/<app>/` -- per-app modules with `init.bash` (hooks) and `cmds.bash` (aliases/functions).
 - `bash/settings/` -- base, login, interactive, env, cmds.
-- `claude/` -- Claude Code config (`settings.json`, `CLAUDE.md`), deployed via `home.file`.
+- `claude/` -- Claude Code config. `settings.json` and `CLAUDE.md` (base) deployed via `home.file` in stage 1. `CLAUDE-era.md` (era, guides) and memory redirects deployed by update-env stage 2.
 - `scripts/` -- vpn-connect, khal-notify, and other utilities.
 - `update-env` -- idempotent deployment script (lives in repo root, deployed to `~/.local/bin/`).
 
@@ -29,6 +29,7 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 
 ## Making changes
 
+- **Docs first, then implementation.** Update `docs/use-cases.md` and `docs/design.md` to describe the intended behavior before writing code. Red/green TDD the implementation per the Khorikov guide.
 - **Packages:** shared packages go in `shared.nix`. Platform-specific packages go in the relevant `contexts/*/home.nix`. If a `programs.<name>` module exists, prefer that.
 - **Env vars / PATH:** use `home.sessionVariables` or `home.sessionPath` in `shared.nix` -- they flow into the shell via `hm-session-vars.sh`, sourced directly by `init.bash`.
 - **Shell integration / aliases / functions:** add a module under `bash/apps/`.
@@ -54,6 +55,8 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 
 - `docs/use-cases.md` -- what this repo does and for whom.
 - `docs/design.md` -- how components work, deployment flow, bash init flow.
+- `docs/security.md` -- security model: threat actors, trust boundaries, confidentiality/integrity models, accepted risks.
+- `docs/secrets-lifecycle.md` -- credential and secrets operational procedures: bootstrap, rotation, recovery.
+- `docs/environment-lifecycle.md` -- environment lifecycle: bootstrap, maintenance, multi-machine sync, development workflow.
 - `docs/uc-init.md` -- use cases for every init.bash feature employed in the config.
-- `docs/secrets-lifecycle.md` -- SSH key and secrets lifecycle: bootstrap, rotation, recovery.
-- Keep all updated when making changes. When changing secrets bootstrap, restore, encryption, or `~/secrets/` consumers, review `docs/design.md` and `docs/secrets-lifecycle.md` for sync.
+- Keep all updated when making changes. When changing credential handling, trust boundaries, or `~/secrets/` consumers, review `docs/security.md` and `docs/secrets-lifecycle.md` for sync.

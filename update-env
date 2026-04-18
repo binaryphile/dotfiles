@@ -27,7 +27,8 @@ CrostiniDir=/mnt/chromeos/MyFiles/Downloads/crostini
 # tools); stage 2 handles remaining projects, builds, and config.
 # Bare `update-env` runs both stages sequentially (backwards-compatible).
 main() {
-  set -euo pipefail   # enable strict mode
+  set -eufo pipefail   # enable strict mode (f = noglob)
+  IFS=$'\n'
   export GIT_CONFIG_COUNT=1
   export GIT_CONFIG_KEY_0=rebase.autoStash
   export GIT_CONFIG_VALUE_0=true
@@ -51,17 +52,23 @@ sshKeyEpilogue() {
       echo
       echo "=== NEW SSH KEY GENERATED AND BACKED UP ==="
       echo "Public key: ~/.ssh/id_ed25519.pub"
-      [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
+      [[ -f $HOME/.ssh/id_ed25519.pub ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
-      echo "Register this key with: GitHub, Codeberg, Bitbucket"
-      echo "Then commit and push: cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(lib.MachineHostname)' && git push"
+      echo "Register this key with:"
+      echo "  https://github.com/settings/keys"
+      echo "  https://codeberg.org/user/settings/keys"
+      echo "  https://bitbucket.org/account/settings/ssh-keys/"
+      echo "  https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN)"
+      echo
+      echo "Then commit and push:"
+      echo "  cd ~/dotfiles && git add ssh/ && git commit -m 'Add SSH key for $(lib.MachineHostname)' && git push"
       echo "Until registered, private repos will be skipped."
       ;;
     generated_local_only)
       echo
       echo "=== NEW SSH KEY GENERATED (LOCAL ONLY -- NOT BACKED UP) ==="
       echo "Public key: ~/.ssh/id_ed25519.pub"
-      [[ -f "$HOME/.ssh/id_ed25519.pub" ]] && cat "$HOME/.ssh/id_ed25519.pub"
+      [[ -f $HOME/.ssh/id_ed25519.pub ]] && cat "$HOME/.ssh/id_ed25519.pub"
       echo
       echo "WARNING: Key exists locally but is NOT encrypted in the repo." >&2
       echo "This key WILL BE LOST on wipe. To back up, run:"
@@ -69,11 +76,15 @@ sshKeyEpilogue() {
       echo "  cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$(lib.MachineHostname).pub"
       echo "  cd ~/dotfiles && git add ssh/ && git commit && git push"
       echo
-      echo "Register this key with: GitHub, Codeberg, Bitbucket"
+      echo "Register this key with:"
+      echo "  https://github.com/settings/keys"
+      echo "  https://codeberg.org/user/settings/keys"
+      echo "  https://bitbucket.org/account/settings/ssh-keys/"
+      echo "  https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN)"
       ;;
     restored)
       echo
-      echo "SSH key restored for $(lib.MachineHostname)."
+      echo SSH key restored for $(lib.MachineHostname).
       ;;
     missing_noninteractive)
       echo
@@ -309,9 +320,8 @@ stage2() {
   try eraSystemdEnableTask
   eraMcpRegisterTask
   chromeDevtoolsMcpRegisterTask
-
-  # Era memory redirects and project CLAUDE.md files are now managed by
-  # home-manager (contexts/linux/home.nix)
+  claudeEraConfigTask
+  claudeMemoryRedirectsTask
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
@@ -393,42 +403,12 @@ stage2() {
 
 }
 
-# postInstallMessages writes platform-specific manual setup instructions
-# to a file under ~/.local/share/dotfiles/ if not already present, then
-# prints a one-line reminder pointing at the file. Delete the file to
-# regenerate it on the next run (e.g., after the instructions change).
 postInstallMessages() {
-  local dir=$HOME/.local/share/dotfiles
-  mkdir -p "$dir"
   case $(platform) in crostini )
-    local file=$dir/crostini-proxy-setup.txt
-    if [[ ! -e $file ]]; then
-      cat >"$file" <<'      EOF'
-CROSTINI: configure ChromeOS Chrome to use the corporate VPN proxy (UC-8)
-
-For VPN-only URLs (stash.digi.com, gitlab.drm.ninja, etc.) to work in
-ChromeOS host Chrome -- instead of just in-container browsers -- point
-Chrome at the in-container PAC server:
-
-  1. ChromeOS Settings -> Network
-  2. Click your active connection (Wi-Fi or Ethernet)
-  3. Expand "Proxy"
-  4. Connection type: "Automatic proxy configuration"
-  5. URL: http://127.0.0.1:8120/proxy.pac
-  6. Save
-
-This is per-network and persists across reboots. Repeat for each network
-you connect to. Verify with chrome://net-internals/#proxy after setup.
-
-Non-VPN URLs return DIRECT in the PAC and bypass the proxy entirely;
-only the configured VPN host list traverses the container.
-
-See ~/dotfiles/docs/use-cases.md UC-8 and ~/dotfiles/docs/vpn.md for the
-full story. Delete this file to have update-env regenerate it.
-      EOF
-    fi
     echo
-    echo "Crostini ChromeOS proxy setup: see $file"
+    echo "=== CHROMEOS PROXY SETUP (per-network, one-time) ==="
+    echo "ChromeOS Settings > Network > your connection > Proxy > Automatic proxy configuration"
+    echo "URL: http://127.0.0.1:8120/proxy.pac"
   ;; esac
 }
 
@@ -477,17 +457,17 @@ bitbucketCloneAndLinkTask() {
 
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
-  task.GitClone "https://codeberg.org/binaryphile/$repo" ~/projects/"$repo" "$branch"
+  task.GitClone https://codeberg.org/binaryphile/$repo ~/projects/$repo $branch
   try git -C ~/projects/"$repo" remote set-url origin "https://codeberg.org/binaryphile/$repo.git"
   try git -C ~/projects/"$repo" remote set-url --push origin "git@codeberg.org:binaryphile/$repo.git"
-  try task.GitUpdate ~/projects/"$repo"
+  try task.GitUpdate ~/projects/$repo
 }
 
 scaffoldTask() {
   local dir=$1
   ProjectDirW=$dir
   source ~/dotfiles/scripts/scaffold
-  scaffold.MkdirTask "$dir/bin"
+  scaffold.MkdirTask $dir/bin
   scaffold.NixWrapperTask
   scaffold.GitExcludeBinTask
   scaffold.EnvrcTask
@@ -501,7 +481,7 @@ urmaFlakeTask() {
   urmaFlakeUpToDate() { [[ -f $path ]] && diff -q "$path" <(urmaFlakeContent) >/dev/null 2>&1; }
   ok urmaFlakeUpToDate
 
-  urmaFlakeInstall() { urmaFlakeContent > "$path"; }
+  urmaFlakeInstall() { urmaFlakeContent >$path; }
   cmd urmaFlakeInstall
 }
 
@@ -543,7 +523,7 @@ urmaEnvrcTask() {
   urmaEnvrcUpToDate() { [[ -f $path ]] && diff -q "$path" <(urmaEnvrcContent) >/dev/null 2>&1; }
   ok urmaEnvrcUpToDate
 
-  urmaEnvrcInstall() { urmaEnvrcContent > "$path"; }
+  urmaEnvrcInstall() { urmaEnvrcContent >$path; }
   cmd urmaEnvrcInstall
 }
 
@@ -606,7 +586,7 @@ eraMcpRegisterTask() {
   eraMcpRegister() {
     local src=${1:-'{}'}
     [[ -f ~/.claude.json ]] && src=$(cat ~/.claude.json)
-    printf '%s' "$src" |
+    printf '%s' $src |
       jq '.mcpServers.era = {type: "http", url: "http://127.0.0.1:9310/mcp"}' > ~/.claude.json.tmp &&
       mv ~/.claude.json.tmp ~/.claude.json
   }
@@ -620,24 +600,81 @@ chromeDevtoolsMcpRegisterTask() {
   chromeDevtoolsMcpRegister() {
     local src=${1:-'{}'}
     [[ -f ~/.claude.json ]] && src=$(cat ~/.claude.json)
-    printf '%s' "$src" |
+    printf '%s' $src |
       jq '.mcpServers."chrome-devtools" = {command: "npx", args: ["-y", "chrome-devtools-mcp@latest", "--browser-url", "http://127.0.0.1:9222"]}' > ~/.claude.json.tmp &&
       mv ~/.claude.json.tmp ~/.claude.json
   }
   cmd chromeDevtoolsMcpRegister
 }
 
-# claudeProjectMemoryTask - REMOVED
-# Memory redirects are now managed by home-manager (contexts/linux/home.nix)
+# claudeEraConfigTask appends CLAUDE-era.md to the base CLAUDE.md deployed by
+# home-manager. The base has stage-1-safe content (Conventions, Secrets).
+# Era content (memory, code search, guides) requires stage 2.
+claudeEraConfigTask() {
+  local base=$HOME/.claude/CLAUDE.md
+  local era=$HOME/dotfiles/claude/CLAUDE-era.md
+  desc 'append era config to ~/.claude/CLAUDE.md'
+  check "[[ -f $era ]]"
+
+  claudeEraUpToDate() {
+    [[ -f $base ]] && grep -qF 'Era is your persistent memory' "$base"
+  }
+  ok claudeEraUpToDate
+
+  claudeEraAppend() {
+    printf '\n' >>"$base"
+    cat "$era" >>"$base"
+  }
+  cmd claudeEraAppend
+}
+
+# claudeMemoryRedirectsTask installs per-project MEMORY.md files that point
+# Claude Code's auto-memory to Era. One file per project.
+claudeMemoryRedirectsTask() {
+  local redirectSrc=$HOME/dotfiles/claude/era-memory-redirect.md
+  desc 'install era memory redirects for all projects'
+  check "[[ -f $redirectSrc ]]"
+
+  claudeRedirectsUpToDate() {
+    [[ -f $HOME/.claude/projects/-home-ted-dotfiles/memory/MEMORY.md ]] &&
+      diff -q "$HOME/.claude/projects/-home-ted-dotfiles/memory/MEMORY.md" "$redirectSrc" >/dev/null 2>&1
+  }
+  ok claudeRedirectsUpToDate
+
+  claudeRedirectsInstall() {
+    installRedirect() {
+      local dir=$1 encoded=${1//\//-}
+      local memDir=$HOME/.claude/projects/$encoded/memory
+      mkdir -p "$memDir"
+      cp "$redirectSrc" "$memDir/MEMORY.md"
+    }
+    installRedirect $HOME/dotfiles
+    map path '$HOME/projects/$path' <<'    END' | each installRedirect
+      era
+      fp.bash
+      mk.bash
+      task.bash
+      tesht
+      jeeves
+      sofdevsim-2026
+      binaryphile.github.io
+      tandem-protocol
+      urma
+      share
+      dal
+    END
+  }
+  cmd claudeRedirectsInstall
+}
 
 writeMcpJsonTask() {
   local dir=$1
   desc   "write .mcp.json to $dir"
-  exist  "$dir/.mcp.json"
+  exist  $dir/.mcp.json
   check  "[[ -d '$dir' ]]"
 
   writeMcpJson() {
-    cat >"$dir/.mcp.json" <<'EOF'
+    cat >$dir/.mcp.json <<'EOF'
 {
   "mcpServers": {
     "atlassian": {
@@ -656,7 +693,7 @@ stashCloneAndLinkTask() {
   local repo=$1 dir=${2:-$1} project=${3:-idigi} branch=${4:-main}
 
   desc   "clone repo stash.digi.com/$project/$repo to ~/projects/$dir"
-  exist  "$HOME/projects/$dir"
+  exist  $HOME/projects/$dir
   check  'ping -c 1 -W 2 stash.digi.com'
 
   stashClone() {
@@ -680,10 +717,10 @@ gitExcludeTask() {
 
 githubCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
-  task.GitClone "https://github.com/binaryphile/$repo" ~/projects/"$repo" "$branch"
+  task.GitClone https://github.com/binaryphile/$repo ~/projects/$repo $branch
   try git -C ~/projects/"$repo" remote set-url origin "https://github.com/binaryphile/$repo.git"
   try git -C ~/projects/"$repo" remote set-url --push origin "git@github.com:binaryphile/$repo.git"
-  try task.GitUpdate ~/projects/"$repo"
+  try task.GitUpdate ~/projects/$repo
 }
 
 # nix
@@ -730,7 +767,7 @@ curlTask() {
 
   curlfsSL() {
     mkdir -p -- "$(dirname "$filename")"
-    curl -fsSL -- "$url" >"$filename"
+    curl -fsSL -- "$url" >$filename
   }
   cmd curlfsSL
 }
@@ -750,15 +787,15 @@ removeMatchingFileTask() {
 
   ifFilesDontMatch() {
     [[ -e $matchFilename ]] && ! [[ -e $targetFilename ]] ||
-      [[ $(<$targetFilename) != $(<$matchFilename) ]]
+      [[ $(<$targetFilename) != "$(<$matchFilename)" ]]
   }
   ok ifFilesDontMatch
 
   rmTargetIfMatches() {
     if [[ -e $matchFilename && -e $targetFilename ]] &&
-      [[ $(<$targetFilename) == $(<$matchFilename) ]];
+      [[ $(<$targetFilename) == "$(<$matchFilename)" ]];
     then
-      rm $targetFilename
+      rm "$targetFilename"
     fi
   }
   cmd rmTargetIfMatches
@@ -775,7 +812,7 @@ sshKeygenTask() {
     read -sp 'generating ssh key.  passphrase: ' passphrase
     [[ -n $passphrase ]] || { echo "${NL}passphrase required"; return 1; }
     read -sp "${NL}again: " passphrase2
-    [[ $passphrase == $passphrase2 ]] || { echo "${NL}passphrase did not match"; return 1; }
+    [[ $passphrase == "$passphrase2" ]] || { echo "${NL}passphrase did not match"; return 1; }
     echo
     $ssh_keygen -t ed25519 -f "$keyFilename" -N "$passphrase" -C "$USER@$(lib.MachineHostname)"
     cat "$keyFilename.pub"
@@ -795,6 +832,7 @@ sshKeygenTask() {
 if [[ ${DOTFILES_TEST:-} == 1 ]]; then
   age=${age:-age}
   ssh_keygen=${ssh_keygen:-ssh-keygen}
+  ssh_add=${ssh_add:-ssh-add}
   keychain=${keychain:-keychain}
   tar=${tar:-tar}
   ssh=${ssh:-ssh}
@@ -802,6 +840,7 @@ if [[ ${DOTFILES_TEST:-} == 1 ]]; then
 else
   age=age
   ssh_keygen=ssh-keygen
+  ssh_add=ssh-add
   keychain=keychain
   tar=tar
   ssh=ssh
@@ -813,17 +852,15 @@ SshStageDir=""    # tracked for signal cleanup
 SecretsTmpFiles=() # tracked for signal cleanup
 
 cleanupSshStage() {
-  if [[ -n "$SshStageDir" && -d "$SshStageDir" ]]; then
+  if [[ -n $SshStageDir && -d $SshStageDir ]]; then
     rm -rf "$SshStageDir"
   fi
   SshStageDir=""
 }
 
 cleanupSecretsTmp() {
-  local f
-  for f in "${SecretsTmpFiles[@]}"; do
-    [[ -e "$f" ]] && rm -rf "$f"
-  done
+  cleanupOne() { [[ -e $1 ]] && rm -rf "$1"; return 0; }
+  printf '%s\n' "${SecretsTmpFiles[@]}" | each cleanupOne
   SecretsTmpFiles=()
 }
 
@@ -838,7 +875,7 @@ withCleanupTrap() {
   prevTerm=$(trap -p TERM)
   trap "$cleanup; trap - INT; kill -INT \$\$" INT
   trap "$cleanup; trap - TERM; kill -TERM \$\$" TERM
-  "$func" "$@"
+  $func "$@"
   local rc=$?
   eval "${prevInt:-trap - INT}"
   eval "${prevTerm:-trap - TERM}"
@@ -875,16 +912,16 @@ sshKeyAction() {
   # Pair invariant
   if (( STATE[repoHasAge] && !STATE[repoHasPub] )); then echo error_age_without_pub; return 0; fi
   if (( STATE[repoHasPub] && !STATE[repoHasAge] )); then echo error_pub_without_age; return 0; fi
-  if (( STATE[repoHasPub] )) && [[ -z "${STATE[repoFp]}" ]]; then echo error_malformed_pub; return 0; fi
+  if (( STATE[repoHasPub] )) && [[ -z ${STATE[repoFp]} ]]; then echo error_malformed_pub; return 0; fi
 
   # Tier 1: local key exists
   if (( STATE[localExists] )); then
-    if [[ -n "${STATE[repoFp]}" ]]; then
-      if [[ -n "${STATE[localFp]}" && "${STATE[localFp]}" == "${STATE[repoFp]}" ]]; then echo present; return 0; fi
-      if [[ -n "${STATE[localFp]}" && "${STATE[localFp]}" != "${STATE[repoFp]}" ]]; then echo collision; return 0; fi
+    if [[ -n ${STATE[repoFp]} ]]; then
+      if [[ -n ${STATE[localFp]} && ${STATE[localFp]} == "${STATE[repoFp]}" ]]; then echo present; return 0; fi
+      if [[ -n ${STATE[localFp]} && ${STATE[localFp]} != "${STATE[repoFp]}" ]]; then echo collision; return 0; fi
       # localFp empty = unverifiable -- backup, then try cache/age/fail
-      if (( STATE[cacheExists] )) && [[ -n "${STATE[cacheFp]}" ]]; then
-        if [[ -z "${STATE[repoFp]}" || "${STATE[cacheFp]}" == "${STATE[repoFp]}" ]]; then
+      if (( STATE[cacheExists] )) && [[ -n ${STATE[cacheFp]} ]]; then
+        if [[ -z ${STATE[repoFp]} || ${STATE[cacheFp]} == "${STATE[repoFp]}" ]]; then
           echo backup_then_cache; return 0
         fi
       fi
@@ -900,8 +937,8 @@ sshKeyAction() {
   fi
 
   # Tier 2: mount cache
-  if (( STATE[cacheExists] )) && [[ -n "${STATE[cacheFp]}" ]]; then
-    if [[ -n "${STATE[repoFp]}" && "${STATE[cacheFp]}" != "${STATE[repoFp]}" ]]; then
+  if (( STATE[cacheExists] )) && [[ -n ${STATE[cacheFp]} ]]; then
+    if [[ -n ${STATE[repoFp]} && ${STATE[cacheFp]} != "${STATE[repoFp]}" ]]; then
       : # stale, fall through
     else
       echo restore_from_cache; return 0
@@ -923,7 +960,7 @@ sshKeyAction() {
 restoreSshKeyImpl() {
   local hostname
   hostname=$(lib.MachineHostname)
-  lib.ValidateHostname "$hostname" || return 1
+  lib.ValidateHostname $hostname || return 1
 
   local repoAge="$HOME/dotfiles/ssh/id_ed25519_${hostname}.age"
   local repoPub="$HOME/dotfiles/ssh/id_ed25519_${hostname}.pub"
@@ -942,15 +979,15 @@ restoreSshKeyImpl() {
     [hasTty]=0 [hasAge]=0
   )
 
-  [[ -f "$repoAge" ]] && state[repoHasAge]=1
-  [[ -f "$repoPub" ]] && state[repoHasPub]=1
+  [[ -f $repoAge ]] && state[repoHasAge]=1
+  [[ -f $repoPub ]] && state[repoHasPub]=1
   (( state[repoHasPub] )) && state[repoFp]=$(pubFingerprint "$repoPub")
-  [[ -f "$localKey" && -s "$localKey" ]] && state[localExists]=1
-  (( state[localExists] )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]] && state[localFp]=$(pubFingerprint "$localKey.pub")
-  [[ -f "$cacheKey" && -f "$cacheKey.pub" ]] && state[cacheExists]=1
+  [[ -f $localKey && -s $localKey ]] && state[localExists]=1
+  (( state[localExists] )) && [[ -f $localKey.pub && -s $localKey.pub ]] && state[localFp]=$(pubFingerprint "$localKey.pub")
+  [[ -f $cacheKey && -f $cacheKey.pub ]] && state[cacheExists]=1
   (( state[cacheExists] )) && state[cacheFp]=$(pubFingerprint "$cacheKey.pub")
   [[ -t 0 ]] && state[hasTty]=1
-  command -v -- "$age" >/dev/null 2>&1 && state[hasAge]=1
+  command -v -- $age >/dev/null 2>&1 && state[hasAge]=1
 
   local action
   action=$(sshKeyAction state)
@@ -960,7 +997,7 @@ restoreSshKeyImpl() {
   # capture is attempted. Capture failure is non-fatal (key is local-only).
   case $action in
     error_*)
-      echo "ERROR: ${action#error_}" >&2
+      echo ERROR: ${action#error_} >&2
       return 1
       ;;
 
@@ -968,9 +1005,9 @@ restoreSshKeyImpl() {
       # Trust: local .pub fingerprint matches repo .pub. Private key is trusted
       # to match .pub if the pair was produced by ssh-keygen or installKey.
       chmod 600 "$localKey"
-      if [[ -d "$CrostiniDir" ]]; then
+      if [[ -d $CrostiniDir ]]; then
         mkdir -p "$cacheDir" 2>/dev/null
-        installKey "$localKey" "$cacheKey"
+        installKey $localKey $cacheKey
       fi 2>/dev/null || true
       SshKeyStatus=present
       return 0
@@ -983,9 +1020,9 @@ restoreSshKeyImpl() {
       ;;
 
     backup_then_cache)
-      sshKeyBackupLocal "$localKey" || return 1
+      sshKeyBackupLocal $localKey || return 1
       echo "Restoring SSH key from mount cache ($hostname)..."
-      if ! installKey "$cacheKey" "$localKey"; then
+      if ! installKey $cacheKey $localKey; then
         echo "ERROR: cache restore failed after backup." >&2
         return 1
       fi
@@ -994,13 +1031,13 @@ restoreSshKeyImpl() {
       ;;
 
     backup_then_age)
-      sshKeyBackupLocal "$localKey" || return 1
-      sshKeyDecryptAndInstall "$repoAge" "$repoPub" "${state[repoFp]}" "$localKey" "$cacheDir" "$cacheKey"
+      sshKeyBackupLocal $localKey || return 1
+      sshKeyDecryptAndInstall $repoAge $repoPub ${state[repoFp]} $localKey $cacheDir $cacheKey
       return
       ;;
 
     backup_then_fail)
-      sshKeyBackupLocal "$localKey" || return 1
+      sshKeyBackupLocal $localKey || return 1
       echo "ERROR: cannot restore key (no cache or age available after backup)." >&2
       return 1
       ;;
@@ -1009,13 +1046,13 @@ restoreSshKeyImpl() {
       # Local key usable regardless of capture outcome.
       # Capture is best-effort -- requires tty, age, and valid .pub.
       chmod 600 "$localKey"
-      if (( state[hasTty] && state[hasAge] )) && [[ -f "$localKey.pub" && -s "$localKey.pub" ]]; then
+      if (( state[hasTty] && state[hasAge] )) && [[ -f $localKey.pub && -s $localKey.pub ]]; then
         local pubFp
         pubFp=$(pubFingerprint "$localKey.pub")
-        if [[ -z "$pubFp" ]]; then
+        if [[ -z $pubFp ]]; then
           echo "WARNING: local .pub is malformed. Cannot capture to repo." >&2
           echo "  Regenerate with: ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub"
-        elif ! sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
+        elif ! sshKeyEncryptToRepo $localKey $repoAge $repoPub $hostname; then
           echo "WARNING: repo backup failed. Key is local-only -- will be lost on wipe." >&2
         fi
       fi
@@ -1027,7 +1064,7 @@ restoreSshKeyImpl() {
       # Trust: cache .pub fingerprint matches repo .pub. Private key trusted
       # to match .pub -- pair was installed together by installKey.
       echo "Restoring SSH key from mount cache ($hostname)..."
-      if ! installKey "$cacheKey" "$localKey"; then
+      if ! installKey $cacheKey $localKey; then
         echo "ERROR: cache restore failed." >&2
         return 1
       fi
@@ -1038,12 +1075,12 @@ restoreSshKeyImpl() {
       # Trust: age bundle contains both private + public from same generation.
       # Bundled .pub fingerprint is validated against repo .pub sidecar after
       # decryption -- strongest verification path.
-      sshKeyDecryptAndInstall "$repoAge" "$repoPub" "${state[repoFp]}" "$localKey" "$cacheDir" "$cacheKey"
+      sshKeyDecryptAndInstall $repoAge $repoPub ${state[repoFp]} $localKey $cacheDir $cacheKey
       return
       ;;
 
     generate)
-      sshKeyGenerate "$localKey" "$repoAge" "$repoPub" "$hostname" "$cacheDir" "$cacheKey"
+      sshKeyGenerate $localKey $repoAge $repoPub $hostname $cacheDir $cacheKey
       return
       ;;
 
@@ -1054,7 +1091,7 @@ restoreSshKeyImpl() {
       ;;
 
     *)
-      echo "ERROR: unexpected sshKeyAction result: $action" >&2
+      echo ERROR: unexpected sshKeyAction result: $action >&2
       return 1
       ;;
   esac
@@ -1071,7 +1108,7 @@ sshKeyBackupLocal() {
     echo "ERROR: backup failed. Will not overwrite local key." >&2
     return 1
   fi
-  [[ -f "$localKey.pub" ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
+  [[ -f $localKey.pub ]] && cp "$localKey.pub" "$bakFile.pub" 2>/dev/null
   return 0
 }
 
@@ -1082,23 +1119,23 @@ sshKeyDecryptAndInstall() {
   local stageDir
   stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
   chmod 700 "$stageDir"
-  if $age --decrypt "$repoAge" | $tar xf - -C "$stageDir" && [[ -s "$stageDir/id_ed25519" ]]; then
+  if $age --decrypt "$repoAge" | $tar xf - -C "$stageDir" && [[ -s $stageDir/id_ed25519 ]]; then
     local stagedFp
     stagedFp=$(pubFingerprint "$stageDir/id_ed25519.pub")
-    if [[ -z "$stagedFp" || "$stagedFp" != "$repoFp" ]]; then
+    if [[ -z $stagedFp || $stagedFp != "$repoFp" ]]; then
       rm -rf "$stageDir"; SshStageDir=""
       echo "ERROR: decrypted key doesn't match repo .pub. Re-encrypt the key pair." >&2
       return 1
     fi
-    if ! installKey "$stageDir/id_ed25519" "$localKey"; then
+    if ! installKey $stageDir/id_ed25519 $localKey; then
       rm -rf "$stageDir"; SshStageDir=""
       echo "ERROR: failed to install decrypted key." >&2
       return 1
     fi
     rm -rf "$stageDir"; SshStageDir=""
-    if [[ -d "$CrostiniDir" ]]; then
+    if [[ -d $CrostiniDir ]]; then
       mkdir -p "$cacheDir" 2>/dev/null
-      installKey "$localKey" "$cacheKey"
+      installKey $localKey $cacheKey
     fi 2>/dev/null || echo "WARNING: mount cache write failed" >&2
     SshKeyStatus=restored
   else
@@ -1112,7 +1149,7 @@ sshKeyDecryptAndInstall() {
 # state on partial failure. Not atomic (two renames), but best-effort consistent.
 sshKeyEncryptToRepo() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4
-  echo "Local key exists but no repo backup for $hostname. Encrypting..."
+  echo Local key exists but no repo backup for $hostname. Encrypting...
   mkdir -p "$(dirname "$repoAge")"
   local stageDir agetmp pubtmp bakAge="" bakPub=""
   stageDir=$(mktemp -d "$HOME/.ssh/.stage.XXXXXX"); SshStageDir=$stageDir
@@ -1121,14 +1158,14 @@ sshKeyEncryptToRepo() {
   echo "(Repo encryption passphrase)"
   agetmp=$(mktemp "$repoAge.XXXXXX")
   pubtmp=$(mktemp "$repoPub.XXXXXX")
-  if $tar cf - -C "$stageDir" . | $age -p -o "$agetmp" && [[ -s "$agetmp" ]]; then
+  if $tar cf - -C "$stageDir" . | $age -p -o "$agetmp" && [[ -s $agetmp ]]; then
     cp "$localKey.pub" "$pubtmp" && chmod 644 "$pubtmp" || {
       rm -f "$agetmp" "$pubtmp"; echo "WARNING: .pub staging failed." >&2
       rm -rf "$stageDir"; SshStageDir=""; return 1
     }
     # Back up existing repo files for rollback
-    [[ -f "$repoAge" ]] && { bakAge=$(mktemp "$repoAge.bak.XXXXXX") && cp "$repoAge" "$bakAge" || bakAge=""; }
-    [[ -f "$repoPub" ]] && { bakPub=$(mktemp "$repoPub.bak.XXXXXX") && cp "$repoPub" "$bakPub" || bakPub=""; }
+    [[ -f $repoAge ]] && { bakAge=$(mktemp "$repoAge.bak.XXXXXX") && cp "$repoAge" "$bakAge" || bakAge=""; }
+    [[ -f $repoPub ]] && { bakPub=$(mktemp "$repoPub.bak.XXXXXX") && cp "$repoPub" "$bakPub" || bakPub=""; }
     # Commit both
     mv "$agetmp" "$repoAge" || {
       rm -f "$agetmp" "$pubtmp" "$bakAge" "$bakPub"
@@ -1137,7 +1174,7 @@ sshKeyEncryptToRepo() {
     }
     mv "$pubtmp" "$repoPub" || {
       # Restore prior .age if we had one, otherwise remove the new one
-      if [[ -n "$bakAge" ]]; then mv "$bakAge" "$repoAge" 2>/dev/null; else rm -f "$repoAge"; fi
+      if [[ -n $bakAge ]]; then mv "$bakAge" "$repoAge" 2>/dev/null; else rm -f "$repoAge"; fi
       rm -f "$pubtmp" "$bakPub"
       echo "WARNING: .pub commit failed. Rolled back .age." >&2
       rm -rf "$stageDir"; SshStageDir=""; return 1
@@ -1156,27 +1193,27 @@ sshKeyEncryptToRepo() {
 # sshKeyGenerate -- tier 4 implementation: generate new key, encrypt to repo, cache.
 sshKeyGenerate() {
   local localKey=$1 repoAge=$2 repoPub=$3 hostname=$4 cacheDir=$5 cacheKey=$6
-  command -v -- "$ssh_keygen" >/dev/null 2>&1 || { echo "$ssh_keygen not found"; return 1; }
-  echo "No SSH key for $hostname. Generating..."
+  command -v -- $ssh_keygen >/dev/null 2>&1 || { echo $ssh_keygen not found; return 1; }
+  echo No SSH key for $hostname. Generating...
   echo "(SSH key passphrase -- protects the key on disk)"
-  if ! sshKeygenTask "$localKey"; then
+  if ! sshKeygenTask $localKey; then
     echo "ERROR: key generation failed." >&2
     return 1
   fi
   chmod 644 "$localKey.pub"
 
   local backedUp=0
-  if command -v -- "$age" >/dev/null 2>&1; then
-    if sshKeyEncryptToRepo "$localKey" "$repoAge" "$repoPub" "$hostname"; then
+  if command -v -- $age >/dev/null 2>&1; then
+    if sshKeyEncryptToRepo $localKey $repoAge $repoPub $hostname; then
       backedUp=1
     else
       echo "WARNING: key generated locally but NOT backed up to repo. Will be lost on wipe." >&2
     fi
   fi
 
-  if [[ -d "$CrostiniDir" ]]; then
+  if [[ -d $CrostiniDir ]]; then
     mkdir -p "$cacheDir" 2>/dev/null
-    installKey "$localKey" "$cacheKey"
+    installKey $localKey $cacheKey
   fi 2>/dev/null || echo "WARNING: mount cache write failed" >&2
 
   if (( backedUp )); then
@@ -1196,32 +1233,32 @@ restoreSecrets() { withCleanupTrap cleanupSecretsTmp restoreSecretsImpl; }
 restoreSecretsImpl() {
   local hostname
   hostname=$(lib.MachineHostname)
-  lib.ValidateHostname "$hostname" || return 1
+  lib.ValidateHostname $hostname || return 1
   local secretsDir="$HOME/secrets"
   local repoBundle="$HOME/dotfiles/secrets/${hostname}.tar.age"
   local cacheDir="$CrostiniDir/secrets/$hostname"
 
-  mkdirp "$secretsDir" && chmod 700 "$secretsDir"
+  mkdirp $secretsDir && chmod 700 "$secretsDir"
 
   # Repo bundle hash for freshness
   local repoHash=""
-  [[ -f "$repoBundle" ]] && repoHash=$(sha256sum "$repoBundle" | awk '{print $1}')
+  [[ -f $repoBundle ]] && repoHash=$(sha256sum "$repoBundle" | awk '{print $1}')
 
   # Tier 1: local secrets exist -- check freshness
-  if [[ -n "$(lib.Glob "$secretsDir"/*)" ]]; then
+  if [[ -n $(lib.Glob $secretsDir/*) ]]; then
     local localHash=""
-    [[ -f "$secretsDir/.bundle-hash" ]] && localHash=$(< "$secretsDir/.bundle-hash")
-    if [[ -n "$repoHash" && -n "$localHash" && "$localHash" != "$repoHash" ]]; then
+    [[ -f $secretsDir/.bundle-hash ]] && localHash=$(< "$secretsDir/.bundle-hash")
+    if [[ -n $repoHash && -n $localHash && $localHash != "$repoHash" ]]; then
       echo "WARNING: secrets may be stale (repo bundle updated). Run: scripts/encrypt-secrets" >&2
     fi
     return 0
   fi
 
   # Tier 2: mount cache (namespaced by hostname, freshness checked)
-  if [[ -d "$cacheDir" && -f "$cacheDir/.bundle-hash" ]]; then
+  if [[ -d $cacheDir && -f $cacheDir/.bundle-hash ]]; then
     local cachedHash
     cachedHash=$(< "$cacheDir/.bundle-hash")
-    if [[ -z "$repoHash" || "$cachedHash" == "$repoHash" ]] && [[ -n "$(lib.Glob "$cacheDir"/*)" ]]; then
+    if [[ -z $repoHash || $cachedHash == "$repoHash" ]] && [[ -n $(lib.Glob $cacheDir/*) ]]; then
       echo "Restoring secrets from mount cache ($hostname)..."
       local stageDir
       stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
@@ -1234,28 +1271,28 @@ restoreSecretsImpl() {
       fi
       rm -rf "$stageDir"
       echo "WARNING: cache restore failed. Falling through to decrypt." >&2
-    elif [[ -n "$repoHash" ]]; then
+    elif [[ -n $repoHash ]]; then
       echo "Mount secrets cache stale. Falling through to decrypt."
     fi
   fi
 
   # Tier 3: age decrypt tarball from repo
-  if [[ -f "$repoBundle" ]]; then
+  if [[ -f $repoBundle ]]; then
     if [[ ! -t 0 ]]; then
       echo "Secrets encrypted in repo but no TTY."
       return 0
     fi
-    command -v -- "$age" >/dev/null 2>&1 || { echo "$age not found"; return 1; }
-    echo "Decrypting secrets for $hostname..."
+    command -v -- $age >/dev/null 2>&1 || { echo $age not found; return 1; }
+    echo Decrypting secrets for $hostname...
     # Decrypt to temp file first, validate archive members, then extract
     local tmpBundle stageDir
     tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX"); SecretsTmpFiles=("$tmpBundle")
-    if ! $age --decrypt "$repoBundle" > "$tmpBundle" || [[ ! -s "$tmpBundle" ]]; then
+    if ! $age --decrypt "$repoBundle" >$tmpBundle || [[ ! -s $tmpBundle ]]; then
       rm -f "$tmpBundle"
       echo "ERROR: secrets decryption failed." >&2
       return 1
     fi
-    if ! validateSecretsArchive "$tmpBundle"; then
+    if ! validateSecretsArchive $tmpBundle; then
       rm -f "$tmpBundle"
       return 1
     fi
@@ -1271,12 +1308,12 @@ restoreSecretsImpl() {
       fi
       chmod 600 "$stageDir"/* 2>/dev/null
       # Record bundle hash for freshness
-      echo "$repoHash" > "$stageDir/.bundle-hash"
+      echo $repoHash >$stageDir/.bundle-hash
       # Move into live dir (including dotfiles)
       mv "$stageDir"/* "$stageDir"/.bundle-hash "$secretsDir"/ 2>/dev/null
       rmdir "$stageDir" 2>/dev/null
       # Cache to mount (atomic: temp dir then rename)
-      if [[ -d "$CrostiniDir" ]]; then
+      if [[ -d $CrostiniDir ]]; then
         local tmpCache
         tmpCache=$(mktemp -d "$cacheDir.XXXXXX")
         chmod 700 "$tmpCache"
@@ -1298,38 +1335,54 @@ restoreSecretsImpl() {
     return 0
   fi
 
-  echo "No secrets for $hostname. Create ~/secrets/ files, then run scripts/encrypt-secrets."
+  echo No secrets for $hostname. Create ~/secrets/ files, then run scripts/encrypt-secrets.
   return 0
 }
 
 loadSshKey() {
-  [[ -f "$HOME/.ssh/id_ed25519" ]] || return 0
-  command -v -- "$keychain" >/dev/null 2>&1 || { echo "WARNING: $keychain not found"; return 0; } >&2
-  eval "$($keychain --eval id_ed25519)" || {
+  [[ -f $HOME/.ssh/id_ed25519 ]] || return 0
+  command -v -- $keychain >/dev/null 2>&1 || { echo WARNING: $keychain not found; return 0; } >&2
+  eval "$(SSH_ASKPASS_REQUIRE=never $keychain --eval id_ed25519)" || {
     echo "WARNING: keychain failed to load SSH key." >&2
   }
 }
 
 authPreflight() {
-  local keyFile="$HOME/.ssh/id_ed25519"
+  local keyFile=$HOME/.ssh/id_ed25519
   local -a sshopts=(-o BatchMode=yes -o PreferredAuthentications=publickey
     -o IdentitiesOnly=yes -i "$keyFile" -o ConnectTimeout=10
     -o StrictHostKeyChecking=accept-new)
 
-  [[ -f "$keyFile" ]] || { echo "  No SSH key -- all private repos will be skipped"; return; }
+  [[ -f $keyFile ]] || { echo "  No SSH key -- all private repos will be skipped"; return; }
 
-  local provider rc output
-  for provider in github.com codeberg.org bitbucket.org; do
+  # Guard: check that THIS key is in the agent before testing registries.
+  # BatchMode SSH fails identically whether the key was rejected by the
+  # registry or never offered -- without this guard, a missing or wrong
+  # key produces misleading "key not registered" for all providers.
+  local keyFp
+  keyFp=$($ssh_keygen -lf "$keyFile.pub" 2>/dev/null | awk '{print $2}')
+  if [[ -z $keyFp ]] || ! $ssh_add -l 2>/dev/null | grep -qF $keyFp; then
+    echo "  key not in agent -- run 'ssh-add ~/.ssh/id_ed25519' after exec bash"
+    return
+  fi
+
+  checkProvider() {
+    local provider=$1 rc output
     if output=$($ssh -T "${sshopts[@]}" "git@$provider" 2>&1); then rc=0; else rc=$?; fi
     if (( rc == 0 || rc == 1 )); then
       :
-    elif echo "$output" | grep -qi 'permission denied\|publickey'; then
+    elif echo $output | grep -qi 'permission denied\|publickey'; then
       echo "  $provider: key not registered"
-      [[ -f "$keyFile.pub" ]] && echo "    Register: cat $keyFile.pub"
+      [[ -f $keyFile.pub ]] && echo "    Register: cat $keyFile.pub"
     else
       echo "  $provider: unreachable"
     fi
-  done
+  }
+  each checkProvider <<'  END'
+    github.com
+    codeberg.org
+    bitbucket.org
+  END
 
   if $ip link show tun0 >/dev/null 2>&1; then
     if output=$($ssh -T "${sshopts[@]}" git@stash.digi.com 2>&1); then rc=0; else rc=$?; fi
@@ -1341,7 +1394,7 @@ authPreflight() {
 
 fatal() {
   local msg=$1 rc=${2:-$?}
-  echo "fatal: $msg"
+  echo fatal: $msg
   exit $rc
 }
 
@@ -1355,11 +1408,11 @@ mkdirp() { mkdir -p "$(readlink -f "$1" 2>/dev/null || echo "$1")"; }
 # Reads: $CrostiniBacking (parent of $CrostiniDir), $CrostiniDir, $Hostname.
 crostiniHostnameSetup() {
   local backing=${CrostiniBacking:-/mnt/chromeos/MyFiles/Downloads}
-  [[ -d $backing ]] || { echo "fatal: ChromeOS shared storage not mounted at $backing" >&2; echo "Enable file sharing in ChromeOS Settings > Linux" >&2; return 1; }
+  [[ -d $backing ]] || { echo fatal: ChromeOS shared storage not mounted at $backing >&2; echo "Enable file sharing in ChromeOS Settings > Linux" >&2; return 1; }
   mkdir -p "$CrostiniDir"
   if [[ -n $Hostname ]]; then
-    lib.ValidateHostname "$Hostname" || return 1
-    echo "$Hostname" > "$CrostiniDir/hostname"
+    lib.ValidateHostname $Hostname || return 1
+    echo $Hostname >$CrostiniDir/hostname
   elif [[ ! -e $CrostiniDir/hostname ]]; then
     echo "fatal: no Crostini hostname configured" >&2
     echo "First run requires: update-env -1 <hostname>" >&2
@@ -1377,11 +1430,11 @@ crostiniHostnameSetup() {
 convergeTaskBash() {
   local hmVars=$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh
   unset -v __HM_SESS_VARS_SOURCED
-  [[ -r $hmVars ]] || { echo "fatal: hm-session-vars.sh not found at $hmVars" >&2; exit 1; }
-  loosely source "$hmVars"
+  [[ -r $hmVars ]] || { echo fatal: hm-session-vars.sh not found at $hmVars >&2; exit 1; }
+  loosely source $hmVars
   if [[ -n ${TASK_BASH_LIB:-} ]]; then
-    [[ -r $TASK_BASH_LIB ]] || { echo "fatal: TASK_BASH_LIB unreadable after switch: $TASK_BASH_LIB" >&2; exit 1; }
-    source "$TASK_BASH_LIB" || { echo "fatal: failed to source converged task.bash: $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
+    [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable after switch: $TASK_BASH_LIB >&2; exit 1; }
+    source $TASK_BASH_LIB || { echo "fatal: failed to source converged task.bash: $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
   fi
 }
 
@@ -1401,8 +1454,8 @@ resolveSourceDir() {
 # Shared helpers -- sourced from lib.bash to avoid duplication.
 # lib.bash provides: lib.Glob, lib.MachineHostname, lib.ValidateHostname, lib.ValidSecretName
 _lib_dir=$(resolveSourceDir) 2>/dev/null
-if [[ -n "${_lib_dir:-}" && -f "$_lib_dir/scripts/lib.bash" ]]; then
-  source "$_lib_dir/scripts/lib.bash"
+if [[ -n ${_lib_dir:-} && -f $_lib_dir/scripts/lib.bash ]]; then
+  source $_lib_dir/scripts/lib.bash
 else
   eval "$(curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/scripts/lib.bash)" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
 fi
@@ -1417,34 +1470,34 @@ validateSecretsArchive() {
   local tarfile=$1
 
   # Name validation: tar -tf
-  local entries
-  if ! entries=$($tar tf "$tarfile" 2>/dev/null); then
+  local entries_
+  if ! entries_=$($tar tf "$tarfile" 2>/dev/null); then
     echo "ERROR: failed to list secrets bundle contents (corrupt or not a tar)." >&2
     return 1
   fi
-  if [[ -z "$entries" ]]; then
+  if [[ -z $entries_ ]]; then
     echo "ERROR: secrets bundle is empty." >&2
     return 1
   fi
   # Name validation pass
-  local entry name bad="" regularCount=0
+  local entry name bad_="" regularCount=0
   while IFS= read -r entry; do
     [[ -z $entry ]] && continue
     # Root directory in both forms
     [[ $entry == . || $entry == ./ ]] && continue
     # Reject non-root directory entries (trailing /)
-    [[ $entry == */ ]] && { bad="$bad$NL  name: $entry (non-root directory)"; continue; }
+    [[ $entry == */ ]] && { bad_="$bad_$NL  name: $entry (non-root directory)"; continue; }
     name=$entry
     [[ $name == ./* ]] && name=${name#./}
-    if ! lib.ValidSecretName "$name"; then
-      bad="$bad$NL  name: $entry"
+    if ! lib.ValidSecretName $name; then
+      bad_="$bad_$NL  name: $entry"
     fi
-  done <<< "$entries"
+  done <<< "$entries_"
 
   # Type validation pass: tar -tvf -- first char is the entry type (GNU tar).
   # Only regular files ('-') accepted. Directory ('d') accepted only for root.
-  local verbose
-  if ! verbose=$($tar tvf "$tarfile" 2>/dev/null); then
+  local verbose_
+  if ! verbose_=$($tar tvf "$tarfile" 2>/dev/null); then
     echo "ERROR: failed to inspect secrets bundle types." >&2
     return 1
   fi
@@ -1458,17 +1511,17 @@ validateSecretsArchive() {
         if [[ $entry == *" ./"  || $entry == *" ." ]]; then
           continue
         fi
-        bad="$bad$NL  type: $entry (non-root directory)"
+        bad_="$bad_$NL  type: $entry (non-root directory)"
         ;;
       -) (( regularCount++ )) ;; # regular file -- ok, count it
       *)
-        bad="$bad$NL  type: $entry"
+        bad_="$bad_$NL  type: $entry"
         ;;
     esac
-  done <<< "$verbose"
+  done <<< "$verbose_"
 
-  if [[ -n "$bad" ]]; then
-    echo "ERROR: secrets bundle contains invalid entries:$bad" >&2
+  if [[ -n $bad_ ]]; then
+    echo "ERROR: secrets bundle contains invalid entries:$bad_" >&2
     return 1
   fi
   if (( regularCount == 0 )); then
@@ -1479,7 +1532,7 @@ validateSecretsArchive() {
 }
 
 pubFingerprint() {
-  [[ -f "$1" && -s "$1" ]] || return 0
+  [[ -f $1 && -s $1 ]] || return 0
   $ssh_keygen -lf "$1" 2>/dev/null | awk '{print $2}'
 }
 
@@ -1499,14 +1552,14 @@ installKey() {
   chmod 600 "$tmpPriv"                  || { rm -f "$tmpPriv"; return 1; }
 
   # Stage new .pub if source has one
-  if [[ -f "$src.pub" ]]; then
+  if [[ -f $src.pub ]]; then
     tmpPub=$(mktemp "$dst.pub.XXXXXX")  || { rm -f "$tmpPriv"; return 1; }
     cp "$src.pub" "$tmpPub"             || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
     chmod 644 "$tmpPub"                 || { rm -f "$tmpPriv" "$tmpPub"; return 1; }
   fi
 
   # Back up existing private key for rollback
-  if [[ -f "$dst" ]]; then
+  if [[ -f $dst ]]; then
     bakPriv=$(mktemp "$dst.rollback.XXXXXX") && cp "$dst" "$bakPriv" || bakPriv=""
   fi
 
@@ -1517,10 +1570,10 @@ installKey() {
   }
 
   # Commit .pub -- rollback private on failure
-  if [[ -n "$tmpPub" ]]; then
+  if [[ -n $tmpPub ]]; then
     if ! mv "$tmpPub" "$dst.pub"; then
       # Restore prior private key or remove new one
-      if [[ -n "$bakPriv" ]]; then
+      if [[ -n $bakPriv ]]; then
         mv "$bakPriv" "$dst" 2>/dev/null || rm -f "$dst"
       else
         rm -f "$dst"
@@ -1528,11 +1581,11 @@ installKey() {
       rm -f "$tmpPub" "$bakPriv"
       return 1
     fi
-  elif [[ -f "$dst.pub" && ! -f "$src.pub" ]]; then
+  elif [[ -f $dst.pub && ! -f $src.pub ]]; then
     # Source has no .pub -- remove stale dst.pub for pair consistency
     if ! rm -f "$dst.pub"; then
       # Can't remove stale .pub -- rollback private key
-      if [[ -n "$bakPriv" ]]; then
+      if [[ -n $bakPriv ]]; then
         mv "$bakPriv" "$dst" 2>/dev/null || rm -f "$dst"
       else
         rm -f "$dst"
@@ -1547,27 +1600,30 @@ installKey() {
   return 0
 }
 
-isDir() { [[ -d "$1" ]]; }
+isDir() { [[ -d $1 ]]; }
 
-isFile() { [[ -f "$1" ]]; }
+isFile() { [[ -f $1 ]]; }
 
 loosely() {
-  set +euo pipefail
+  local IFS=$' \t\n'
+  local prevOpts_
+  prevOpts_=$(set +o)
+  set +eufo pipefail
   "$@"
-  set -euo pipefail
+  eval "$prevOpts_"
 }
 
 ownerAndGroup() {
   local path=$1
   [[ $OSTYPE == darwin* && $(type -p stat) == /usr/bin/stat ]] && local flag=f || local flag=c
-  echo $(stat -$flag %u $path):$(stat -$flag %g $path)
+  echo $(stat -$flag %u "$path"):$(stat -$flag %g "$path")
 }
 
 platform() {
   [[ $OSTYPE != darwin* ]] || { echo macos; return; }
   [[ $HOSTNAME != penguin ]] || { echo crostini; return; }
   if [[ -e /etc/NIXOS ]]; then
-    [[ ! -d ~/dotfiles/contexts/$HOSTNAME ]] || { echo "$HOSTNAME"; return; }
+    [[ ! -d ~/dotfiles/contexts/$HOSTNAME ]] || { echo $HOSTNAME; return; }
     echo nixos; return
   fi
   ! [[ -e /etc/debian_version ]] || { echo debian; return; }
@@ -1592,7 +1648,7 @@ each() {
 keepIf() {
   local command=$1 arg
   while IFS='' read -r arg; do
-    eval "$command $arg" && echo "$arg"
+    eval "$command $arg" && echo $arg
   done
   return 0
 }
@@ -1603,8 +1659,8 @@ keepIf() {
 map() {
   local VARNAME=$1 EXPRESSION=$2
   case $VARNAME in VARNAME|EXPRESSION ) fatal "map: VARNAME may not be 'VARNAME' or 'EXPRESSION'";; esac
-  local "$VARNAME"
-  while IFS='' read -r "$VARNAME"; do
+  local $VARNAME
+  while IFS='' read -r $VARNAME; do
     eval "echo \"$EXPRESSION\""
   done
 }
@@ -1615,17 +1671,23 @@ NL=$'\n'
 
 ## boilerplate
 
+# TODO: task.bash task.Install has an IFS-sensitive pattern:
+#   mkdir -p${dirMode:+m $dirMode}
+# Relies on space-splitting to separate -pm from 700. Breaks under IFS=$'\n'.
+# Latent -- mode 600 path not currently triggered by update-env.
+# Fix in task.bash: use explicit -m flag as a separate arg.
+
 # Pinned to the same rev as bash-tools.nix taskBash. Update both together.
 TaskBashBootstrapRev=574e4750531cebfbb1ca79d75640322c1e17aa7e
 
 if [[ -n ${TASK_BASH_LIB:-} ]]; then
-  [[ -r $TASK_BASH_LIB ]] || { echo "fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB" >&2; exit 1; }
-  source "$TASK_BASH_LIB" || { echo "fatal: failed to source $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
+  [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB >&2; exit 1; }
+  source $TASK_BASH_LIB || { echo "fatal: failed to source $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
 else
   TaskTmp=$(mktemp) || { echo "fatal: cannot create temp file" >&2; exit 1; }
-  curl -fsSL "https://raw.githubusercontent.com/binaryphile/task.bash/$TaskBashBootstrapRev/task.bash" > "$TaskTmp" ||
+  curl -fsSL "https://raw.githubusercontent.com/binaryphile/task.bash/$TaskBashBootstrapRev/task.bash" >$TaskTmp ||
     { rm -f "$TaskTmp"; echo "fatal: task.bash bootstrap fetch failed" >&2; exit 1; }
-  source "$TaskTmp" && Rc=$? || Rc=$?
+  source $TaskTmp && Rc=$? || Rc=$?
   rm -f "$TaskTmp"
   unset -v TaskTmp
   (( Rc == 0 )) || { echo "fatal: failed to source bootstrap task.bash (rc=$Rc)" >&2; exit 1; }

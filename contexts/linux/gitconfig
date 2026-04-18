@@ -1,6 +1,13 @@
 [user]
-  email = ted.lilley@digi.com
+  email = ted.lilley@gmail.com
   name = Ted Lilley
+  signingkey = ~/.ssh/id_ed25519_signing.pub
+[gpg]
+  format = ssh
+[commit]
+  gpgsign = true
+[tag]
+  gpgsign = true
 [core]
   filemode = false
   excludesfile = /home/ted/.gitignore_global
@@ -27,10 +34,10 @@
   diff = auto
   status = auto
 [url "git@bitbucket.org:accelecon"]
-	insteadOf = https://bitbucket.org/accelecon
+  insteadOf = https://bitbucket.org/accelecon
 [pull]
-	ff = only
+  ff = only
 [advice]
-	detachedHead = false
+  detachedHead = false
 [init]
-	defaultBranch = main
+  defaultBranch = main
