@@ -147,7 +147,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
   2. System installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
   3. System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
-  4. System restores signing key from local or 1Password (or generates new).
+  4. System restores signing key from local or 1Password (or generates new). Warns if signing key needs registration on GitHub/Codeberg.
   5. System restores secrets from local, mount cache, or 1Password.
   6. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
