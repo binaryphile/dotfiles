@@ -1,17 +1,19 @@
 # Secrets Lifecycle
 
-Operational companion to [design.md](design.md). SSH keys and secrets are encrypted with [age](https://github.com/FiloSottile/age) (a file encryption tool) and stored in the repo. design.md covers the three-tier restore model, trust model, archive validation, and hostname identity ([SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4), [Secrets Bundling](design.md#secrets-bundling-uc-4)). This doc covers operator workflows: bootstrap, rotation, recovery, decommission.
+Operational companion to [design.md](design.md) and [security.md](security.md). SSH keys and secrets are backed up to 1Password -- not to the repo. See [security.md](security.md) for the full security model, including why encrypted material must not be committed to a public repo.
+
+Use cases for each workflow live in [use-cases.md](use-cases.md) (UC-4a through UC-4d). This doc covers the operational procedures that implement them.
 
 **When to read which doc:**
 
 | Question | Doc |
 |----------|-----|
-| How does the three-tier restore work? | [design.md](design.md#ssh-key-bootstrap-uc-4) |
-| Why is the mount cache trusted? | [design.md](design.md#ssh-key-bootstrap-uc-4) (trust model) |
+| Why can't we store .age files in the repo? | [security.md](security.md) (Core Constraint) |
+| What are the trust boundaries? | [security.md](security.md) (Trust Boundaries) |
+| How does the restore priority work? | [design.md](design.md#ssh-key-bootstrap-uc-4) |
 | How do I rotate my SSH key? | This doc ([Key rotation](#key-rotation)) |
 | I hit a fingerprint mismatch | This doc ([Fingerprint mismatch](#fingerprint-mismatch)) |
 | How do I add a new secret? | This doc ([Add, update, remove](#add-update-remove)) |
-| How does archive validation work? | [design.md](design.md#secrets-bundling-uc-4) |
 
 For how `update-env` decides which restore action to take, see the [decision table](design.md#ssh-key-bootstrap-uc-4) and `SshKeyStatus` values in design.md.
 
@@ -25,47 +27,40 @@ On Crostini this reads `$CrostiniDir/hostname`, not the system hostname. Always 
 
 ### Zero-bootstrap
 
-Path: Tier 4 -> `generate`.
+No key exists anywhere for this hostname. Path: `generate`.
 
 1. Run `update-env`
 2. `sshKeyGenerate` prompts for SSH passphrase, creates `~/.ssh/id_ed25519`
-3. If age available: prompts for age passphrase, encrypts to `ssh/id_ed25519_<hostname>.{age,pub}`
-4. If on Crostini: caches to `$CrostiniDir/ssh/<hostname>/`
-5. `authPreflight` reports "key not registered" for all providers
+3. If on Crostini: caches to `$CrostiniDir/ssh/<hostname>/`
+4. `authPreflight` reports "key not registered" for all providers
 
 **Post-steps (manual):**
-- `cd ~/dotfiles && git add ssh/id_ed25519_<hostname>.{age,pub} && git commit && git push`
+- Store private key in 1Password (vault item named `SSH <hostname>`)
+- `cd ~/dotfiles && git add ssh/id_ed25519_<hostname>.pub && git commit && git push`
 - Register `~/.ssh/id_ed25519.pub` with GitHub, Codeberg, Bitbucket settings
-- If age was unavailable: `SshKeyStatus=generated_local_only` -- key will be lost on wipe. Install age, then re-run `update-env` to capture.
 
-**Machine replacement** is the same workflow. New hostname = no repo state for that hostname. Old hostname's .age/.pub remain in repo until decommissioned ([Cleanup and decommission](#cleanup-and-decommission)).
+**Machine replacement** is the same workflow. New hostname = no state for that hostname.
 
 ### Normal restore
 
-Two Crostini sub-scenarios:
+Restore priority (same order as [design.md](design.md#ssh-key-bootstrap-uc-4)):
 
-**Powerwash** (ChromeOS reset, Crostini container recreated):
-- Mount cache at `$CrostiniDir/ssh/<hostname>/` survives (lives on ChromeOS MyFiles)
-- Path: Tier 2 -> `restore_from_cache` -- no passphrase prompt
-
-**Container reset** (Crostini container deleted and recreated):
-- Mount cache lost
-- Path: Tier 3 -> `restore_from_age` -- prompts for age passphrase
-- After restore: cache is repopulated automatically
-
-Both paths validate the restored key's fingerprint against the repo .pub sidecar.
+1. **Local** -- `~/.ssh/id_ed25519` present, fingerprint matches repo `.pub` -> no action needed
+2. **Mount cache** (Crostini only) -- powerwash: mount cache at `$CrostiniDir/ssh/<hostname>/` survives -> `restore_from_cache`, no passphrase. Validates fingerprint against repo `.pub`
+3. **1Password** -- container reset (cache lost) or non-Crostini fresh machine -> retrieve via `op` CLI or manually from app, place at `~/.ssh/id_ed25519`, `chmod 600`, re-run `update-env`
 
 ### Key rotation
 
-Manual procedure. Ordering matters -- do not destroy the only copy.
+Manual procedure. Ordering matters -- do not destroy the only copy. See UC-4a in [use-cases.md](use-cases.md).
 
-1. Verify current key is backed up: `ls ~/dotfiles/ssh/id_ed25519_$HOST.age`. If missing, **stop** -- you have no repo backup. First capture the current key: `rm ~/dotfiles/ssh/id_ed25519_$HOST.{age,pub} 2>/dev/null`, then run `update-env` to trigger `capture_to_repo`, commit, and restart this procedure.
+1. Verify current key is in 1Password. If not, store it now.
 2. Delete local key: `rm ~/.ssh/id_ed25519{,.pub}`
-3. Delete repo key: `rm ~/dotfiles/ssh/id_ed25519_$HOST.{age,pub}`
+3. Delete repo `.pub`: `rm ~/dotfiles/ssh/id_ed25519_$HOST.pub`
 4. Clear cache (Crostini): `rm -rf $CrostiniDir/ssh/$HOST/`
-5. Run `update-env` -- hits Tier 4 -> `generate`
-6. Commit new .age/.pub: `cd ~/dotfiles && git add ssh/ && git commit && git push`
-7. Register new .pub with forges, deregister old .pub
+5. Run `update-env` -- generates new key
+6. Store new private key in 1Password
+7. Commit new `.pub`: `cd ~/dotfiles && git add ssh/ && git commit && git push`
+8. Register new `.pub` with registries, deregister old
 
 No automated rotation command exists. This is a known gap.
 
@@ -77,37 +72,39 @@ No automated rotation command exists. This is a known gap.
 
 **Resolution:**
 1. Compare fingerprints: `ssh-keygen -lf ~/.ssh/id_ed25519.pub` vs `ssh-keygen -lf ~/dotfiles/ssh/id_ed25519_$HOST.pub`
-2. Check forge registrations (GitHub/Codeberg/Bitbucket SSH key settings) to determine which fingerprint is registered
-3. If local is authoritative: `rm ~/dotfiles/ssh/id_ed25519_$HOST.{age,pub}`, re-run `update-env` (captures local to repo)
-4. If repo is authoritative: `rm ~/.ssh/id_ed25519{,.pub}`, re-run `update-env` (restores from repo)
-5. If neither is registered: either key works -- keep local (simpler), then register it with forges
-6. If both are registered on different forges: pick one, deregister the other from its forge, then follow step 3 or 4
-7. If you cannot determine authority: **stop**. Do not delete either key. Back up both, then consult git log for which was committed most recently.
+2. Check 1Password for the authoritative key
+3. Check registered keys (GitHub/Codeberg/Bitbucket SSH key settings) to determine which fingerprint is registered
+4. If local is authoritative: update repo `.pub`, store key in 1Password if not already there
+5. If 1Password is authoritative: `rm ~/.ssh/id_ed25519{,.pub}`, retrieve from 1Password, re-run `update-env`
+6. If neither is registered: either key works -- keep local (simpler), store in 1Password, register with registries
+7. If you cannot determine authority: **stop**. Do not delete either key. Back up both, then consult 1Password and registry settings.
 
 ### Cleanup and decommission
 
-Remove a retired machine's key material:
+Remove a retired machine's key material. See UC-4d in [use-cases.md](use-cases.md).
 
 ```
-git rm --ignore-unmatch ssh/id_ed25519_<hostname>.{age,pub}
-git rm --ignore-unmatch secrets/<hostname>.tar.age
+git rm --ignore-unmatch ssh/id_ed25519_<hostname>.pub
 rm -rf $CrostiniDir/ssh/<hostname>/ $CrostiniDir/secrets/<hostname>/  # if Crostini
 git commit -m "Decommission <hostname>" && git push
 ```
 
-Also deregister the old .pub from forge settings.
+Also:
+- Remove or archive the SSH key item in 1Password
+- Remove or archive secrets items for this hostname in 1Password
+- Deregister the old `.pub` from registry settings
 
 ## Constraints and Caveats
 
-- **Non-interactive (CI/CD):** pre-provision `~/.ssh/id_ed25519` or populate the mount cache. No passphrase prompts are possible without TTY.
+- **Non-interactive (CI/CD):** pre-provision `~/.ssh/id_ed25519` or populate the mount cache. No passphrase prompts are possible without TTY. `op` CLI with service account token is an option but cannot access the Private vault.
 - **NixOS:** credential restore is skipped. SSH keys are system-managed via `nixos-config`.
-- **macOS / generic Linux:** no mount cache. Only local key and age decrypt are available.
+- **macOS / generic Linux:** no mount cache. Local key or 1Password only.
 
-## Secrets Bundle Procedures
-
-For snapshot semantics, restore behavior, and archive validation, see [design.md Secrets Bundling](design.md#secrets-bundling-uc-4). Key point: restore never overwrites existing local secrets; always re-encrypt and commit after adding a secret to ensure it survives across machines.
+## Secrets Procedures
 
 ### Add, update, remove
+
+See UC-4b in [use-cases.md](use-cases.md).
 
 **Add:** place the file in `~/secrets/`. Name must match `lib.ValidSecretName`: `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`. No dotfiles, no paths, no spaces.
 
@@ -115,88 +112,51 @@ For snapshot semantics, restore behavior, and archive validation, see [design.md
 
 **Remove:** delete the file from `~/secrets/`.
 
-**After any change:** re-encrypt and commit:
-```
-scripts/encrypt-secrets
-cd ~/dotfiles && git add secrets/ && git commit && git push
-```
+**After any change:**
+1. Store updated secrets in 1Password (individual items or as a document)
+2. On Crostini: re-run `update-env` to refresh the mount cache from `~/secrets/` (the cache stores plaintext copies, not encrypted material)
+3. On other machines: retrieve from 1Password on next `update-env` or manually
 
-Old bundles persist in git history (encrypted). No automated history rewrite -- the ciphertext is age-encrypted so history exposure is low-risk.
+### Stale cache warning
 
-### Stale bundle warning
-
-If `update-env` prints "secrets may be stale": re-encrypt local (`scripts/encrypt-secrets`) if local is authoritative, or restore from repo (`update-env -2`) if repo is authoritative. A stale warning after re-encryption is expected (age uses a random salt); commit to resolve.
+If `update-env` prints "secrets may be stale": the mount cache is out of sync. Re-run `update-env` to refresh the cache from `~/secrets/`, or retrieve fresh copies from 1Password.
 
 ## Recovery Procedures
 
-### Age passphrase forgotten
+See UC-4c in [use-cases.md](use-cases.md).
 
-**Symptom:** age decrypt prompts repeatedly; all attempts fail.
+### Key not found
 
-**Check first:** does a plaintext copy exist?
-- Local key: `ls ~/.ssh/id_ed25519`
-- Cache: `ls $CrostiniDir/ssh/$HOST/id_ed25519`
-- Local secrets: `ls ~/secrets/`
+**Symptom:** no local key, no cache, `op` not available or key not in vault.
 
-**Path A** (plaintext exists): re-encrypt with a new passphrase.
-- Secrets: `scripts/encrypt-secrets` (re-encrypts from `~/secrets/`, prompts for new passphrase)
-- SSH key re-encryption (full procedure):
-  ```
-  cd ~/dotfiles
-  HOST=$(source scripts/lib.bash && lib.MachineHostname)
-  tmp=$(mktemp -d) && chmod 700 "$tmp"
-  trap 'rm -rf "$tmp"' EXIT INT TERM
-  cp ~/.ssh/id_ed25519 "$tmp/id_ed25519" && chmod 600 "$tmp/id_ed25519"
-  cp ~/.ssh/id_ed25519.pub "$tmp/id_ed25519.pub"
-  agetmp=$(mktemp ssh/id_ed25519_${HOST}.age.XXXXXX)
-  tar cf - -C "$tmp" . | age -p -o "$agetmp"
-  test -s "$agetmp" || { echo "encryption failed"; rm -f "$agetmp"; exit 1; }
-  mv "$agetmp" ssh/id_ed25519_${HOST}.age
-  cp ~/.ssh/id_ed25519.pub ssh/id_ed25519_${HOST}.pub
-  git add ssh/id_ed25519_${HOST}.{age,pub} && git commit && git push
-  ```
+**Path A** (1Password accessible via app): retrieve manually, place at `~/.ssh/id_ed25519`, `chmod 600`.
 
-**Path B** (only .age remains): irrecoverable. Generate a new SSH key ([Zero-bootstrap](#zero-bootstrap)), recreate secrets manually.
-
-**Caution:** do NOT clear the mount cache before checking if it holds the only plaintext copy.
+**Path B** (key not in 1Password): irrecoverable for this key. Generate new key ([Zero-bootstrap](#zero-bootstrap)).
 
 ### Fingerprint mismatch
 
-**Symptom:** "decrypted key doesn't match repo .pub" during age restore.
+**Symptom:** "decrypted key doesn't match repo .pub" or "collision" during restore.
 
-**Cause:** `.pub` sidecar was replaced without re-encrypting the private key, or the `.age` was re-encrypted with a different key pair.
+**Resolution:**
+1. Check 1Password for the authoritative key
+2. Compare fingerprints: local vs repo `.pub` vs 1Password
+3. If 1Password is authoritative: replace local key from 1Password, update repo `.pub` if needed
+4. If local is authoritative: update repo `.pub`, store in 1Password
+5. If neither matches registries: determine which key is registered, keep that one, update everything else
 
-**Path A** (private key accessible locally or in cache):
-1. Regenerate .pub from private: `ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub`
-2. Update repo sidecar: `cp ~/.ssh/id_ed25519.pub ~/dotfiles/ssh/id_ed25519_$HOST.pub`
-3. Re-encrypt the pair using the "SSH key re-encryption" procedure in [Age passphrase forgotten](#age-passphrase-forgotten), Path A
-
-**Path B** (can decrypt .age but local key is absent or suspect):
-1. Extract the bundle: `age --decrypt ssh/id_ed25519_$HOST.age | tar xf - -C /tmp/sshfix/`
-2. Compare fingerprints to determine which half is correct:
-   - Bundled: `ssh-keygen -lf /tmp/sshfix/id_ed25519.pub`
-   - Repo sidecar: `ssh-keygen -lf ~/dotfiles/ssh/id_ed25519_$HOST.pub`
-   - Forge-registered: check GitHub/Codeberg/Bitbucket SSH key settings
-3. If the bundled private key is correct, regenerate .pub from it: `ssh-keygen -y -f /tmp/sshfix/id_ed25519 > /tmp/sshfix/id_ed25519.pub`
-4. Install: `cp /tmp/sshfix/id_ed25519 ~/.ssh/ && chmod 600 ~/.ssh/id_ed25519 && cp /tmp/sshfix/id_ed25519.pub ~/.ssh/`
-5. Re-encrypt per [Age passphrase forgotten](#age-passphrase-forgotten), Path A (SSH key re-encryption)
-6. Clean up: `rm -rf /tmp/sshfix/`
-
-**Path C** (cannot decrypt, no local/cache): regenerate ([Zero-bootstrap](#zero-bootstrap)).
-
-### Corrupt secrets archive
+### Corrupt secrets cache
 
 **Symptom:** `validateSecretsArchive` rejects with "not a valid tar archive", "invalid member name", or "unexpected file type" errors.
 
-**Path A** (local `~/secrets/` files intact): `scripts/encrypt-secrets && git add secrets/ && git commit`
+**Path A** (local `~/secrets/` files intact): re-run `update-env` to rebuild cache from local files
 
-**Path B** (local empty, cache exists): `rm ~/secrets/.bundle-hash`, run `update-env -2` to restore from cache
+**Path B** (local empty, 1Password has secrets): retrieve from 1Password, populate `~/secrets/`
 
-**Path C** (neither local nor cache): recreate secret files manually, re-encrypt.
+**Path C** (neither local nor 1Password): recreate secret files manually, store in 1Password.
 
 ### Cache invalidation
 
-**When:** after key rotation, host decommission, or suspected cache compromise.
+**When:** after key rotation, host decommission, or suspected cache compromise (see [security.md](security.md#chromeos-host--shared-mount-consumer)).
 
 **Procedure:**
 ```
@@ -204,9 +164,9 @@ rm -rf $CrostiniDir/ssh/$HOST/
 rm -rf $CrostiniDir/secrets/$HOST/
 ```
 
-**Effect:** next `update-env` falls through to Tier 3 (age decrypt with passphrase prompt).
+**Effect:** next `update-env` falls through to 1Password retrieval (or prompts for manual restore).
 
-**Caution:** verify that either local files or repo .age exist before invalidating. The cache may be the only plaintext copy after a partial restore failure.
+**Caution:** verify that either local files or 1Password has the credentials before invalidating. The cache may be the only plaintext copy after a partial restore failure.
 
 ## Known Secrets
 
@@ -221,10 +181,9 @@ Audited from code as of 2026-04-14. Not exhaustive -- different hosts have diffe
 | fontawesome.key | license key | scripts/mk-urma | Font Awesome pro assets |
 | netrc | machine/login/password lines | update-env (symlinked to ~/.netrc) | service credentials for curl/git |
 
-The age passphrase is not stored in `~/secrets/`. It exists only in the operator's memory or password manager. There is no escrow or recovery mechanism for a forgotten passphrase (see [Age passphrase forgotten](#age-passphrase-forgotten)).
-
 ## Maintenance
 
 - **Code is authoritative** for branching behavior. The decision table and workflow descriptions are reading aids.
 - **Known secrets table** is manually maintained. Audit with the grep command above when adding consumers.
-- **Update triggers:** changes to `sshKeyAction`, restore functions, `encrypt-secrets`, or new `~/secrets/` consumers.
+- **Update triggers:** changes to `sshKeyAction`, restore functions, `encrypt-secrets`, new `~/secrets/` consumers, or changes to the 1Password integration.
+- **Security model changes** belong in [security.md](security.md), not here.

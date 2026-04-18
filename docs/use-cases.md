@@ -26,7 +26,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 | Ted | Have browsers, messaging, media, and productivity apps available | UC-2 | Subfunction |
 | Ted | Navigate, search, and organize files efficiently | UC-3 | Subfunction |
 | Ted | Complete, consistent environment on a new or rebuilt machine | UC-4 | User goal |
-| Ted | Replace SSH key across machines and forges | UC-4a | Subfunction |
+| Ted | Replace SSH key across machines and registries | UC-4a | Subfunction |
 | Ted | Add, update, or remove a secret | UC-4b | Subfunction |
 | Ted | Recover from credential failure | UC-4c | Subfunction |
 | Ted | Remove retired machine's credentials | UC-4d | Subfunction |
@@ -140,86 +140,95 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
   - Future Ted -- works without remembering steps; idempotent re-runs fix drift
-  - Security -- keys encrypted at rest in repo; passphrase on generated keys; TOFU host-key model
+  - Security -- private keys in 1Password, not in repo; signed commits with force-push disabled; downloaded binaries hash-verified; TOFU host-key model. See [security.md](security.md)
   - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
   - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
 - **Main Success Scenario:**
-  1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and passphrases.
+  1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
   2. System installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
-  3. System restores SSH key and secrets from encrypted repo (prompts for passphrase on powerwash; cached restore on container reset). Loads key into agent, validates provider auth. Working shell with full identity.
+  3. System restores SSH key and secrets from local or mount cache. If neither exists, retrieves from 1Password (or generates new). Loads key into agent, validates provider auth. Working shell with full identity.
   4. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
   - 1a. Crostini first run, no hostname -> fail with instructions
   - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions
   - 2a. Package lock held -> waits; resume at step 2
-  - 3a. Key already exists locally, matches repo -> no decrypt needed; resume at step 3
+  - 3a. Key already exists locally, matches repo `.pub` -> accept; resume at step 3
   - 3b. Mount cache valid -> restore without passphrase; resume at step 3
   - 3c. No TTY -> skip credentials; HTTPS clones still work; separate success
-  - 3d. No credentials in repo -> generate, encrypt, prompt to commit; resume at step 3
-  - 3e. Local key mismatches repo -> collision error; fail
-  - 3f. Agent load fails -> warn; preflight may report false negatives
-  - 3g. NixOS host -> skip package manager and credential restore; resume at step 4
+  - 3d. No local key, no cache, `op` available -> retrieve from 1Password; resume at step 3
+  - 3e. No local key, no cache, no `op` -> generate new key; store in 1Password manually; resume at step 3
+  - 3f. Local key mismatches repo `.pub` -> collision error; fail
+  - 3g. Agent load fails -> warn "key not in agent"; preflight skips registry checks (prevents misleading "key not registered" when the key was never offered)
+  - 3h. NixOS host -> skip package manager and credential restore; resume at step 4
   - 4a. Repo has uncommitted local changes -> stash, update, restore; resume at step 4
   - 4b. Provider auth fails -> reports per provider; private repos skipped; separate success
   - 4c. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
-- **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges. Repo backup failure is non-fatal (key remains local-only).
-- **Minimal Manual Steps** (printed by update-env after completion):
-  - Register SSH public key with: GitHub, Codeberg, Bitbucket (stash requires VPN first)
-    - Key settings: https://github.com/settings/keys, https://codeberg.org/user/settings/keys, https://bitbucket.org/account/settings/ssh-keys/, https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN)
-  - Crostini: configure ChromeOS Chrome proxy (per-network, one-time)
-    - ChromeOS Settings > Network > connection > Proxy > Automatic configuration
+- **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges.
+- **Minimal Manual Steps** (printed inline by update-env with copyable URLs):
+  - Register SSH public key with each registry (URLs printed in output):
+    - https://github.com/settings/keys
+    - https://codeberg.org/user/settings/keys
+    - https://bitbucket.org/account/settings/ssh-keys/
+    - https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN required)
+  - Crostini: configure ChromeOS Chrome proxy (per-network, one-time; instructions printed in output):
+    - ChromeOS Settings > Network > connection > Proxy > Automatic proxy configuration
     - URL: `http://127.0.0.1:8120/proxy.pac`
-- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH identity preserved from repo; user informed of remaining manual steps
-- **Technology:** update-env, age, ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4) and [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4).
+- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH identity restored from 1Password or cache; user informed of remaining manual steps
+- **Technology:** update-env, 1Password CLI (`op`), ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4), [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4), and [security.md](security.md).
 
 ---
 
 ### UC-4a: Rotate SSH Key
 
 - **Primary Actor:** Ted
-- **Goal:** Replace current SSH key with a new one across all machines and forges
-- **Scope:** Dotfiles repo + Git forge settings
+- **Goal:** Replace current SSH key with a new one across all machines and registries
+- **Scope:** 1Password + dotfiles repo (.pub sidecar) + Git registry settings
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** Suspected compromise, scheduled rotation, or key algorithm upgrade
-- **Preconditions:** Current key backed up in repo (.age/.pub). If not, capture first.
+- **Preconditions:** Current key exists in 1Password or locally. Old `.pub` sidecar in repo.
 - **Stakeholders:**
-  - Ted -- continued access to all Git forges after rotation
-  - Security -- old key deregistered, new key encrypted at rest
+  - Ted -- continued access to all Git registries after rotation
+  - Security -- old key deregistered; new key stored in 1Password, not in repo. See [security.md](security.md)
 - **Main Success Scenario:**
-  1. Ted deletes local key, repo key, and cache
-  2. Ted runs `update-env` -- generates new key
-  3. Ted commits new .age/.pub and pushes
-  4. Ted registers new .pub with forges, deregisters old
+  1. Ted verifies current key is in 1Password (if not, stores it now)
+  2. Ted deletes local key and cache
+  3. Ted runs `update-env` -- generates new key
+  4. Ted stores new key in 1Password
+  5. Ted commits new `.pub` sidecar (not private key) and pushes
+  6. Ted registers new `.pub` with registries, deregisters old
 - **Extensions:**
-  - 1a. Repo backup missing -> capture current key first (`update-env` triggers `capture_to_repo`)
-  - 2a. age unavailable -> key generated but local-only; install age, re-run
-- **Minimal Guarantee:** Old key backed up before deletion; no key lost
-- **Success Guarantee:** New key in repo, registered with all forges, old key deregistered
+  - 1a. Key not in 1Password and only copy is local -> store in 1Password before deleting
+  - 3a. `op` available -> new key stored in 1Password automatically
+  - 3b. `op` not available -> Ted stores manually; `update-env` prints reminder
+  - 6a. Registry unreachable (VPN down) -> defer; re-run preflight later
+- **Minimal Guarantee:** Old key backed up in 1Password before deletion; no key lost
+- **Success Guarantee:** New key in 1Password, `.pub` in repo, registered with all registries, old key deregistered
 - **Procedure:** [secrets-lifecycle.md Key rotation](secrets-lifecycle.md#key-rotation)
 
 ---
 
-### UC-4b: Manage Secrets Bundle
+### UC-4b: Manage Secrets
 
 - **Primary Actor:** Ted
-- **Goal:** Add, update, or remove a secret and propagate to the repo
-- **Scope:** ~/secrets/ directory + dotfiles repo
+- **Goal:** Add, update, or remove a secret and propagate to 1Password
+- **Scope:** `~/secrets/` directory + 1Password vault
 - **Level:** Subfunction (supports UC-4, UC-7, UC-9)
 - **Trigger:** New service credential, changed token, retired secret
-- **Preconditions:** age installed, ~/secrets/ exists
+- **Preconditions:** `~/secrets/` exists; 1Password account accessible
 - **Stakeholders:**
-  - Ted -- secrets available on all machines after re-encrypt and push
-  - Security -- secrets encrypted at rest; old bundles persist only as age ciphertext in git history
+  - Ted -- secrets available on all machines after 1Password sync
+  - Security -- secrets in 1Password vault, not in repo. See [security.md](security.md)
 - **Main Success Scenario:**
-  1. Ted adds/edits/removes file in ~/secrets/
-  2. Ted runs `scripts/encrypt-secrets`
-  3. Ted commits and pushes the new bundle
+  1. Ted adds/edits/removes file in `~/secrets/`
+  2. Ted stores updated secrets in 1Password (via `op` CLI or app)
+  3. On Crostini: re-run `update-env` to refresh mount cache from `~/secrets/`
 - **Extensions:**
   - 1a. Filename invalid (dotfile, spaces, paths) -> encrypt-secrets warns and excludes
-  - 3a. Stale warning on another machine -> re-encrypt or restore per freshness policy
+  - 2a. `op` not available -> store manually via 1Password app
+  - 3a. On another machine -> retrieve from 1Password on next `update-env`
 - **Minimal Guarantee:** Local secrets unchanged on failure
-- **Success Guarantee:** Bundle committed; other machines can restore on next `update-env`
+- **Success Guarantee:** Secrets in 1Password; other machines can retrieve on next `update-env`
 - **Procedure:** [secrets-lifecycle.md Add, update, remove](secrets-lifecycle.md#add-update-remove)
 
 ---
@@ -227,24 +236,24 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 ### UC-4c: Recover from Credential Failure
 
 - **Primary Actor:** Ted
-- **Goal:** Restore working SSH key or secrets after a failure (forgotten passphrase, fingerprint mismatch, corrupt archive, collision)
-- **Scope:** Dotfiles repo + local filesystem + mount cache
+- **Goal:** Restore working SSH key or secrets after a failure (fingerprint mismatch, collision, missing key, corrupt cache)
+- **Scope:** 1Password + local filesystem + mount cache
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** `update-env` reports an error during credential restore
-- **Preconditions:** At least one copy of the credential exists (local, cache, or repo)
+- **Preconditions:** At least one copy of the credential exists (local, cache, or 1Password)
 - **Stakeholders:**
-  - Ted -- restore access to Git forges and secrets
-  - Security -- recovery should not bypass encryption or trust model
+  - Ted -- restore access to Git registries and secrets
+  - Security -- recovery should not bypass trust model. See [security.md](security.md)
 - **Main Success Scenario:**
   1. Ted identifies the failure type from `update-env` output
   2. Ted follows the matching recovery procedure
   3. Ted re-runs `update-env` to verify
 - **Extensions:**
-  - 1a. Passphrase forgotten, plaintext exists -> re-encrypt with new passphrase
-  - 1b. Passphrase forgotten, only .age remains -> irrecoverable; regenerate (UC-4a variant)
-  - 1c. Fingerprint mismatch -> determine authoritative key, fix the other
-  - 1d. Collision -> determine authoritative key, remove the other
-  - 1e. Corrupt archive -> re-encrypt from local or restore from cache
+  - 1a. Key in 1Password but not local -> retrieve via `op` or manually
+  - 1b. Fingerprint mismatch -> determine authoritative key (1Password is source of truth), fix local
+  - 1c. Collision (local key != repo `.pub`) -> compare against 1Password; keep the matching one
+  - 1d. Corrupt cache -> clear cache, restore from 1Password
+  - 1e. Key not in 1Password, not local, not in cache -> irrecoverable; regenerate (UC-4a)
 - **Minimal Guarantee:** No data destroyed without explicit operator action; cache checked before clearing
 - **Success Guarantee:** Credentials restored; `update-env` completes without errors
 - **Procedure:** [secrets-lifecycle.md Recovery Procedures](secrets-lifecycle.md#recovery-procedures)
@@ -254,21 +263,22 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 ### UC-4d: Decommission a Machine
 
 - **Primary Actor:** Ted
-- **Goal:** Remove a retired machine's key material from repo and forges
-- **Scope:** Dotfiles repo + Git forge settings + mount cache
+- **Goal:** Remove a retired machine's key material from repo, 1Password, and registries
+- **Scope:** 1Password + dotfiles repo + Git registry settings + mount cache
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** Machine retired, repurposed, or hostname changed
 - **Preconditions:** Machine is no longer in use (or hostname reassigned)
 - **Stakeholders:**
-  - Ted -- clean repo, no stale keys
-  - Security -- old key deregistered from forges
+  - Ted -- clean repo and vault, no stale keys
+  - Security -- old key deregistered from registries; removed from 1Password
 - **Main Success Scenario:**
-  1. Ted removes .age/.pub and secrets bundle from repo
-  2. Ted clears mount cache (if Crostini)
-  3. Ted deregisters old .pub from forges
-  4. Ted commits and pushes
+  1. Ted removes `.pub` sidecar from repo
+  2. Ted removes SSH key and secrets from 1Password (or archives)
+  3. Ted clears mount cache (if Crostini)
+  4. Ted deregisters old `.pub` from registries
+  5. Ted commits and pushes
 - **Minimal Guarantee:** Repo unchanged on failure (git rm is reversible before commit)
-- **Success Guarantee:** No credentials for the retired hostname remain in repo, cache, or forges
+- **Success Guarantee:** No credentials for the retired hostname remain in repo, 1Password, cache, or registries
 - **Procedure:** [secrets-lifecycle.md Cleanup and decommission](secrets-lifecycle.md#cleanup-and-decommission)
 
 ---
@@ -317,14 +327,15 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - Claude -- useful immediately
 - **Main Success Scenario:**
   1. Ted launches Claude Code
-  2. Claude reads CLAUDE.md
-  3. Claude searches Era memory for relevant context
+  2. Claude reads CLAUDE.md (base config always available after stage 1)
+  3. Claude searches Era memory for relevant context (if era available -- requires stage 2)
   4. Claude reads use-cases.md and design.md
   5. Claude is ready to act
 - **Extensions:**
   - 2a. CLAUDE.md missing -> Claude explores and reconstructs; resume at step 3
-  - 3a. Memory stale -> Claude trusts current state, updates memory; resume at step 4
-  - 3b. No relevant memory -> Claude explores and builds context; resume at step 4
+  - 3a. Era not available (stage 2 not run) -> skip; Claude relies on docs and filesystem; resume at step 4
+  - 3b. Memory stale -> Claude trusts current state, updates memory; resume at step 4
+  - 3c. No relevant memory -> Claude explores and builds context; resume at step 4
   - 4a. Docs outdated -> Claude updates docs; resume at step 5
   - 5a. Ted expects Claude to know something -> Claude checks docs first; resume at step 5
 - **Minimal Guarantee:** Claude reads CLAUDE.md and has basic orientation
@@ -473,23 +484,3 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 
 **State coloring** (mirrors waybar.css): on = hidden (health) or white (always-shown); light gray = partial; dark gray = off; amber = unknown.
 
----
-
-## Status
-
-| Use Case | Status | Notes |
-|----------|--------|-------|
-| UC-1 Software Development | Working | |
-| UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
-| UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell with VPN and identity, stage 2 = projects and dev tool repos. NixOS, Crostini, Debian, macOS |
-| UC-4a Rotate SSH Key | Working | Manual; no automated rotation command |
-| UC-4b Manage Secrets Bundle | Working | encrypt-secrets + commit |
-| UC-4c Recover from Credential Failure | Working | Passphrase, mismatch, collision, corrupt archive |
-| UC-4d Decommission a Machine | Working | git rm + forge deregistration |
-| UC-5 Make a Config Change | Working | |
-| UC-6 Start a New Session | Working | |
-| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via flake input; SAML callback validated end-to-end on Crostini |
-| UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
-| UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
-| UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |

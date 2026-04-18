@@ -798,6 +798,125 @@ test_withSecret() {
   }
 }
 
+# test_authPreflight tests that authPreflight produces correct diagnostics.
+# When the key is not in the agent, it should report that and skip registry
+# checks -- not produce misleading "key not registered" messages.
+# ssh_add and ssh are inter-system dependencies (external commands), mocked
+# per Khorikov via function-name DI.
+test_authPreflight() {
+  local -A case1=(
+    [name]='key not in agent -- reports not in agent, skips registry checks'
+  )
+  local -A case2=(
+    [name]='key in agent, registry rejects -- reports not registered'
+  )
+  local -A case3=(
+    [name]='no key file -- reports no SSH key'
+  )
+  local -A case4=(
+    [name]='wrong key in agent -- reports key not in agent'
+  )
+
+  # Mock functions for DI -- assigned to ssh_add, ssh, ip via dynamic scoping
+  mockSshAddEmpty() { echo "The agent has no identities."; return 1; }
+  mockSshAddLoaded() { echo "256 SHA256:abc $HOME/.ssh/id_ed25519 (ED25519)"; return 0; }
+  mockSshAddWrongKey() { echo "256 SHA256:other /home/ted/.ssh/some_other_key (ED25519)"; return 0; }
+  mockSshKeygen() { echo "256 SHA256:abc $1 (ED25519)"; }
+  mockSshRejected() { echo "Permission denied (publickey)."; return 255; }
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    ## arrange
+    local dir
+    tesht.MktempDir dir || return 128
+
+    local got rc
+    case $casename in
+      case1)
+        mkdir -p "$dir/.ssh"
+        touch "$dir/.ssh/id_ed25519"
+        touch "$dir/.ssh/id_ed25519.pub"
+        local ssh_add=mockSshAddEmpty
+        local ssh=mockSshRejected
+        local ip=false
+
+        ## act
+        got=$(HOME=$dir authPreflight 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        [[ $got == *"key not in agent"* ]] || {
+          echo "should report 'key not in agent', got: $got"
+          return 1
+        }
+        [[ $got != *"not registered"* ]] || {
+          echo "should not check registries when key not in agent, got: $got"
+          return 1
+        }
+        ;;
+      case2)
+        mkdir -p "$dir/.ssh"
+        touch "$dir/.ssh/id_ed25519"
+        touch "$dir/.ssh/id_ed25519.pub"
+        local ssh_add=mockSshAddLoaded
+        local ssh_keygen=mockSshKeygen
+        local ssh=mockSshRejected
+        local ip=false
+
+        ## act
+        got=$(HOME=$dir authPreflight 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        [[ $got == *"not registered"* ]] || {
+          echo "should report 'not registered', got: $got"
+          return 1
+        }
+        ;;
+      case3)
+        mkdir -p "$dir/.ssh"
+        local ssh_add=true
+        local ssh=true
+        local ip=false
+
+        ## act
+        got=$(HOME=$dir authPreflight 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        [[ $got == *"No SSH key"* ]] || {
+          echo "should report 'No SSH key', got: $got"
+          return 1
+        }
+        ;;
+      case4)
+        # Agent has a key, but not the target key
+        mkdir -p "$dir/.ssh"
+        touch "$dir/.ssh/id_ed25519"
+        touch "$dir/.ssh/id_ed25519.pub"
+        local ssh_add=mockSshAddWrongKey
+        local ssh=mockSshRejected
+        local ip=false
+        local ssh_keygen=mockSshKeygen
+
+        ## act
+        got=$(HOME=$dir authPreflight 2>&1) && rc=$? || rc=$?
+
+        ## assert
+        [[ $got == *"key not in agent"* ]] || {
+          echo "wrong key loaded should report 'key not in agent', got: $got"
+          return 1
+        }
+        [[ $got != *"not registered"* ]] || {
+          echo "should not check registries with wrong key, got: $got"
+          return 1
+        }
+        ;;
+    esac
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecretMissingFile tests with-secret fails on missing file.
 test_withSecretMissingFile() {
   local rc
