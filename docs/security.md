@@ -473,7 +473,7 @@ Effectiveness: **prevents** (blocks the attack), **detects** (reveals it happene
 | `.gitignore` | Accidental commit | Slows | Advisory; blocks `git add` for private key patterns. Not a security boundary -- `git add -f` bypasses |
 | Fingerprint validation | Key/hostname mismatch | Detects | Self-consistency check against repo `.pub`. Does not detect repo compromise |
 | TOFU host keys | MITM on established connections | Prevents (after first use) | `accept-new` policy. First contact trusts the network |
-| SHA-256 hash verification | Downloaded binaries | Prevents | Pinned hash checked before execution/install. Only as strong as repo integrity (hash is stored in repo) |
+| SHA-256 hash verification | Downloaded binaries | Prevents | Pinned hash checked before execution/install (Determinate Nix installer, gpoc .deb). Only as strong as repo integrity (hash is stored in repo) |
 | SSH commit signing | Commit authorship | Detects | Per-machine signing key. Unsigned/foreign-signed commits visible in `git log --show-signature` and rejected by GitHub |
 | Branch protection | Repo integrity | Prevents | Require signed commits on `main`, disallow force-push |
 | History rewrite + rotation | Past exposure | Slows | Strip + force-push + rotation. Assumes copies exist in forks/caches/mirrors -- rotation is the real remediation, not deletion |
@@ -484,8 +484,8 @@ Effectiveness: **prevents** (blocks the attack), **detects** (reveals it happene
 
 | Control | Protects | Priority | Status |
 |---------|----------|----------|--------|
-| Eliminate `curl \| sh` (Lix installer) | Bootstrap integrity | P1 | Replace with hash-verified official Nix installer |
-| Hash-verify `task.bash` download | Bootstrap integrity | P1 | Add SHA-256 check or vendor locally |
+| Eliminate `curl \| sh` (Lix installer) | Bootstrap integrity | P1 | Narrowed -- replaced with hash-verified Determinate Nix installer binary. Network injection closed; repo-compromise trust root remains (hash is stored in repo) |
+| Hash-verify `task.bash` download | Bootstrap integrity | P1 | Narrowed -- SHA-256 check added for pinned-rev bootstrap fetch. Same repo trust root caveat as Nix installer |
 | Signing key registration preflight | Commit verification | P1 | Detect unregistered signing key before first push to protected branch |
 | Signed tag/release for bootstrap | Bootstrap authenticity | P3 | Verify repo content before executing `update-env` on fresh machine |
 

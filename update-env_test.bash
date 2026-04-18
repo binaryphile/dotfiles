@@ -1136,6 +1136,264 @@ test_restoreSigningKey() {
   tesht.Run ${!case@}
 }
 
+# test_verifySha256 tests the shared hash verification function.
+# Uses real sha256sum -- this is a thin wrapper, not worth mocking.
+test_verifySha256() {
+  local -A case1=(
+    [name]='correct hash -- passes'
+  )
+  local -A case2=(
+    [name]='wrong hash -- fails'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    ## arrange
+    local dir
+    tesht.MktempDir dir || return 128
+    echo "test content" >"$dir/file"
+    local correctHash
+    correctHash=$(sha256sum "$dir/file" | awk '{print $1}')
+
+    local got rc
+    case $casename in
+      case1)
+        ## act
+        got=$(verifySha256 "$correctHash" "$dir/file" 2>&1) && rc=$? || rc=$?
+        ## assert
+        (( rc == 0 )) || { echo "rc=$rc, want 0: $got"; return 1; }
+        ;;
+      case2)
+        ## act
+        got=$(verifySha256 "0000000000000000000000000000000000000000000000000000000000000000" "$dir/file" 2>&1) && rc=$? || rc=$?
+        ## assert
+        (( rc != 0 )) || { echo "rc=$rc, want nonzero"; return 1; }
+        ;;
+    esac
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_nixInstallerAsset tests the pure decision function that maps OS/arch
+# to installer binary name and hash. No mocks -- input is strings, output is
+# strings.
+test_nixInstallerAsset() {
+  local -A case1=(
+    [name]='Linux x86_64'
+    [os]=Linux
+    [arch]=x86_64
+    [wantBinary]=nix-installer-x86_64-linux
+    [wantRc]=0
+  )
+  local -A case2=(
+    [name]='Linux aarch64'
+    [os]=Linux
+    [arch]=aarch64
+    [wantBinary]=nix-installer-aarch64-linux
+    [wantRc]=0
+  )
+  local -A case3=(
+    [name]='Darwin arm64'
+    [os]=Darwin
+    [arch]=arm64
+    [wantBinary]=nix-installer-aarch64-darwin
+    [wantRc]=0
+  )
+  local -A case4=(
+    [name]='unsupported platform -- returns error'
+    [os]=FreeBSD
+    [arch]=x86_64
+    [wantBinary]=''
+    [wantRc]=1
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    local got rc
+    got=$(nixInstallerAsset "$os" "$arch" 2>/dev/null) && rc=$? || rc=$?
+
+    (( rc == wantRc )) || { echo "rc=$rc, want $wantRc"; return 1; }
+    if (( wantRc == 0 )); then
+      local gotBinary
+      gotBinary=$(echo "$got" | awk '{print $1}')
+      [[ $gotBinary == "$wantBinary" ]] || {
+        echo "binary=$gotBinary, want $wantBinary"; return 1
+      }
+      # hash should be a 64-char hex string
+      local gotHash
+      gotHash=$(echo "$got" | awk '{print $2}')
+      [[ $gotHash =~ ^[0-9a-f]{64}$ ]] || {
+        echo "hash format invalid: $gotHash"; return 1
+      }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_installNix tests the download-verify-execute pipeline for the
+# Determinate Nix installer. Controller test -- mocks curl, sha256sum, and
+# uname (inter-system dependencies), asserts observable behavior.
+test_installNix() {
+  local -A case1=(
+    [name]='happy path -- downloads, verifies hash, runs installer with correct argv'
+    [mockCurl]=nixCurlOk
+    [mockHash]=nixHashOk
+    [wantRc]=0
+  )
+  local -A case2=(
+    [name]='download failure -- returns error, does not execute'
+    [mockCurl]=nixCurlFail
+    [mockHash]=nixHashOk
+    [wantRc]=1
+  )
+  local -A case3=(
+    [name]='hash mismatch -- returns error, does not execute'
+    [mockCurl]=nixCurlOk
+    [mockHash]=nixHashFail
+    [wantRc]=1
+  )
+  local -A case4=(
+    [name]='installer nonzero exit -- propagates error'
+    [mockCurl]=nixCurlOkFailInstaller
+    [mockHash]=nixHashOk
+    [wantRc]=42
+  )
+  local -A case5=(
+    [name]='unsupported platform -- returns error without download'
+    [mockCurl]=nixCurlOk
+    [mockHash]=nixHashOk
+    [mockUnameS]=FreeBSD
+    [wantRc]=1
+  )
+
+  # marker and argvfile are set per-subtest; mocks access them via dynamic scoping
+  nixCurlOk() {
+    local args_=("$@") outfile
+    for (( i=0; i < ${#args_[@]}; i++ )); do
+      [[ ${args_[$i]} == -o ]] && { outfile=${args_[$((i+1))]}; break; }
+    done
+    [[ -n ${outfile:-} ]] || return 1
+    printf '#!/bin/bash\necho "$@" > "%s"\ntouch "%s"\n' "$argvfile" "$marker" >"$outfile"
+  }
+
+  nixCurlOkFailInstaller() {
+    local args_=("$@") outfile
+    for (( i=0; i < ${#args_[@]}; i++ )); do
+      [[ ${args_[$i]} == -o ]] && { outfile=${args_[$((i+1))]}; break; }
+    done
+    [[ -n ${outfile:-} ]] || return 1
+    printf '#!/bin/bash\nexit 42\n' >"$outfile"
+  }
+
+  nixCurlFail() { return 1; }
+
+  nixHashOk() { return 0; }
+
+  nixHashFail() { echo "FAILED"; return 1; }
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    ## arrange
+    local dir
+    tesht.MktempDir dir || return 128
+
+    local marker="$dir/installer-ran"
+    local argvfile="$dir/installer-argv"
+
+    local curl=$mockCurl
+    local sha256sum=$mockHash
+    local uname_s=${mockUnameS:-Linux}
+    local uname_m=x86_64
+
+    ## act
+    local got rc
+    got=$(installNix 2>&1) && rc=$? || rc=$?
+
+    ## assert
+    (( rc == wantRc )) || { echo "rc=$rc, want $wantRc: $got"; return 1; }
+    case $casename in
+      case1)
+        [[ -f $marker ]] || {
+          echo "installer should have been executed"; return 1
+        }
+        local argv
+        argv=$(< "$argvfile")
+        [[ $argv == *"install --no-confirm --init none"* ]] || {
+          echo "argv=$argv, want 'install --no-confirm --init none'"; return 1
+        }
+        ;;
+      case2|case3|case5)
+        [[ ! -f $marker ]] || {
+          echo "installer should not have been executed"; return 1
+        }
+        ;;
+    esac
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_verifyNixFlakes tests the post-install verification that nix is runnable
+# and flakes are enabled. Mocks nix (inter-system dependency) via DI.
+test_verifyNixFlakes() {
+  local -A case1=(
+    [name]='nix works with flakes -- passes'
+    [mock]=mockNixFlakesEnabled
+    [wantRc]=0
+  )
+  local -A case2=(
+    [name]='nix not runnable -- fails'
+    [mock]=mockNixMissing
+    [wantRc]=1
+  )
+  local -A case3=(
+    [name]='flakes not enabled -- fails'
+    [mock]=mockNixNoFlakes
+    [wantRc]=1
+  )
+
+  mockNixFlakesEnabled() {
+    case $1 in
+      --version ) echo "nix (Determinate Nix) 2.28.3";;
+      config ) echo "flakes nix-command";;
+    esac
+  }
+
+  mockNixMissing() { return 127; }
+
+  mockNixNoFlakes() {
+    case $1 in
+      --version ) echo "nix 2.28.3";;
+      config ) echo "";;
+    esac
+  }
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    ## arrange
+    local nix=$mock
+
+    ## act
+    local got rc
+    got=$(verifyNixFlakes 2>&1) && rc=$? || rc=$?
+
+    ## assert
+    (( rc == wantRc )) || { echo "rc=$rc, want $wantRc: $got"; return 1; }
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecretMissingFile tests with-secret fails on missing file.
 test_withSecretMissingFile() {
   local rc
