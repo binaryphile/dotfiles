@@ -49,7 +49,7 @@ contexts/
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
 tmux.conf                       # Context-dependent symlink
 ssh/config, ssh/authorized_keys  # Tracked; HM-managed client config (symlinked via linux-base.nix)
-ssh/*.pub                        # Per-machine public key sidecars (fingerprint validation only; no private keys or encrypted material in repo)
+ssh/*.pub                        # Per-machine public key sidecars: auth (fingerprint validation) and signing (commit verification)
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
 scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, encrypt-secrets, with-secret, lib.bash, load-sparkline)
@@ -67,7 +67,7 @@ docs/                           # use-cases.md, design.md, security.md, secrets-
 1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
 3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#penguin` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age` (used by `scripts/encrypt-secrets` for local secrets backup -- not for repo storage; see [Security Model](#security-model)).
-4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores SSH key from local or mount cache; if neither exists, prompts Ted to retrieve from 1Password (see [Security Model](#security-model)). `restoreSecrets` restores secrets bundle from cache or 1Password. `loadSshKey` loads key into agent via keychain with `SSH_ASKPASS_REQUIRE=never` (the nix openssh derivation has a compiled-in askpass path that doesn't exist; without this override, `ssh-add` inside keychain's nested `$()` falls back to the broken askpass instead of prompting on `/dev/tty`). `authPreflight` checks that the key is loaded in the agent, then tests SSH auth to each provider -- distinguishes "key not in agent" from "key not registered" from "unreachable." After this step, `git push` and SSH clones work. Skipped if no hostname is set (re-run with hostname to fix).
+4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores auth key from local or mount cache; if neither exists, retrieves from 1Password (see [Security Model](#security-model)). `restoreSigningKey` restores the per-machine commit signing key from local or 1Password; generates if unavailable. `restoreSecrets` restores secrets bundle from cache or 1Password. `loadSshKey` loads auth key into agent via keychain with `SSH_ASKPASS_REQUIRE=never` (the nix openssh derivation has a compiled-in askpass path that doesn't exist; without this override, `ssh-add` inside keychain's nested `$()` falls back to the broken askpass instead of prompting on `/dev/tty`). `authPreflight` checks that the key is loaded in the agent, then tests SSH auth to each provider -- distinguishes "key not in agent" from "key not registered" from "unreachable." After this step, `git push`, SSH clones, and signed commits all work. Skipped if no hostname is set (re-run with hostname to fix).
 
 **Stage 2** (projects, dev tool repos):
 
@@ -296,16 +296,37 @@ Per-machine SSH keys identified by hostname. Public key sidecars committed to th
 
 ```
 ssh/
-  id_ed25519_calumny.pub      # plaintext public key (for fingerprint validation)
+  id_ed25519_calumny.pub             # auth key public sidecar (fingerprint validation)
+  id_ed25519_signing_calumny.pub     # signing key public sidecar (commit verification)
 ```
 
 Private keys are stored in 1Password, not in the repo. See [Security Model](#security-model).
+
+**Two keys per machine:** each machine has separate ed25519 keys for SSH authentication and git commit signing. Per crypto practice, keys are not reused across purposes. The auth key has a passphrase and is loaded into the agent via keychain. The signing key has no passphrase (used on every commit; git reads it directly without an agent).
+
+| Key | Path | Passphrase | Agent | Purpose |
+|-----|------|------------|-------|---------|
+| Auth | `~/.ssh/id_ed25519` | Yes | keychain | SSH to registries, remote hosts |
+| Signing | `~/.ssh/id_ed25519_signing` | No | Not needed | Git commit/tag signing |
 
 **Restore priority** (stage 1 step 4):
 1. **Local** -- `~/.ssh/id_ed25519` exists and `.pub` fingerprint matches repo `.pub` -> accept
 2. **Mount cache** -- `$CrostiniDir/ssh/<hostname>/id_ed25519` with `.pub` fingerprint matching repo `.pub` -> restore, no passphrase needed
 3. **1Password** -- retrieve private key via `op` CLI (or manually from app) -> install to `~/.ssh/id_ed25519`
 4. **Generate** -- no key exists anywhere -> generate new passphrase-protected key, store in 1Password, commit `.pub` sidecar to repo
+
+**Signing key restore priority** (stage 1 step 4, after auth key):
+1. **Local** -- `~/.ssh/id_ed25519_signing` exists -> accept
+2. **1Password** -- `op` authenticated and item `<hostname> signing SSH Key` exists in Private vault -> retrieve via `op read "op://Private/<hostname> signing SSH Key/private key?ssh-format=openssh"`, derive `.pub` via `ssh-keygen -y`
+3. **Generate** -- no key in 1Password -> generate with `ssh-keygen -t ed25519 -N ""`, prompt to store in 1Password and register on GitHub/Codeberg as a signing key
+
+The signing key is simpler than the auth key: no passphrase, no mount cache, no age encryption.
+
+**Why no passphrase:** the signing key is used on every commit. A passphrase would prompt on every `git commit`, which is too much friction for a key whose compromise model is the same as local filesystem access -- an attacker who can read the signing key file can also read the auth key, secrets, and agent socket. The passphrase on the auth key protects against offline key theft (e.g., from a backup); the signing key is not cached on the mount and is not worth that tradeoff.
+
+**Why no mount cache:** the signing key can be regenerated trivially (no passphrase, no registry dependencies beyond GitHub/Codeberg signing key registration). Caching plaintext on the ChromeOS shared mount for a key that takes seconds to regenerate is not worth the confidentiality cost. Auth keys use the cache because they're registered with multiple providers and rotating them is expensive.
+
+The 1Password item name follows the convention `<hostname> signing SSH Key` (e.g., `calderon signing SSH Key`).
 
 **Trust model:** private key is trusted to match `.pub` if the pair was produced together by `ssh-keygen`. Fingerprint validation against the repo `.pub` is a self-consistency check, not an authenticity guarantee (see [Security Model](#security-model)). Manual `.pub` replacement is unsupported.
 

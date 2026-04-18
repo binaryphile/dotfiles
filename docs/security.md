@@ -404,7 +404,7 @@ The repo `.pub` sidecar enables fingerprint validation: when restoring a key fro
 ### Repo content integrity
 
 Repo integrity relies on:
-- **SSH commit signing** -- all commits are signed with Ted's SSH key (`~/.ssh/id_ed25519.pub`). `git log --show-signature` verifies authorship. Unsigned or foreign-signed commits are a signal of compromise.
+- **SSH commit signing** -- all commits are signed with a per-machine signing key (`~/.ssh/id_ed25519_signing`), separate from the auth key per crypto practice (keys are not reused across purposes). Signing keys are stored in 1Password and restored by `update-env`. `git log --show-signature` verifies authorship. Unsigned or foreign-signed commits are a signal of compromise.
 - **GitHub branch protection** -- `main` requires signed commits and disallows force-push. History cannot be rewritten (except via the emergency procedure in [Incident Response](#secret-committed-to-public-repo), which requires temporarily disabling protection).
 - **GitHub account security** (2FA, SSH key auth).
 - **SSH transport authentication** (host key TOFU; first clone is HTTPS without content verification).
@@ -446,7 +446,7 @@ TOFU (Trust On First Use): `StrictHostKeyChecking=accept-new` accepts unknown ho
 | Fingerprint validation | Key/hostname mismatch | Self-consistency check against repo `.pub` |
 | TOFU host keys | MITM on established connections | `accept-new` policy in SSH config |
 | SHA-256 hash verification | Downloaded binaries | Pinned hash checked before execution/install (gpoc .deb) |
-| SSH commit signing | Commit authorship | All commits signed with ed25519 SSH key; unsigned commits rejected by GitHub |
+| SSH commit signing | Commit authorship | Per-machine signing key (separate from auth key); unsigned commits rejected by GitHub |
 | Branch protection | Repo integrity | Require signed commits on `main`, disallow force-push |
 | History rewrite + rotation | Past exposure | Strip + force-push + credential rotation after incidents |
 | CLAUDE.md secrets directive | AI agent secret access | Advisory; instructs Claude Code not to read/display/handle secrets |

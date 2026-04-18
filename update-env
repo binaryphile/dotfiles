@@ -169,6 +169,7 @@ stage1() {
   case $Platform in crostini )
     section credential
     try restoreSshKey
+    try restoreSigningKey
     try restoreSecrets
     try loadSshKey
     section auth-preflight
@@ -837,6 +838,7 @@ if [[ ${DOTFILES_TEST:-} == 1 ]]; then
   tar=${tar:-tar}
   ssh=${ssh:-ssh}
   ip=${ip:-ip}
+  op=${op:-op}
 else
   age=age
   ssh_keygen=ssh-keygen
@@ -845,6 +847,7 @@ else
   tar=tar
   ssh=ssh
   ip=ip
+  op=op
 fi
 
 SshKeyStatus=present
@@ -1345,6 +1348,70 @@ loadSshKey() {
   eval "$(SSH_ASKPASS_REQUIRE=never $keychain --eval id_ed25519)" || {
     echo "WARNING: keychain failed to load SSH key." >&2
   }
+}
+
+# restoreSigningKey -- ensure a per-machine git commit signing key exists.
+# Separate from auth key per crypto practice (keys not reused across purposes).
+# No passphrase (used on every commit), no mount cache (trivially regenerated).
+# Restore priority: local -> 1Password -> generate.
+restoreSigningKey() {
+  local hostname
+  hostname=$(lib.MachineHostname)
+  lib.ValidateHostname $hostname || return 1
+  local localKey=$HOME/.ssh/id_ed25519_signing
+  local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
+
+  [[ -f $localKey ]] && {
+    # Signing key exists locally. Validate against repo sidecar if present.
+    if [[ -f $repoPub ]]; then
+      local localFp repoFp
+      localFp=$($ssh_keygen -lf "$localKey.pub" 2>/dev/null | awk '{print $2}')
+      repoFp=$($ssh_keygen -lf "$repoPub" 2>/dev/null | awk '{print $2}')
+      if [[ -n $localFp && -n $repoFp && $localFp != "$repoFp" ]]; then
+        echo "ERROR: signing key fingerprint mismatch -- local ($localFp) != repo ($repoFp)" >&2
+        return 1
+      fi
+    else
+      cp "$localKey.pub" "$repoPub" 2>/dev/null || true
+      echo "Signing key .pub sidecar added to repo. Commit and push."
+    fi
+    return 0
+  }
+
+  # Try 1Password retrieval
+  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
+    local opItem="$hostname signing SSH Key"
+    if $op item get "$opItem" --vault Private >/dev/null 2>&1; then
+      echo "Restoring signing key from 1Password ($opItem)..."
+      $op read --out-file "$localKey" "op://Private/$opItem/private key?ssh-format=openssh" || {
+        echo "ERROR: 1Password signing key retrieval failed." >&2
+        return 1
+      }
+      chmod 600 "$localKey"
+      $ssh_keygen -y -f "$localKey" >"$localKey.pub" 2>/dev/null
+      chmod 644 "$localKey.pub"
+      cp "$localKey.pub" "$repoPub" 2>/dev/null || true
+      echo "Signing key restored from 1Password."
+      return 0
+    fi
+  fi
+
+  # Generate new signing key (no passphrase)
+  echo "Generating git commit signing key for $hostname..."
+  $ssh_keygen -t ed25519 -f "$localKey" -N "" -C "ted@${hostname}-signing" || {
+    echo "ERROR: signing key generation failed." >&2
+    return 1
+  }
+  chmod 600 "$localKey"
+  chmod 644 "$localKey.pub"
+  cp "$localKey.pub" "$repoPub" 2>/dev/null || true
+
+  echo "Signing key generated: $localKey"
+  echo "Store in 1Password as: $hostname signing SSH Key"
+  echo "Register as a signing key on GitHub: https://github.com/settings/keys"
+  echo "  Key type: Signing Key"
+  echo "  $(cat "$localKey.pub")"
+  echo "Then: cd ~/dotfiles && git add ssh/ && git commit && git push"
 }
 
 authPreflight() {

@@ -53,14 +53,22 @@ Restore priority (same order as [design.md](design.md#ssh-key-bootstrap-uc-4)):
 
 Manual procedure. Ordering matters -- do not destroy the only copy. See UC-4a in [use-cases.md](use-cases.md).
 
+For either key type, the procedure is:
+
 1. Verify current key is in 1Password. If not, store it now.
-2. Delete local key: `rm ~/.ssh/id_ed25519{,.pub}`
-3. Delete repo `.pub`: `rm ~/dotfiles/ssh/id_ed25519_$HOST.pub`
-4. Clear cache (Crostini): `rm -rf $CrostiniDir/ssh/$HOST/`
-5. Run `update-env` -- generates new key
-6. Store new private key in 1Password
-7. Commit new `.pub`: `cd ~/dotfiles && git add ssh/ && git commit && git push`
-8. Register new `.pub` with registries, deregister old
+2. Delete local key and repo `.pub`. Clear mount cache if auth key on Crostini.
+3. Run `update-env` -- generates new key.
+4. Store new private key in 1Password.
+5. Commit new `.pub`: `cd ~/dotfiles && git add ssh/ && git commit && git push`
+6. Register new `.pub`, deregister old.
+
+**Key-specific details:**
+
+| Step | Auth key | Signing key |
+|------|----------|-------------|
+| Delete | `rm ~/.ssh/id_ed25519{,.pub}` `rm ~/dotfiles/ssh/id_ed25519_$HOST.pub` `rm -rf $CrostiniDir/ssh/$HOST/` | `rm ~/.ssh/id_ed25519_signing{,.pub}` `rm ~/dotfiles/ssh/id_ed25519_signing_$HOST.pub` |
+| 1Password item | `$HOST SSH Key` or similar | `$HOST signing SSH Key` |
+| Register | All registries (auth key) | GitHub + Codeberg only (signing key) |
 
 No automated rotation command exists. This is a known gap.
 
@@ -84,13 +92,13 @@ No automated rotation command exists. This is a known gap.
 Remove a retired machine's key material. See UC-4d in [use-cases.md](use-cases.md).
 
 ```
-git rm --ignore-unmatch ssh/id_ed25519_<hostname>.pub
+git rm --ignore-unmatch ssh/id_ed25519_<hostname>.pub ssh/id_ed25519_signing_<hostname>.pub
 rm -rf $CrostiniDir/ssh/<hostname>/ $CrostiniDir/secrets/<hostname>/  # if Crostini
 git commit -m "Decommission <hostname>" && git push
 ```
 
 Also:
-- Remove or archive the SSH key item in 1Password
+- Remove or archive both SSH key items in 1Password (auth and signing)
 - Remove or archive secrets items for this hostname in 1Password
 - Deregister the old `.pub` from registry settings
 

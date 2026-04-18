@@ -146,63 +146,73 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Main Success Scenario:**
   1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
   2. System installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
-  3. System restores SSH key and secrets from local or mount cache. If neither exists, retrieves from 1Password (or generates new). Loads key into agent, validates provider auth. Working shell with full identity.
-  4. System clones dev tool and project repos, prints remaining manual steps
+  3. System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
+  4. System restores signing key from local or 1Password (or generates new).
+  5. System restores secrets from local, mount cache, or 1Password.
+  6. System clones dev tool and project repos, prints remaining manual steps
 - **Extensions:**
   - 1a. Crostini first run, no hostname -> fail with instructions
   - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions
   - 2a. Package lock held -> waits; resume at step 2
-  - 3a. Key already exists locally, matches repo `.pub` -> accept; resume at step 3
-  - 3b. Mount cache valid -> restore without passphrase; resume at step 3
+  - 3a. Auth key exists locally, matches repo `.pub` -> accept; resume at step 4
+  - 3b. Mount cache valid -> restore auth key without passphrase; resume at step 4
   - 3c. No TTY -> skip credentials; HTTPS clones still work; separate success
-  - 3d. No local key, no cache, `op` available -> retrieve from 1Password; resume at step 3
-  - 3e. No local key, no cache, no `op` -> generate new key; store in 1Password manually; resume at step 3
-  - 3f. Local key mismatches repo `.pub` -> collision error; fail
-  - 3g. Agent load fails -> warn "key not in agent"; preflight skips registry checks (prevents misleading "key not registered" when the key was never offered)
-  - 3h. NixOS host -> skip package manager and credential restore; resume at step 4
-  - 4a. Repo has uncommitted local changes -> stash, update, restore; resume at step 4
-  - 4b. Provider auth fails -> reports per provider; private repos skipped; separate success
-  - 4c. VPN-dependent repo unreachable -> fails fast; resume at next repo
+  - 3d. No auth key locally or in cache, `op` available -> retrieve from 1Password; resume at step 4
+  - 3e. No auth key anywhere -> generate; store in 1Password manually; resume at step 4
+  - 3f. Auth key mismatches repo `.pub` -> collision error; fail
+  - 3g. Agent load fails -> warn "key not in agent"; preflight skips registry checks
+  - 4a. Signing key exists locally -> accept; resume at step 5
+  - 4b. Signing key in 1Password -> restore; resume at step 5
+  - 4c. Signing key missing everywhere -> generate, prompt to store in 1Password and register on GitHub/Codeberg; resume at step 5
+  - 5a. NixOS host -> skip credential restore; resume at step 6
+  - 6a. Repo has uncommitted local changes -> stash, update, restore; resume at step 6
+  - 6b. Provider auth fails -> reports per provider; private repos skipped; separate success
+  - 6c. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges.
 - **Minimal Manual Steps** (printed inline by update-env with copyable URLs):
-  - Register SSH public key with each registry (URLs printed in output):
-    - https://github.com/settings/keys
-    - https://codeberg.org/user/settings/keys
+  - Register SSH auth key with each registry (URLs printed in output):
+    - https://github.com/settings/keys (Authentication Key)
+    - https://codeberg.org/user/settings/keys (Authentication Key)
     - https://bitbucket.org/account/settings/ssh-keys/
     - https://stash.digi.com/plugins/servlet/ssh/account/keys (VPN required)
+  - Register SSH signing key on platforms that verify commit signatures:
+    - https://github.com/settings/keys (Signing Key)
+    - https://codeberg.org/user/settings/keys (Signing Key)
+  - Store signing key in 1Password (if newly generated)
   - Crostini: configure ChromeOS Chrome proxy (per-network, one-time; instructions printed in output):
     - ChromeOS Settings > Network > connection > Proxy > Automatic proxy configuration
     - URL: `http://127.0.0.1:8120/proxy.pac`
-- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH identity restored from 1Password or cache; user informed of remaining manual steps
+- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH auth and signing keys restored; commits signed; user informed of remaining manual steps
 - **Technology:** update-env, 1Password CLI (`op`), ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4), [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4), and [security.md](security.md).
 
 ---
 
-### UC-4a: Rotate SSH Key
+### UC-4a: Rotate SSH Keys
 
 - **Primary Actor:** Ted
-- **Goal:** Replace current SSH key with a new one across all machines and registries
-- **Scope:** 1Password + dotfiles repo (.pub sidecar) + Git registry settings
+- **Goal:** Replace current SSH keys (auth and/or signing) with new ones across machines and registries
+- **Scope:** 1Password + dotfiles repo (.pub sidecars) + Git registry settings
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** Suspected compromise, scheduled rotation, or key algorithm upgrade
-- **Preconditions:** Current key exists in 1Password or locally. Old `.pub` sidecar in repo.
+- **Preconditions:** Current keys exist in 1Password or locally. Old `.pub` sidecars in repo.
 - **Stakeholders:**
-  - Ted -- continued access to all Git registries after rotation
-  - Security -- old key deregistered; new key stored in 1Password, not in repo. See [security.md](security.md)
+  - Ted -- continued access to all Git registries after rotation; continued commit verification
+  - Security -- old keys deregistered; new keys stored in 1Password, not in repo. See [security.md](security.md)
 - **Main Success Scenario:**
-  1. Ted verifies current key is in 1Password (if not, stores it now)
-  2. Ted deletes local key and cache
-  3. Ted runs `update-env` -- generates new key
-  4. Ted stores new key in 1Password
-  5. Ted commits new `.pub` sidecar (not private key) and pushes
-  6. Ted registers new `.pub` with registries, deregisters old
+  1. Ted verifies current keys are in 1Password (if not, stores them now)
+  2. Ted deletes local keys and cache
+  3. Ted runs `update-env` -- generates new keys
+  4. Ted stores new keys in 1Password
+  5. Ted commits new `.pub` sidecars (not private keys) and pushes
+  6. Ted registers auth key with all registries, signing key with GitHub and Codeberg; deregisters old keys
 - **Extensions:**
   - 1a. Key not in 1Password and only copy is local -> store in 1Password before deleting
-  - 3a. `op` available -> new key stored in 1Password automatically
+  - 3a. `op` available -> new keys stored in 1Password automatically
   - 3b. `op` not available -> Ted stores manually; `update-env` prints reminder
+  - 5a. Signing key only rotation -> auth key and registrations unchanged
   - 6a. Registry unreachable (VPN down) -> defer; re-run preflight later
-- **Minimal Guarantee:** Old key backed up in 1Password before deletion; no key lost
+- **Minimal Guarantee:** Old keys backed up in 1Password before deletion; no key lost
 - **Success Guarantee:** New key in 1Password, `.pub` in repo, registered with all registries, old key deregistered
 - **Procedure:** [secrets-lifecycle.md Key rotation](secrets-lifecycle.md#key-rotation)
 
