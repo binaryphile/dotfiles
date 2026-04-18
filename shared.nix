@@ -14,6 +14,7 @@
     highlight
     htop
     jira-cli-go
+    _1password-cli
     jq
     keychain
     liquidprompt
@@ -29,7 +30,6 @@
     signal-desktop
     silver-searcher
     stgit
-    tmux
     tree
     vpn-slice
     zip

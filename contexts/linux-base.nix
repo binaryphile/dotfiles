@@ -20,11 +20,56 @@ let
     runtimeInputs = [ pkgs.curl pkgs.coreutils ];
   };
 
+  # Panel sibling files: probe-lib.bash and load-sparkline, installed to
+  # a store path so the nix-packaged panel can reference them via @here@
+  # substitution. Shared source -- waybar on NixOS sources probe-lib
+  # from the dotfiles tree independently.
+  panel-lib = pkgs.runCommand "panel-lib" {} ''
+    mkdir -p $out
+    cp ${../scripts/probe-lib.bash} $out/probe-lib.bash
+    cp ${../scripts/load-sparkline} $out/load-sparkline
+  '';
+
+  # Panel: tmux status bar renderer. Nix-packaged with runtime deps on
+  # PATH and @here@ pointing to panel-lib for probe-lib.bash and
+  # load-sparkline. See design.md Status widgets (UC-10).
+  panel = mkScriptBin {
+    name = "panel";
+    src = ../scripts/panel;
+    substitutions."here" = "${panel-lib}";
+    runtimeInputs = [
+      pkgs.bash
+      pkgs.coreutils
+      pkgs.curl
+      pkgs.gawk
+      pkgs.gnugrep
+      pkgs.iproute2
+      pkgs.jq
+      pkgs.openssh
+      pkgs.procps
+      pkgs.systemd
+    ];
+  };
+
+  # Tmux with panel on PATH. Overlaid via symlinkJoin so tmux's status
+  # bar commands (#(panel ...)) find the panel binary regardless of the
+  # session's PATH state. macOS does not need panel (no headless tmux
+  # sessions); it uses plain tmux from shared.nix.
+  tmux-with-panel = pkgs.symlinkJoin {
+    name = "tmux-with-panel";
+    paths = [ pkgs.tmux ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/tmux \
+        --prefix PATH : ${pkgs.lib.makeBinPath [ panel ]}
+    '';
+  };
+
 in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ notify-send-bridge ];
+  home.packages = [ notify-send-bridge tmux-with-panel ];
 
   # Dotfile symlinks migrated from update-env. mkOutOfStoreSymlink keeps
   # them as live symlinks into ~/dotfiles so edits take effect immediately,
