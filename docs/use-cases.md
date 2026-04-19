@@ -140,17 +140,17 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
   - Future Ted -- works without remembering steps; idempotent re-runs fix drift
-  - Security -- private keys in 1Password, not in repo; signed commits with force-push disabled; downloaded binaries hash-verified; TOFU host-key model. See [security.md](security.md)
+  - Security -- private keys in 1Password, not in repo; signed commits with force-push disabled; executed downloads hash-verified; TOFU host-key model. See [security.md](security.md)
   - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
   - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
 - **Main Success Scenario:**
-  1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
-  2. System installs package manager, VPN client, and all packages. Writes a declarative nix.conf (Crostini/standalone only) that enables flakes and trusts only `cache.nixos.org` -- no third-party caches. Dev tools, editor, shell config available after this step. VPN is usable.
-  3. System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
-  4. System restores signing key from local or 1Password (or generates new). Warns if signing key needs registration on GitHub/Codeberg.
-  5. System restores secrets from local, mount cache, or 1Password.
+  1. Ted runs `curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/update-env | bash -s -- -1 <hostname>` (bare machine) or `update-env` (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
+  2. System clones dotfiles, installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
+  3. (Crostini only) System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
+  4. (Crostini only) System restores signing key from local or 1Password (or generates new). Warns if signing key needs registration on GitHub/Codeberg.
+  5. (Crostini only) System restores secrets from local or mount cache. If neither exists, prints instructions for manual creation.
   6. System clones dev tool and project repos, prints remaining manual steps
-  Credential-only mode (`update-env -c`): runs steps 3-5 only, for completing identity setup after stage 1 without re-running the full pipeline. Requires stage 1 phases 1-3 to have completed previously (nix, home-manager, hostname configured).
+  Credential-only mode (`update-env -c`, Crostini only): runs steps 3-5 only, for completing identity setup after stage 1 without re-running the full pipeline. Requires packages and hostname already configured.
 - **Extensions:**
   - 1a. Crostini first run, no hostname -> fail with instructions
   - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions
@@ -166,7 +166,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 4b. Signing key in 1Password -> restore; resume at step 5
   - 4c. Signing key missing everywhere -> generate, prompt to store in 1Password and register on GitHub/Codeberg; resume at step 5
   - 3h. Credential setup needed after interrupted stage 1 -> `update-env -c` runs credentials only; resume at step 6
-  - 5a. NixOS host -> skip credential restore; resume at step 6
+  - 5a. Non-Crostini host -> skip credential restore (steps 3-5); resume at step 6
   - 6a. Repo has uncommitted local changes -> stash, update, restore; resume at step 6
   - 6b. Provider auth fails -> reports per provider; private repos skipped; separate success
   - 6c. VPN-dependent repo unreachable -> fails fast; resume at next repo
