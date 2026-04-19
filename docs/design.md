@@ -603,4 +603,4 @@ Tests do not duplicate nix's guarantees. Nix handles package presence, derivatio
 
 ## Resolved Questions
 
-- On NixOS, home-manager runs as a NixOS module. Does `update-env` skip its home-manager step? **Yes.** `platform()` detects NixOS via `/etc/NIXOS` (with host-specific context support via `$HOSTNAME`) and gates step 3 (Nix + home-manager install) to non-NixOS platforms only.
+- On NixOS, home-manager runs as a NixOS module. Does `update-env` skip its home-manager step? **Yes.** `detectPlatform` detects NixOS via `/etc/NIXOS` (with host-specific context support via `$HOSTNAME`) and gates step 3 (Nix + home-manager install) to non-NixOS platforms only.

@@ -45,10 +45,8 @@ packaging, implementation status.
 ## Outstanding
 
 ### P2 (from adversarial reviews)
-1. **CLI `-c` positive-path boundary test** -- reject path tested, happy
-   path unverified at CLI boundary (platform() not injectable externally)
-2. **Panel hermetic runtime test** -- audited but no stripped-PATH test
-3. **tmux package split diffuse** -- functional but selection spread across
+1. **Panel hermetic runtime test** -- audited but no stripped-PATH test
+2. **tmux package split diffuse** -- functional but selection spread across
    shared.nix (removed), linux-base.nix (tmux-with-panel), macos (plain)
 
 ### From prior sessions
@@ -75,7 +73,7 @@ tesht update-env_test.bash test_each test_keepIf test_map test_verifySha256 \
   test_pubFingerprint test_crostiniHostname test_authPreflight \
   test_restoreSecretsTierSelection test_withSecretMissingFile \
   test_usageText test_credentialPreflight test_cliHelp \
-  test_cliCredentialRejectsNonCrostini test_sshKeyAction \
+  test_cliCredential test_sshKeyAction \
   test_signingKeyPreflight test_withSecret
 ```
 
