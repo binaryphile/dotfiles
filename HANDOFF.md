@@ -25,13 +25,10 @@ security model alignment, flake config rename.
 1. **Signed tag/release for bootstrap** -- verify repo before exec.
 
 ### Housekeeping
-1. Auth keys registered on all registries (GitHub, Codeberg, Bitbucket)
-2. Register signing key on Codeberg: https://codeberg.org/user/settings/keys
-3. Re-enable GitHub branch protection: https://github.com/binaryphile/dotfiles/settings/branches
-4. Run stage 2 from a TTY terminal: `~/dotfiles/update-env -2`
+1. Run stage 2 from a TTY terminal: `~/dotfiles/update-env -2`
    (Claude Code's shell has no TTY -- task.bash progress output fails)
-5. Authenticate `gh`: `gh auth login`
-6. Remove deprecated `penguin` flake compat alias
+2. Authenticate `gh`: `gh auth login`
+3. Remove deprecated `penguin` flake compat alias
 
 ## Testing
 
