@@ -911,26 +911,6 @@ nvimHeadlessPlugInstallTask() {
 
 # credential
 
-removeMatchingFileTask() {
-  local targetFilename=$1 matchFilename=$2
-  desc  "remove file $targetFilename if it matches $matchFilename"
-
-  ifFilesDontMatch() {
-    [[ -e $matchFilename ]] && ! [[ -e $targetFilename ]] ||
-      [[ $(<$targetFilename) != "$(<$matchFilename)" ]]
-  }
-  ok ifFilesDontMatch
-
-  rmTargetIfMatches() {
-    if [[ -e $matchFilename && -e $targetFilename ]] &&
-      [[ $(<$targetFilename) == "$(<$matchFilename)" ]];
-    then
-      rm "$targetFilename"
-    fi
-  }
-  cmd rmTargetIfMatches
-}
-
 sshKeygenTask() {
   local keyFilename=$1
   desc  'generate an ssh key'
