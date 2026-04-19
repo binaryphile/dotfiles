@@ -318,7 +318,7 @@ Private keys are stored in 1Password, not in the repo. See [Security Model](#sec
 **Signing key restore priority** (stage 1 step 4, after auth key):
 1. **Local** -- `~/.ssh/id_ed25519_signing` exists -> accept
 2. **1Password** -- `op` authenticated and item `<hostname> signing SSH Key` exists in Private vault -> retrieve via `op read "op://Private/<hostname> signing SSH Key/private key?ssh-format=openssh"`, derive `.pub` via `ssh-keygen -y`
-3. **Generate** -- no key in 1Password -> generate with `ssh-keygen -t ed25519 -N ""`, prompt to store in 1Password and register on GitHub/Codeberg as a signing key
+3. **Generate** -- no key in 1Password -> generate with `ssh-keygen -t ed25519 -N ""`, prompt to store in 1Password and register on GitHub as a signing key
 
 **Decision logic** (`signingKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action, same pattern as `sshKeyAction` for auth keys. Code is authoritative; this table is a reading aid.
 
@@ -334,7 +334,7 @@ The signing key is simpler than the auth key: no passphrase, no mount cache, no 
 
 **Why no passphrase:** the signing key is used on every commit. A passphrase would prompt on every `git commit`, which is too much friction for a key whose compromise model is the same as local filesystem access -- an attacker who can read the signing key file can also read the auth key, secrets, and agent socket. The passphrase on the auth key protects against offline key theft (e.g., from a backup); the signing key is not cached on the mount and is not worth that tradeoff.
 
-**Why no mount cache:** the signing key can be regenerated trivially (no passphrase, no registry dependencies beyond GitHub/Codeberg signing key registration). Caching plaintext on the ChromeOS shared mount for a key that takes seconds to regenerate is not worth the confidentiality cost. Auth keys use the cache because they're registered with multiple providers and rotating them is expensive.
+**Why no mount cache:** the signing key can be regenerated trivially (no passphrase, no registry dependencies beyond GitHub signing key registration). Caching plaintext on the ChromeOS shared mount for a key that takes seconds to regenerate is not worth the confidentiality cost. Auth keys use the cache because they're registered with multiple providers and rotating them is expensive.
 
 The 1Password item naming convention is documented in [secrets-lifecycle.md 1Password Naming Convention](secrets-lifecycle.md#1password-naming-convention). Code uses `opAuthKeyItem`, `opSigningKeyItem`, and `OpVault` constants as the single source of truth.
 
@@ -346,7 +346,7 @@ The 1Password item naming convention is documented in [secrets-lifecycle.md 1Pas
 
 **Auth preflight** (stage 1 step 4): guards registry checks with a fingerprint-specific agent test -- gets the `.pub` fingerprint via `ssh-keygen -lf`, then checks `ssh-add -l` for that fingerprint. If the specific key is not in the agent (empty agent, wrong key loaded, or unreadable `.pub`), reports "key not in agent" and skips registry checks. This prevents the misleading "key not registered" diagnostic that `BatchMode=yes` SSH failures would otherwise produce (the failure looks identical whether the key was rejected by the registry or never offered). When the key is confirmed in the agent, tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
 
-**Signing key preflight** (stage 1, after auth preflight): warns if the signing key exists locally but its `.pub` sidecar is untracked by git. An untracked sidecar means the key was generated but the registration workflow (store in 1Password, register on GitHub/Codeberg, commit sidecar, push) was not completed. Also warns when `op` is available but the signing key item (`<hostname> signing SSH Key`) is not in 1Password. Prevents the confusing failure mode where commits are signed but rejected by a protected branch because the key isn't registered. Non-blocking -- prints warnings with registration URLs and 1Password item name, does not prevent `update-env` from completing.
+**Signing key preflight** (stage 1, after auth preflight): warns if the signing key exists locally but its `.pub` sidecar is untracked by git. An untracked sidecar means the key was generated but the registration workflow (store in 1Password, register on GitHub, commit sidecar, push) was not completed. Also warns when `op` is available but the signing key item (`<hostname> signing SSH Key`) is not in 1Password. Prevents the confusing failure mode where commits are signed but rejected by a protected branch because the key isn't registered. Non-blocking -- prints warnings with registration URLs and 1Password item name, does not prevent `update-env` from completing.
 
 **Decision logic** (`sshKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action. Code is authoritative; this table is a reading aid.
 
