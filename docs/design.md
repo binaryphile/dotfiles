@@ -336,7 +336,7 @@ The signing key is simpler than the auth key: no passphrase, no mount cache, no 
 
 **Why no mount cache:** the signing key can be regenerated trivially (no passphrase, no registry dependencies beyond GitHub/Codeberg signing key registration). Caching plaintext on the ChromeOS shared mount for a key that takes seconds to regenerate is not worth the confidentiality cost. Auth keys use the cache because they're registered with multiple providers and rotating them is expensive.
 
-The 1Password item name follows the convention `<hostname> signing SSH Key` (e.g., `calderon signing SSH Key`).
+The 1Password item naming convention is documented in [secrets-lifecycle.md 1Password Naming Convention](secrets-lifecycle.md#1password-naming-convention). Code uses `opAuthKeyItem`, `opSigningKeyItem`, and `OpVault` constants as the single source of truth.
 
 **Trust model:** private key is trusted to match `.pub` if the pair was produced together by `ssh-keygen`. Fingerprint validation against the repo `.pub` is a self-consistency check, not an authenticity guarantee (see [Security Model](#security-model)). Manual `.pub` replacement is unsupported.
 
