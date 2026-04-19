@@ -1458,6 +1458,20 @@ test_credentialPreflight() {
     [wantMsg]='hostname'
     [skipHostname]=1
   )
+  local -A case4=(
+    [name]='rejects crostini with empty hostname'
+    [platform]=crostini
+    [wantRc]=2
+    [wantMsg]='hostname'
+    [emptyHostname]=1
+  )
+  local -A case5=(
+    [name]='rejects crostini with invalid hostname'
+    [platform]=crostini
+    [wantRc]=2
+    [wantMsg]='invalid'
+    [badHostname]=INVALID
+  )
 
   subtest() {
     local casename=$1
@@ -1468,8 +1482,13 @@ test_credentialPreflight() {
     tesht.MktempDir dir || return 128
     Platform=$platform
     CrostiniDir=$dir/crostini
+    CrostiniDirL=$dir/crostini
     mkdir -p "$CrostiniDir"
-    if [[ -z ${skipHostname:-} ]]; then
+    if [[ -n ${badHostname:-} ]]; then
+      echo "$badHostname" >"$CrostiniDir/hostname"
+    elif [[ -n ${emptyHostname:-} ]]; then
+      touch "$CrostiniDir/hostname"
+    elif [[ -z ${skipHostname:-} ]]; then
       echo testhost >"$CrostiniDir/hostname"
     fi
 
@@ -1483,6 +1502,60 @@ test_credentialPreflight() {
       [[ $got == *"$wantMsg"* ]] || {
         echo "should mention '$wantMsg', got: $got"; return 1
       }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
+# test_signingKeyPreflight tests the signing key registration preflight.
+# Pure function: takes a state associative array, returns warnings on stdout.
+# No I/O -- checked by the caller (credentialStage or stage1).
+test_signingKeyPreflight() {
+  local -A case1=(
+    [name]='no warnings when sidecar is tracked'
+    [localExists]=1 [sidecarTracked]=1 [opReady]=0 [opHasItem]=0
+    [wantEmpty]=1
+  )
+  local -A case2=(
+    [name]='warns when sidecar is untracked'
+    [localExists]=1 [sidecarTracked]=0 [opReady]=0 [opHasItem]=0
+    [wantMsg]='not committed'
+  )
+  local -A case3=(
+    [name]='warns when op available but item missing'
+    [localExists]=1 [sidecarTracked]=1 [opReady]=1 [opHasItem]=0
+    [wantMsg]='not in 1Password'
+  )
+  local -A case4=(
+    [name]='no warnings when everything is complete'
+    [localExists]=1 [sidecarTracked]=1 [opReady]=1 [opHasItem]=1
+    [wantEmpty]=1
+  )
+  local -A case5=(
+    [name]='no warnings when no signing key exists'
+    [localExists]=0 [sidecarTracked]=0 [opReady]=0 [opHasItem]=0
+    [wantEmpty]=1
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    local -A preflight_state=(
+      [localExists]=$localExists
+      [sidecarTracked]=$sidecarTracked
+      [opReady]=$opReady
+      [opHasItem]=$opHasItem
+    )
+
+    local got
+    got=$(signingKeyPreflight preflight_state testhost)
+
+    if [[ -n ${wantEmpty:-} ]]; then
+      [[ -z $got ]] || { echo "want empty, got: $got"; return 1; }
+    elif [[ -n ${wantMsg:-} ]]; then
+      [[ $got == *"$wantMsg"* ]] || { echo "want '$wantMsg', got: $got"; return 1; }
     fi
   }
 
