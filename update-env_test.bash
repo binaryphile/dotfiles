@@ -501,7 +501,7 @@ test_ageRoundTrip() {
   origFp=$(pubFingerprint "$dir/id_ed25519.pub")
   [[ -n "$origFp" ]] || { echo "failed to get original fingerprint"; return 1; }
 
-  # Bundle and encrypt (same flow as sshKeyEncryptToRepo, but recipient mode)
+  # Bundle and encrypt (recipient mode, same pattern used by encrypt-secrets)
   mkdir -p "$dir/stage"
   cp "$dir/id_ed25519" "$dir/stage/id_ed25519"
   cp "$dir/id_ed25519.pub" "$dir/stage/id_ed25519.pub"
@@ -511,7 +511,7 @@ test_ageRoundTrip() {
   }
   [[ -s "$dir/bundle.age" ]] || { echo "empty age bundle"; return 1; }
 
-  # Decrypt and extract (same flow as sshKeyDecryptAndInstall)
+  # Decrypt and extract
   mkdir -p "$dir/restored"
   age -d -i "$dir/age.key" "$dir/bundle.age" | tar xf - -C "$dir/restored" || {
     echo "age decryption failed"; return 1
