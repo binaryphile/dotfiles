@@ -1487,6 +1487,37 @@ test_stage1TaskGroups() {
   tesht.Run ${!case@}
 }
 
+# test_opNamingNoLiterals verifies no hardcoded 1Password item names or
+# vault references exist outside the canonical constants (opAuthKeyItem,
+# opSigningKeyItem, OpVault). Regression tripwire -- fails if a future
+# change introduces a literal that bypasses the constants.
+test_opNamingNoLiterals() {
+  local violations
+  # Grep for the pattern "SSH Key" in non-comment, non-constant lines
+  # Exclude: function definitions, the constants themselves, test files, docs
+  violations=$(grep -n 'SSH Key' ~/dotfiles/update-env \
+    | grep -v '^\s*#' \
+    | grep -v 'opAuthKeyItem\|opSigningKeyItem\|OpVault' \
+    | grep -v 'PHASE 7.*SSH Key' \
+    || true)
+  [[ -z $violations ]] || {
+    echo "Hardcoded 1Password item name found (use opAuthKeyItem/opSigningKeyItem):"
+    echo "$violations"
+    return 1
+  }
+
+  # Check for hardcoded vault name "Private" (excluding OpVault= definition)
+  violations=$(grep -n '"Private\b\|Private vault\|--vault Private' ~/dotfiles/update-env \
+    | grep -v '^\s*#' \
+    | grep -v 'OpVault=' \
+    || true)
+  [[ -z $violations ]] || {
+    echo "Hardcoded vault name found (use \$OpVault):"
+    echo "$violations"
+    return 1
+  }
+}
+
 # test_panelHermetic runs the nix-packaged panel binary under a stripped
 # PATH (only the wrapper's own deps). Verifies key subcommands exit
 # without "command not found" errors, proving the runtime dep closure
