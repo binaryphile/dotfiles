@@ -8,17 +8,16 @@ installNix fix, CLI --help and -c/--credential, panel nix overlay
 (tmux-with-panel), 1Password SSH key restore (replacing age-to-repo),
 signing key preflight, declarative nix.conf, platform DI, 1Password
 naming centralization, stage1TaskGroups refactor, dead code removal,
-security model alignment, flake config rename.
+security model alignment, flake config rename, Codeberg signing key
+correction.
 
-21 commits. update-env 1939 -> ~1790 lines. 98 tests, 26 functions.
+24 commits. update-env 1939 -> 1748 lines (-191). 98 tests, 26
+functions. Adversarial review: 2/5 -> 3/5 -> 3/5 -> 3/5 -> 4/5.
 
 ## Outstanding
 
 ### P2
-1. **1Password naming regression tripwire** -- DONE.
-   `test_opNamingNoLiterals` greps update-env for hardcoded item names
-   and vault references outside the canonical constants.
-2. **Signing key preflight enforcement** -- warning-only. Adequate for
+1. **Signing key preflight enforcement** -- warning-only. Adequate for
    personal repo. Upgrade if security model claims stronger guarantee.
 
 ### P3
@@ -26,9 +25,8 @@ security model alignment, flake config rename.
 
 ### Housekeeping
 1. Run stage 2 from a TTY terminal: `~/dotfiles/update-env -2`
-   (Claude Code's shell has no TTY -- task.bash progress output fails)
 2. Authenticate `gh`: `gh auth login`
-3. Remove deprecated `penguin` flake compat alias
+3. Remove deprecated `penguin` flake compat alias from flake.nix
 
 ## Testing
 
@@ -60,3 +58,4 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
 - `op` requires interactive auth in a separate terminal.
 - `detectPlatform` is the implementation; `$platform` is the DI variable.
 - `stage1TaskGroups` is the pure routing decision; `stage1` dispatches on it.
+- Codeberg does not support SSH signing verification. GitHub only.
