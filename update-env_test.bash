@@ -1422,6 +1422,48 @@ test_cliCredential() {
   fi
 }
 
+# test_panelHermetic runs the nix-packaged panel binary under a stripped
+# PATH (only the wrapper's own deps). Verifies key subcommands exit
+# without "command not found" errors, proving the runtime dep closure
+# is complete. Does not test correctness of widget output -- only that
+# deps are resolvable.
+test_panelHermetic() {
+  # Find the packaged panel via the tmux wrapper
+  local tmuxBin panelBin
+  tmuxBin=$(readlink -f ~/.nix-profile/bin/tmux) || { echo "tmux not in profile"; return 1; }
+  panelBin=$(grep -oP "'/nix/store/[^']*-panel/bin'" "$tmuxBin" | head -1 | tr -d "'")
+  [[ -n $panelBin && -d $panelBin ]] || { echo "panel store path not found in tmux wrapper"; return 1; }
+
+  local -A case1=([name]='hostname exits clean'   [cmd]='hostname')
+  local -A case2=([name]='clock exits clean'      [cmd]='clock')
+  local -A case3=([name]='healthsep exits clean'  [cmd]='healthsep')
+  local -A case4=([name]='load exits clean'       [cmd]='load')
+  local -A case5=([name]='cpu exits clean'        [cmd]='cpu')
+  local -A case6=([name]='mem exits clean'        [cmd]='mem')
+  local -A case7=([name]='disk exits clean'       [cmd]='disk')
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    # Run with stripped PATH: only panel's own wrapper PATH
+    local got rc
+    got=$(env -i PATH="$panelBin" HOME="$HOME" \
+      "$panelBin/panel" "$cmd" 2>&1) && rc=$? || rc=$?
+
+    # "command not found" = missing runtime dep
+    [[ $got != *"command not found"* ]] || {
+      echo "missing dep: $got"; return 1
+    }
+    # nonzero exit from missing command (rc=127) = missing dep
+    (( rc != 127 )) || {
+      echo "rc=127 (command not found): $got"; return 1
+    }
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_withSecretMissingFile tests with-secret fails on missing file.
 test_withSecretMissingFile() {
   local rc
