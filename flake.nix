@@ -45,6 +45,10 @@
       extraSpecialArgs = commonSpecialArgs;
     };
 
+    # Debian uses crostini config -- both are Debian-based, same package set.
+    # Crostini-specific services (tinyproxy, vpn-pac) are harmless on bare Debian.
+    homeConfigurations.debian = self.homeConfigurations.crostini;
+
     # Deprecated alias -- remove after confirming no downstream consumers.
     homeConfigurations.penguin = self.homeConfigurations.crostini;
 

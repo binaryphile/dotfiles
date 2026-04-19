@@ -94,15 +94,19 @@ sshKeyEpilogue() {
   esac
 }
 
-# stage1TaskGroups -- pure decision function mapping platform to the set of
-# task groups that stage1 should run. No side effects.
-# Groups: apt, hostname, gpoc, nix, credential.
-stage1TaskGroups() {
+# platformTaskGroups -- pure decision function mapping platform to the set of
+# task groups both stages should run. No side effects.
+# Groups: apt, hostname, gpoc, nix, hm, credential.
+# nix = install nix itself. hm = apply home-manager flake config.
+# hm is separate from nix because not all nix platforms have flake configs
+# in this repo (linux needs nixos-config's flake, macos needs darwin pkgs).
+platformTaskGroups() {
   local platform=$1
   local groups=()
   case $platform in crostini|debian )   groups+=(apt);; esac
   case $platform in crostini )          groups+=(hostname gpoc);; esac
   case $platform in crostini|debian|linux|macos ) groups+=(nix);; esac
+  case $platform in crostini|debian )   groups+=(hm);; esac
   case $platform in crostini )          groups+=(credential);; esac
   echo "${groups[*]}"
 }
@@ -121,7 +125,7 @@ stage1() {
     secrets/netrc   ~/.netrc
   END
   local groups
-  groups=$(stage1TaskGroups "$Platform")
+  groups=$(platformTaskGroups "$Platform")
 
   if [[ $groups == *apt* ]]; then
     aptUpgradeTask
@@ -149,11 +153,14 @@ stage1() {
     ~/dotfiles/bash/init.bash                     ~/.profile
   END
   #  +-------------------------------------------------------------+
-  #  | PHASE 3: Package Management (gpoc, nix, home-manager)       |
+  #  | PHASE 3a: Package Management (gpoc, nix)                    |
   #  |   +-> [crostini] Install gpoc .deb from GitHub releases     |
   #  |   +-> Install Nix (Determinate installer, hash-verified)    |
-  #  |   +-> Fix /nix ownership                                    |
+  #  |   +-> Fix /nix ownership, write nix.conf, source profile    |
+  #  +-------------------------------------------------------------+
+  #  | PHASE 3b: Home Manager [crostini/debian]                    |
   #  |   +-> Apply Home Manager configuration (flake)              |
+  #  |   +-> Converge task.bash to nix-pinned version              |
   #  +-------------------------------------------------------------+
 
   if [[ $groups == *gpoc* ]]; then
@@ -166,11 +173,15 @@ stage1() {
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
     writeNixConfTask
-    loosely source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    local nixProfile=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    [[ -r $nixProfile ]] || { echo "nix profile script not found at $nixProfile" >&2; return 1; }
+    loosely source $nixProfile
     verifyNixFlakes
+  fi
 
+  if [[ $groups == *hm* ]]; then
     section home-manager
-    homeManagerFlakeSwitchTask crostini
+    homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
   fi
 
@@ -253,12 +264,13 @@ credentialStage() {
 stage2() {
   # Re-run home-manager to converge (idempotent -- no-op if stage 1
   # already applied the same config).
-  case $Platform in crostini|debian|linux|macos )
+  local groups
+  groups=$(platformTaskGroups "$Platform")
+  if [[ $groups == *hm* ]]; then
     section home-manager
-    homeManagerFlakeSwitchTask crostini
+    homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
-    ;;
-  esac
+  fi
 
   #  +-------------------------------------------------------------+
   #  | PHASE 4: Platform-Specific Setup                            |
@@ -340,10 +352,11 @@ stage2() {
   try codebergCloneAndLinkTask tandem-protocol
   try scaffoldTask ~/projects/tandem-protocol
   try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
-  lib.Glob ~/projects/tandem-protocol/commands/* |
-    keepIf isFile |
-    map path '$path ~/.claude/commands/$(basename $path)' |
-    each task.Ln
+  each task.Ln < <(
+    lib.Glob ~/projects/tandem-protocol/commands/* |
+      keepIf isFile |
+      map path '$path ~/.claude/commands/$(basename $path)'
+  )
 
   section era
   try codebergCloneAndLinkTask era
@@ -630,9 +643,9 @@ eraMcpRegisterTask() {
   ok    '[[ -f ~/.claude.json ]] && jq -e ".mcpServers.era" ~/.claude.json &>/dev/null'
 
   eraMcpRegister() {
-    local src=${1:-'{}'}
-    [[ -f ~/.claude.json ]] && src=$(cat ~/.claude.json)
-    printf '%s' $src |
+    local src_=${1:-'{}'}
+    [[ -f ~/.claude.json ]] && src_=$(cat ~/.claude.json)
+    printf '%s' "$src_" |
       jq '.mcpServers.era = {type: "http", url: "http://127.0.0.1:9310/mcp"}' > ~/.claude.json.tmp &&
       mv ~/.claude.json.tmp ~/.claude.json
   }
@@ -644,9 +657,9 @@ chromeDevtoolsMcpRegisterTask() {
   ok    '[[ -f ~/.claude.json ]] && jq -e ".mcpServers.\"chrome-devtools\"" ~/.claude.json &>/dev/null'
 
   chromeDevtoolsMcpRegister() {
-    local src=${1:-'{}'}
-    [[ -f ~/.claude.json ]] && src=$(cat ~/.claude.json)
-    printf '%s' $src |
+    local src_=${1:-'{}'}
+    [[ -f ~/.claude.json ]] && src_=$(cat ~/.claude.json)
+    printf '%s' "$src_" |
       jq '.mcpServers."chrome-devtools" = {command: "npx", args: ["-y", "chrome-devtools-mcp@latest", "--browser-url", "http://127.0.0.1:9222"]}' > ~/.claude.json.tmp &&
       mv ~/.claude.json.tmp ~/.claude.json
   }
@@ -695,7 +708,7 @@ claudeMemoryRedirectsTask() {
       cp "$redirectSrc" "$memDir/MEMORY.md"
     }
     installRedirect $HOME/dotfiles
-    map path '$HOME/projects/$path' <<'    END' | each installRedirect
+    each installRedirect < <(map path '$HOME/projects/$path' <<'    END'
       era
       fp.bash
       mk.bash
@@ -709,6 +722,7 @@ claudeMemoryRedirectsTask() {
       share
       dal
     END
+    )
   }
   cmd claudeRedirectsInstall
 }
@@ -876,7 +890,7 @@ verifyNixFlakes() {
     return 1
   }
   $nix config show experimental-features 2>/dev/null | grep -q flakes || {
-    echo "flakes not enabled -- expected Determinate Nix to enable them by default" >&2
+    echo "flakes not enabled -- check nix.conf and profile sourcing" >&2
     return 1
   }
 }
@@ -1484,11 +1498,11 @@ authPreflight() {
   fi
 
   checkProvider() {
-    local provider=$1 rc output
-    if output=$($ssh -T "${sshopts[@]}" "git@$provider" 2>&1); then rc=0; else rc=$?; fi
+    local provider=$1 rc output_
+    if output_=$($ssh -T "${sshopts[@]}" "git@$provider" 2>&1); then rc=0; else rc=$?; fi
     if (( rc == 0 || rc == 1 )); then
       :
-    elif echo $output | grep -qi 'permission denied\|publickey'; then
+    elif echo "$output_" | grep -qi 'permission denied\|publickey'; then
       echo "  $provider: key not registered"
       [[ -f $keyFile.pub ]] && echo "    Register: cat $keyFile.pub"
     else
@@ -1502,7 +1516,8 @@ authPreflight() {
   END
 
   if $ip link show tun0 >/dev/null 2>&1; then
-    if output=$($ssh -T "${sshopts[@]}" git@stash.digi.com 2>&1); then rc=0; else rc=$?; fi
+    local rc output_
+    if output_=$($ssh -T "${sshopts[@]}" git@stash.digi.com 2>&1); then rc=0; else rc=$?; fi
     (( rc == 0 || rc == 1 )) || echo "  stash.digi.com: SSH auth failed"
   fi
 }
@@ -1570,13 +1585,13 @@ resolveSourceDir() {
 
 # Shared helpers -- sourced from lib.bash to avoid duplication.
 # lib.bash provides: lib.Glob, lib.MachineHostname, lib.ValidateHostname, lib.ValidSecretName
-_lib_dir=$(resolveSourceDir) 2>/dev/null
-if [[ -n ${_lib_dir:-} && -f $_lib_dir/scripts/lib.bash ]]; then
-  source $_lib_dir/scripts/lib.bash
+LibDir=$(resolveSourceDir) 2>/dev/null
+if [[ -n ${LibDir:-} && -f $LibDir/scripts/lib.bash ]]; then
+  source $LibDir/scripts/lib.bash
 else
   eval "$($curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/scripts/lib.bash)" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
 fi
-unset -v _lib_dir
+unset -v LibDir
 
 pubFingerprint() {
   [[ -f $1 && -s $1 ]] || return 0
@@ -1661,7 +1676,7 @@ loosely() {
 ownerAndGroup() {
   local path=$1
   [[ $OSTYPE == darwin* && $(type -p stat) == /usr/bin/stat ]] && local flag=f || local flag=c
-  echo $(stat -$flag %u "$path"):$(stat -$flag %g "$path")
+  echo "$(stat -$flag %u "$path"):$(stat -$flag %g "$path")"
 }
 
 detectPlatform() {
@@ -1693,7 +1708,7 @@ each() {
 keepIf() {
   local command=$1 arg
   while IFS='' read -r arg; do
-    eval "$command $arg" && echo $arg
+    eval "$command $arg" && echo "$arg"
   done
   return 0
 }
