@@ -44,12 +44,7 @@ packaging, implementation status.
 
 ## Outstanding
 
-### P2 (from adversarial reviews)
-1. **Panel hermetic runtime test** -- DONE. `test_panelHermetic` runs packaged panel under stripped PATH, caught missing `hostname` dep (fixed: use `$HOSTNAME` instead of external command)
-2. **tmux package split diffuse** -- functional but selection spread across
-   shared.nix (removed), linux-base.nix (tmux-with-panel), macos (plain)
-
-### From prior sessions
+### Remaining
 1. **Declarative nix.conf ownership** (P2) -- split by platform
 2. **Signed tag/release for bootstrap** (P3) -- verify repo before exec
 
