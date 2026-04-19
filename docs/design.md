@@ -89,7 +89,7 @@ Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual 
 
 All public repo clones use HTTPS fetch with SSH push URLs (idempotent remote migration on every run). Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git pull --rebase --autostash` so repos with uncommitted local changes are updated without losing work.
 
-Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> linux. For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
+Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> linux. `platform` is injectable via the standard DI pattern (lowercase function variable, overridable by `local` in tests). For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
 
 **What belongs in update-env vs. home-manager:** The split is governed by one structural constraint and two categories:
 

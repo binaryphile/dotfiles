@@ -1397,27 +1397,29 @@ test_cliHelp() {
   [[ $got == *"--help"* ]] || { echo "missing --help in output"; return 1; }
 }
 
-# test_cliCredentialRejectsNonCrostini tests that `update-env -c` fails
-# on non-crostini platforms via the real entrypoint. Boundary test:
-# verifies option parsing wires -c to credentialPreflight dispatch.
-test_cliCredentialRejectsNonCrostini() {
-  # Force platform to linux by overriding HOSTNAME and OSTYPE so
-  # platform() returns something other than crostini. On this Crostini
-  # machine, we can't get a true non-crostini platform() without a
-  # container, so we test the --help path instead if we detect crostini.
-  # The preflight logic itself is tested purely in test_credentialPreflight.
-  if [[ $HOSTNAME == penguin ]]; then
-    # Can't test non-crostini rejection from a crostini host via the
-    # real entrypoint -- platform() will return crostini. The preflight
-    # decision is covered by test_credentialPreflight case1. Skip.
-    return 0
-  fi
+# test_cliCredential tests the -c flag at the CLI boundary.
+# Runs the real entrypoint as a subprocess. On crostini (where credentials
+# are already present), verifies the positive path: exits 0 and prints
+# the expected section markers. On non-crostini, verifies rejection.
+test_cliCredential() {
   local got rc
   got=$(~/dotfiles/update-env -c 2>&1) && rc=$? || rc=$?
-  (( rc == 2 )) || { echo "rc=$rc, want 2: $got"; return 1; }
-  [[ $got == *"only supported on Crostini"* ]] || {
-    echo "should mention Crostini, got: $got"; return 1
-  }
+  if [[ $HOSTNAME == penguin ]]; then
+    # Positive path: -c runs credential stage, exits 0
+    (( rc == 0 )) || { echo "rc=$rc, want 0: $got"; return 1; }
+    [[ $got == *"[section credential]"* ]] || {
+      echo "should print credential section marker, got: $got"; return 1
+    }
+    [[ $got == *"[section auth-preflight]"* ]] || {
+      echo "should print auth-preflight section marker, got: $got"; return 1
+    }
+  else
+    # Negative path: non-crostini rejection
+    (( rc == 2 )) || { echo "rc=$rc, want 2: $got"; return 1; }
+    [[ $got == *"only supported on Crostini"* ]] || {
+      echo "should mention Crostini, got: $got"; return 1
+    }
+  fi
 }
 
 # test_withSecretMissingFile tests with-secret fails on missing file.
