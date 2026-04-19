@@ -1648,8 +1648,6 @@ installKey() {
   return 0
 }
 
-isDir() { [[ -d $1 ]]; }
-
 isFile() { [[ -f $1 ]]; }
 
 loosely() {
