@@ -94,6 +94,19 @@ sshKeyEpilogue() {
   esac
 }
 
+# stage1TaskGroups -- pure decision function mapping platform to the set of
+# task groups that stage1 should run. No side effects.
+# Groups: apt, hostname, gpoc, nix, credential.
+stage1TaskGroups() {
+  local platform=$1
+  local groups=()
+  case $platform in crostini|debian )   groups+=(apt);; esac
+  case $platform in crostini )          groups+=(hostname gpoc);; esac
+  case $platform in crostini|debian|linux|macos ) groups+=(nix);; esac
+  case $platform in crostini )          groups+=(credential);; esac
+  echo "${groups[*]}"
+}
+
 # Stage 1: critical path -- working shell after completion + exec bash
 stage1() {
   #  +-------------------------------------------------------------+
@@ -107,16 +120,18 @@ stage1() {
     .ssh            ~/ssh
     secrets/netrc   ~/.netrc
   END
-  case $Platform in crostini|debian )
-    aptUpgradeTask
-  ;; esac
+  local groups
+  groups=$(stage1TaskGroups "$Platform")
 
-  case $Platform in crostini )
+  if [[ $groups == *apt* ]]; then
+    aptUpgradeTask
+  fi
+
+  if [[ $groups == *hostname* ]]; then
     crostiniHostnameSetup
     task.Ln $CrostiniDir/repos ~/repos
     task.Ln $CrostiniDir/secrets ~/secrets
-    ;;
-  esac
+  fi
 
   #  +-------------------------------------------------------------+
   #  | PHASE 2: Dotfiles & Configuration (section dotfiles)        |
@@ -128,8 +143,6 @@ stage1() {
   try git -C ~/dotfiles remote set-url origin https://github.com/binaryphile/dotfiles.git
   try git -C ~/dotfiles remote set-url --push origin git@github.com:binaryphile/dotfiles.git
   try task.GitUpdate ~/dotfiles
-  # Bootstrap-only symlinks. The rest are managed by home-manager via
-  # contexts/linux-base.nix once nix and home-manager are installed.
   each task.Ln <<'  END'
     contexts/"$Platform"                          ~/dotfiles/context
     ~/dotfiles/bash/init.bash                     ~/.bash_profile
@@ -144,13 +157,12 @@ stage1() {
   #  |   +-> Apply Home Manager configuration (flake)              |
   #  +-------------------------------------------------------------+
 
-  case $Platform in crostini )
+  if [[ $groups == *gpoc* ]]; then
     section gpoc
     aptInstallGpocTask
-    ;;
-  esac
+  fi
 
-  case $Platform in crostini|debian|linux|macos )
+  if [[ $groups == *nix* ]]; then
     section nix
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
@@ -161,15 +173,9 @@ stage1() {
     section home-manager
     homeManagerFlakeSwitchTask crostini
     convergeTaskBash
-    ;;
-  esac
+  fi
 
-  # Dev tools (task.bash, mk.bash, tesht) are nix-packaged in bash-tools.nix
-  # and installed by home-manager above. Clones moved to stage 2.
-
-  # Credential restore + agent load + auth preflight.
-  # Working shell includes full identity -- SSH push, clone.
-  case $Platform in crostini )
+  if [[ $groups == *credential* ]]; then
     section credential
     try restoreSshKey
     try restoreSigningKey
@@ -178,8 +184,7 @@ stage1() {
     section auth-preflight
     try authPreflight
     try runSigningKeyPreflight
-    ;;
-  esac
+  fi
 
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
   task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
