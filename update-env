@@ -129,7 +129,6 @@ stage1() {
 
   if [[ $groups == *hostname* ]]; then
     crostiniHostnameSetup
-    task.Ln $CrostiniDir/repos ~/repos
     task.Ln $CrostiniDir/secrets ~/secrets
   fi
 
@@ -271,16 +270,6 @@ stage2() {
     section crostini
     task.Ln $CrostiniDir ~/crostini
 
-    # clone from persisted repo directories to home dir
-    if [[ -d $CrostiniDir/repos ]]; then
-      local -A branches=(
-        [tlilley-daily-notes.git]=main
-        [urma-next-local.git]=main
-      )
-      (cd $CrostiniDir/repos; lib.Glob * | keepIf isDir) |
-        map target '$CrostiniDir/repos/$target ~/projects/${target%.git} ${branches[$target]:-main}' |
-        each task.GitClone
-    fi
   fi
 
   #  +-------------------------------------------------------------+
