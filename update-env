@@ -49,7 +49,7 @@ main() {
   export GIT_CONFIG_COUNT=1
   export GIT_CONFIG_KEY_0=rebase.autoStash
   export GIT_CONFIG_VALUE_0=true
-  Platform=$(platform)
+  Platform=$($platform)
   readonly Platform
 
   case $Stage in
@@ -449,7 +449,7 @@ stage2() {
 }
 
 postInstallMessages() {
-  case $(platform) in crostini )
+  case $Platform in crostini )
     echo
     echo "=== CHROMEOS PROXY SETUP (per-network, one-time) ==="
     echo "ChromeOS Settings > Network > your connection > Proxy > Automatic proxy configuration"
@@ -942,6 +942,7 @@ sshKeygenTask() {
 if [[ ${DOTFILES_TEST:-} == 1 ]]; then
   curl=${curl:-curl}
   nix=${nix:-nix}
+  platform=${platform:-detectPlatform}
   sha256sum=${sha256sum:-sha256sum}
   ssh_keygen=${ssh_keygen:-ssh-keygen}
   ssh_add=${ssh_add:-ssh-add}
@@ -954,6 +955,7 @@ if [[ ${DOTFILES_TEST:-} == 1 ]]; then
 else
   curl=curl
   nix=nix
+  platform=detectPlatform
   ssh_keygen=ssh-keygen
   ssh_add=ssh-add
   keychain=keychain
@@ -1647,7 +1649,7 @@ ownerAndGroup() {
   echo $(stat -$flag %u "$path"):$(stat -$flag %g "$path")
 }
 
-platform() {
+detectPlatform() {
   [[ $OSTYPE != darwin* ]] || { echo macos; return; }
   [[ $HOSTNAME != penguin ]] || { echo crostini; return; }
   if [[ -e /etc/NIXOS ]]; then
