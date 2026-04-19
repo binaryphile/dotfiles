@@ -1,59 +1,43 @@
-# Handoff: Bootstrap Trust Chain + CLI + Panel Overlay + 1Password
+# Handoff
 
 Session date: 2026-04-18
 
-## What was done this session
+## What was done
 
-### installNix fix
-`install --no-confirm --init none` -> `install linux --no-confirm --init none`
-on Linux, `install --no-confirm` on macOS. `--init` is a subcommand flag.
+installNix fix, CLI --help and -c/--credential, panel nix overlay
+(tmux-with-panel), 1Password SSH key restore (replacing age-to-repo),
+signing key preflight, declarative nix.conf, platform DI, 1Password
+naming centralization, dead code removal (-380 lines), security model
+alignment (curl|eval removed, Lix cache trust removed), flake config
+rename (penguin -> crostini).
 
-### CLI: --help and -c/--credential
-- `usageText()` for `--help` (was broken: `Usage_` undefined)
-- `-c`/`--credential` for credential-only runs
-- `credentialPreflight` validates platform, hostname content, dotfiles dir
-- `credentialStage` extracted as callable function
-
-### Panel nix overlay (tmux-with-panel)
-Panel nix-packaged as tmux dependency in linux-base.nix. Fixes status bar
-when tmux server starts before `~/.local/bin` on PATH. `$Here` resolved
-via `@here@` substitution (nix) or `BASH_SOURCE` fallback (source).
-
-### 1Password SSH key restore
-- `restore_from_op` tier in `sshKeyAction` replaces age-to-repo tiers
-- `sshKeyRestoreFromOp` retrieves auth key via `op read`
-- `_1password-cli` added to `shared.nix`
-- Age-to-repo code removed: `sshKeyEncryptToRepo`, `sshKeyDecryptAndInstall`,
-  `withCleanupTrap`, `cleanupSshStage`, `validateSecretsArchive`, age/tar DI
-- `restoreSecrets` simplified to two tiers (local -> cache)
-- Epilogue messages updated for 1Password browser extension workflow
-
-### Signing key preflight
-- `signingKeyPreflight` (pure): warns when .pub sidecar untracked or key
-  missing from 1Password
-- `runSigningKeyPreflight` (controller): classifies state, calls pure fn
-- Wired into `credentialStage` and `stage1`
-- Security model P1 closed
-
-### Flake config rename
-`homeConfigurations.penguin` -> `.crostini`. Compat alias added.
-
-### Doc sync
-All docs updated to reflect age removal, 1Password workflow, panel
-packaging, implementation status.
+18 commits. update-env 1939 -> 1763 lines. 92 tests, 24 functions.
+Four adversarial review rounds (2/5, 3/5, 3/5, 3/5).
 
 ## Outstanding
 
-### Remaining
-1. **Declarative nix.conf ownership** (P2) -- DONE. `writeNixConfTask` writes `/etc/nix/nix.conf` with flakes, auto-optimise, no third-party caches. Runs as root. Removes stale Lix cache trust.
-2. **Signed tag/release for bootstrap** (P3) -- verify repo before exec
+### P2
+1. **writeNixConfTask platform guard** -- safe by stage1 control flow
+   (NixOS never reaches it), but not self-guarding. Add internal
+   platform check or a controller test proving NixOS exclusion.
+2. **1Password naming regression tripwire** -- centralized in code
+   (opAuthKeyItem/opSigningKeyItem/OpVault) and docs, but no grep-based
+   test preventing future hardcoded literals from re-entering.
+3. **Signing key preflight enforcement** -- warning-only. Adequate for
+   personal repo (P2 per reviewer). Upgrade to enforcement if the
+   security model ever claims a stronger guarantee.
+4. **Stage1 platform/task-selection controller test** -- highest-value
+   missing test per reviewer. Assert NixOS skips nix/hm/nix.conf,
+   Crostini runs expected credential path, rerun is idempotent.
+
+### P3
+1. **Signed tag/release for bootstrap** -- verify repo before exec.
 
 ### Housekeeping
 1. Register auth + signing keys on Codeberg and Bitbucket
 2. Re-enable GitHub branch protection
 3. Run stage 2 (`update-env -2`)
-4. Remove deprecated `penguin` flake compat alias after confirming no
-   downstream consumers
+4. Remove deprecated `penguin` flake compat alias
 
 ## Test results
 
@@ -70,12 +54,13 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
   test_withSecret test_withSecretMissingFile \
   test_credentialPreflight test_cliHelp test_cliCredential \
   test_sshKeyAction test_signingKeyPreflight test_panelHermetic \
-  test_nixConfContent test_cliCredential
+  test_nixConfContent
 ```
 
 ## Context for next agent
 
-- Follow docs-first, red/green TDD per Khorikov.
+- Docs-first, red/green TDD per Khorikov. Read the guide at
+  binaryphile.com. Delete trivials, refactor Q4s, no intra-system mocks.
 - Read CLAUDE.md for project conventions.
 - Panel is nix-packaged (store copy). Edits require `home-manager switch`.
 - `update-env -c` runs credentials without full stage 1.
@@ -83,6 +68,7 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
 - Flake config is `crostini` (compat alias `penguin` exists temporarily).
 - SSH auth key restored from 1Password via `op read`. Age tiers removed.
 - `restoreSecrets` is local -> cache only. No age-from-repo.
-- Signing key preflight warns on untracked sidecar or missing 1Password item.
-- `op` requires interactive auth in a separate terminal -- Claude Code
-  shell has no TTY for password prompts.
+- 1Password naming: `opAuthKeyItem`, `opSigningKeyItem`, `OpVault`.
+  Canonical doc: secrets-lifecycle.md "1Password Naming Convention".
+- `op` requires interactive auth in a separate terminal.
+- `detectPlatform` is the implementation; `$platform` is the DI variable.
