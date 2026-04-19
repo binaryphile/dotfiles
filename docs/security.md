@@ -225,11 +225,11 @@ Code-grounded analysis of what executes, when, as whom, from which file, with wh
 
 `update-env` runs as Ted's user. It escalates to root in exactly one place:
 
-| Line | Command | Privilege | Input | Context |
-|------|---------|-----------|-------|---------|
-| 446 | `sudo dpkg -i "$tmp/$deb"` | root | Downloaded `.deb` from GitHub Releases (version hardcoded) | gpoc install, Crostini only |
-| 446 | `sudo apt-get install -f -y` | root | None (fallback) | APT dependency repair |
-| 747 | `sudo chown -R -- $user:$group /nix` | root | `$(id -u)`:$(id -g)` (numeric), hardcoded `/nix` | Fix nix dir ownership |
+| Function | Command | Privilege | Input | Context |
+|----------|---------|-----------|-------|---------|
+| aptInstallGpoc | `sudo dpkg -i "$tmp/$deb"` | root | Downloaded `.deb` from GitHub Releases (version + hash hardcoded) | gpoc install, Crostini only |
+| aptInstallGpoc | `sudo apt-get install -f -y` | root | None (fallback) | APT dependency repair |
+| chownRTask | `sudo chown -R -- $user:$group /nix` | root | `$(id -u):$(id -g)` (numeric), hardcoded `/nix` | Fix nix dir ownership |
 
 All other operations run as Ted. The `sudo` surface is small but includes an unsigned binary install (gpoc `.deb`).
 
@@ -237,12 +237,12 @@ All other operations run as Ted. The `sudo` surface is small but includes an uns
 
 Every `eval` in the script, with input source and trust level:
 
-| Line | Input | Source | Trust | Risk |
-|------|-------|--------|-------|------|
-| 1345 | `$(SSH_ASKPASS_REQUIRE=never $keychain --eval id_ed25519)` | `keychain` command output | PATH-dependent | `keychain` is not invoked by absolute path. In production, `$keychain` is hardcoded to `keychain`; in test mode (`DOTFILES_TEST=1`), it's injectable via env. |
-| 1643 | `"$command $arg"` (in `each`) | Caller-supplied command + stdin lines | Repo-controlled | `$arg` is unquoted in the eval. Safe when input is controlled (repo filenames, heredoc literals), but structurally fragile -- shell metacharacters in input would execute. |
-| 1664 | `"echo \"$EXPRESSION\""` (in `map`) | Caller-supplied expression template | Repo-controlled | Expression is a single-quoted literal in all call sites. `$()` or backticks in the expression would execute. Safe only because callers are trusted. |
-| 1613 | `"$prevOpts_"` (in `loosely`) | `set +o` output | Shell-internal | Restores shell options. Input is bash's own `set +o` output -- safe. |
+| Function | Input | Source | Trust | Risk |
+|----------|-------|--------|-------|------|
+| loadSshKey | `$(SSH_ASKPASS_REQUIRE=never $keychain --eval id_ed25519)` | `keychain` command output | PATH-dependent | `$keychain` is hardcoded to `keychain` (injectable in test mode). |
+| each | `"$command $arg"` | Caller-supplied command + stdin lines | Repo-controlled | `$arg` is unquoted in the eval. Safe when input is controlled (repo filenames, heredoc literals), but structurally fragile. |
+| map | `"echo \"$EXPRESSION\""` | Caller-supplied expression template | Repo-controlled | Expression is a single-quoted literal in all call sites. `$()` or backticks in the expression would execute. Safe only because callers are trusted. |
+| loosely | `"$prevOpts_"` | `set +o` output | Shell-internal | Restores shell options. Input is bash's own `set +o` output -- safe. |
 
 The `curl | eval` fallback for `lib.bash` (previously the widest code-injection surface) has been removed. The script now requires being run from the cloned repo.
 
@@ -250,14 +250,14 @@ The `curl | eval` fallback for `lib.bash` (previously the widest code-injection 
 
 Every external download, with verification status:
 
-| Line | URL | Method | Verification | Executes as |
-|------|-----|--------|--------------|-------------|
-| 1688 | `raw.githubusercontent.com/.../task.bash` (pinned commit) | `curl > tmp; source tmp` | Commit hash in URL (no cryptographic verification) | User (sourced) |
+| Function | URL | Method | Verification | Executes as |
+|----------|-----|--------|--------------|-------------|
+| boilerplate | `raw.githubusercontent.com/.../task.bash` (pinned commit) | `curl > tmp; source tmp` | SHA-256 verified against pinned hash | User (sourced) |
 | installNix | `github.com/.../nix-installer/releases/.../nix-installer-*` | `curl > tmp; chmod +x; exec` | SHA-256 verified against pinned hash | User (Determinate Nix installer binary) |
-| 442 | `github.com/.../globalprotect-openconnect/.../v$version/$deb` | `curl > tmp; sudo dpkg -i` | SHA-256 verified against pinned hash | **Root** (dpkg) |
-| 389 | `raw.githubusercontent.com/.../vim-plug/.../plug.vim` | `curl > file` | None | Not executed directly |
+| aptInstallGpoc | `github.com/.../globalprotect-openconnect/.../v$version/$deb` | `curl > tmp; sudo dpkg -i` | SHA-256 verified against pinned hash | **Root** (dpkg) |
+| curlTask | `raw.githubusercontent.com/.../vim-plug/.../plug.vim` | `curl > file` | None | Not executed directly |
 
-The `lib.bash` curl|eval fallback has been removed (was dead code in normal operation). The gpoc `.deb` download is now SHA-256 verified before root installation.
+The `lib.bash` curl|eval fallback has been removed -- the script now fails fast if it can't find `scripts/lib.bash` via `resolveSourceDir`. All remaining downloads are hash-verified except vim-plug (not executed).
 
 ### update-env secret materialization
 
