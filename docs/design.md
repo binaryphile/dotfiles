@@ -371,16 +371,10 @@ Per-machine secrets stored in `~/secrets/`. Backed up to 1Password -- not to the
 
 **Restore priority:**
 1. **Local** -- `~/secrets/` has non-dot files -> accept (no restore needed)
-2. **Mount cache** -- `$CrostiniDir/secrets/<hostname>/` with freshness check via `.bundle-hash` -> restore
-3. **1Password** -- retrieve via `op` CLI or manually from app -> populate `~/secrets/`
+2. **Mount cache** -- `$CrostiniDir/secrets/<hostname>/` has files -> restore (Crostini only)
+3. **Manual** -- retrieve from 1Password via app or `op` CLI, populate `~/secrets/`
 
-**Restore behavior:** restore only runs when `~/secrets/` is empty (Tier 1 short-circuits if any non-dot files exist). Files are moved into `~/secrets/` additively; restore never overwrites existing secrets.
-
-**Archive validation** (`validateSecretsArchive`): when restoring from a bundle (cache or export), pre-extraction validation in two passes:
-1. **Name pass** -- `tar tf`: accepts root (`.`/`./`), rejects non-root directories (`*/`), validates remaining names via `lib.ValidSecretName`.
-2. **Type pass** -- `tar tvf`: accepts regular files (`-`) and root directory (`d` only for `.`/`./`). Rejects symlinks, hardlinks, devices, fifos. Requires at least one regular file.
-
-Fails closed: corrupt or non-tar input rejected before extraction. Post-extraction `find -not -type f` remains as defense-in-depth.
+**Restore behavior:** restore only runs when `~/secrets/` is empty (Tier 1 short-circuits if any non-dot files exist). Cache restore copies files additively; never overwrites existing secrets. Tier 3 is manual -- `update-env` prints instructions but does not automate 1Password retrieval for secrets (unlike SSH keys, secrets are multiple files with no standard 1Password schema).
 
 **Scripts:**
 - `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball for local backup or 1Password export. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
