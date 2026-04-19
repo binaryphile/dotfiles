@@ -7,28 +7,19 @@ Session date: 2026-04-18
 installNix fix, CLI --help and -c/--credential, panel nix overlay
 (tmux-with-panel), 1Password SSH key restore (replacing age-to-repo),
 signing key preflight, declarative nix.conf, platform DI, 1Password
-naming centralization, dead code removal (-380 lines), security model
-alignment (curl|eval removed, Lix cache trust removed), flake config
-rename (penguin -> crostini).
+naming centralization, stage1TaskGroups refactor, dead code removal,
+security model alignment, flake config rename.
 
-18 commits. update-env 1939 -> 1763 lines. 92 tests, 24 functions.
-Four adversarial review rounds (2/5, 3/5, 3/5, 3/5).
+21 commits. update-env 1939 -> ~1790 lines. 98 tests, 26 functions.
 
 ## Outstanding
 
 ### P2
-1. **writeNixConfTask platform guard** -- safe by stage1 control flow
-   (NixOS never reaches it), but not self-guarding. Add internal
-   platform check or a controller test proving NixOS exclusion.
-2. **1Password naming regression tripwire** -- centralized in code
-   (opAuthKeyItem/opSigningKeyItem/OpVault) and docs, but no grep-based
-   test preventing future hardcoded literals from re-entering.
-3. **Signing key preflight enforcement** -- warning-only. Adequate for
-   personal repo (P2 per reviewer). Upgrade to enforcement if the
-   security model ever claims a stronger guarantee.
-4. **Stage1 platform/task-selection controller test** -- highest-value
-   missing test per reviewer. Assert NixOS skips nix/hm/nix.conf,
-   Crostini runs expected credential path, rerun is idempotent.
+1. **1Password naming regression tripwire** -- DONE.
+   `test_opNamingNoLiterals` greps update-env for hardcoded item names
+   and vault references outside the canonical constants.
+2. **Signing key preflight enforcement** -- warning-only. Adequate for
+   personal repo. Upgrade if security model claims stronger guarantee.
 
 ### P3
 1. **Signed tag/release for bootstrap** -- verify repo before exec.
@@ -38,10 +29,6 @@ Four adversarial review rounds (2/5, 3/5, 3/5, 3/5).
 2. Re-enable GitHub branch protection
 3. Run stage 2 (`update-env -2`)
 4. Remove deprecated `penguin` flake compat alias
-
-## Test results
-
-92/92 pass. `home-manager build` succeeds.
 
 ## Testing
 
@@ -53,8 +40,8 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
   test_authPreflight test_restoreSecretsTierSelection \
   test_withSecret test_withSecretMissingFile \
   test_credentialPreflight test_cliHelp test_cliCredential \
-  test_sshKeyAction test_signingKeyPreflight test_panelHermetic \
-  test_nixConfContent
+  test_sshKeyAction test_signingKeyPreflight test_stage1TaskGroups \
+  test_opNamingNoLiterals test_panelHermetic test_nixConfContent
 ```
 
 ## Context for next agent
@@ -72,3 +59,4 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
   Canonical doc: secrets-lifecycle.md "1Password Naming Convention".
 - `op` requires interactive auth in a separate terminal.
 - `detectPlatform` is the implementation; `$platform` is the DI variable.
+- `stage1TaskGroups` is the pure routing decision; `stage1` dispatches on it.
