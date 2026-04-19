@@ -486,7 +486,7 @@ Effectiveness: **prevents** (blocks the attack), **detects** (reveals it happene
 |---------|----------|----------|--------|
 | Eliminate `curl \| sh` (Lix installer) | Bootstrap integrity | P1 | Narrowed -- replaced with hash-verified Determinate Nix installer binary. Network injection closed; repo-compromise trust root remains (hash is stored in repo) |
 | Hash-verify `task.bash` download | Bootstrap integrity | P1 | Narrowed -- SHA-256 check added for pinned-rev bootstrap fetch. Same repo trust root caveat as Nix installer |
-| Signing key registration preflight | Commit verification | P1 | Detect unregistered signing key before first push to protected branch |
+| Signing key registration preflight | Commit verification | P1 | Done -- `signingKeyPreflight` warns when .pub sidecar is untracked or key is missing from 1Password. Called by credentialStage and stage1. |
 | Signed tag/release for bootstrap | Bootstrap authenticity | P3 | Verify repo content before executing `update-env` on fresh machine |
 
 ## Incident Response

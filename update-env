@@ -176,6 +176,7 @@ stage1() {
     try loadSshKey
     section auth-preflight
     try authPreflight
+    try runSigningKeyPreflight
     ;;
   esac
 
@@ -214,7 +215,13 @@ credentialPreflight() {
   local missing=()
   command -v age &>/dev/null          || missing+=("age")
   [[ -d ~/dotfiles ]]                 || missing+=("~/dotfiles")
-  [[ -f $CrostiniDir/hostname ]]      || missing+=("hostname (run 'update-env -1 <hostname>' first)")
+  if [[ ! -f $CrostiniDir/hostname ]]; then
+    missing+=("hostname (run 'update-env -1 <hostname>' first)")
+  else
+    local h
+    h=$(lib.MachineHostname) || missing+=("hostname (file exists but unreadable)")
+    lib.ValidateHostname "${h:-}" 2>/dev/null || missing+=("hostname '${h:-}' is invalid")
+  fi
   if (( ${#missing[@]} )); then
     echo "Credential stage requires: ${missing[*]}"
     echo "Run 'update-env -1' first, then 'exec bash'."
@@ -235,6 +242,7 @@ credentialStage() {
   try loadSshKey
   section auth-preflight
   try authPreflight
+  try runSigningKeyPreflight
 }
 
 # Stage 2: projects, builds, and config -- all externals try-wrapped
@@ -1593,6 +1601,58 @@ restoreSigningKey() {
       echo "     cd ~/dotfiles && git add ssh/ && git commit && git push"
       ;;
   esac
+}
+
+# runSigningKeyPreflight -- controller that classifies signing key state and
+# calls the pure signingKeyPreflight function. Prints any warnings.
+runSigningKeyPreflight() {
+  local hostname
+  hostname=$(lib.MachineHostname)
+  local localKey=$HOME/.ssh/id_ed25519_signing
+  local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
+  local opItem="$hostname signing SSH Key"
+
+  local -A skState=(
+    [localExists]=0 [sidecarTracked]=0
+    [opReady]=0 [opHasItem]=0
+  )
+
+  [[ -f $localKey ]] && skState[localExists]=1
+  if [[ -f $repoPub ]]; then
+    git -C ~/dotfiles ls-files --error-unmatch "$repoPub" >/dev/null 2>&1 && skState[sidecarTracked]=1
+  fi
+  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
+    skState[opReady]=1
+    $op item get "$opItem" --vault Private >/dev/null 2>&1 && skState[opHasItem]=1
+  fi
+
+  signingKeyPreflight skState "$hostname"
+}
+
+# signingKeyPreflight -- pure function that checks whether the signing key
+# registration workflow is complete. Takes a nameref to a state associative
+# array with keys: localExists, sidecarTracked, opReady, opHasItem.
+# Prints warnings to stdout. No side effects.
+signingKeyPreflight() {
+  local -n STATE=$1
+  local hostname=$2
+
+  (( STATE[localExists] )) || return 0
+
+  if (( !STATE[sidecarTracked] )); then
+    echo "WARNING: signing key .pub sidecar not committed to repo."
+    echo "  Complete the registration workflow:"
+    echo "  1. Store in 1Password as: $hostname signing SSH Key (Private vault)"
+    echo "  2. Register via 1Password browser extension:"
+    echo "       https://github.com/settings/keys (Signing Key)"
+    echo "       https://codeberg.org/user/settings/keys (Signing Key)"
+    echo "  3. Commit: cd ~/dotfiles && git add ssh/ && git commit && git push"
+  fi
+
+  if (( STATE[opReady] && !STATE[opHasItem] )); then
+    echo "WARNING: signing key not in 1Password."
+    echo "  Store as: $hostname signing SSH Key (Private vault)"
+  fi
 }
 
 authPreflight() {
