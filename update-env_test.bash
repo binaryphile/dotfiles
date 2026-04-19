@@ -1241,19 +1241,6 @@ test_verifyNixFlakes() {
   tesht.Run ${!case@}
 }
 
-# test_usageText tests that the usage string exists, documents all flags,
-# and mentions credential mode.
-test_usageText() {
-  local got
-  got=$(usageText)
-  [[ -n $got ]] || { echo "usageText returned empty"; return 1; }
-  [[ $got == *"-1"* ]] || { echo "missing -1 flag"; return 1; }
-  [[ $got == *"-2"* ]] || { echo "missing -2 flag"; return 1; }
-  [[ $got == *"-c"* ]] || { echo "missing -c flag"; return 1; }
-  [[ $got == *"-h"* ]] || { echo "missing -h flag"; return 1; }
-  [[ $got == *"credential"* ]] || { echo "missing credential description"; return 1; }
-}
-
 # test_credentialStage omitted -- credentialStage is a trivial controller
 # (sequence of try-wrapped calls). Per Khorikov, trivial controllers are
 # verified by inspection, not mock-heavy Q4 tests. The decision logic

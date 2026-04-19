@@ -67,7 +67,7 @@ For either key type, the procedure is:
 | Step | Auth key | Signing key |
 |------|----------|-------------|
 | Delete | `rm ~/.ssh/id_ed25519{,.pub}` `rm ~/dotfiles/ssh/id_ed25519_$HOST.pub` `rm -rf $CrostiniDir/ssh/$HOST/` | `rm ~/.ssh/id_ed25519_signing{,.pub}` `rm ~/dotfiles/ssh/id_ed25519_signing_$HOST.pub` |
-| 1Password item | `$HOST SSH Key` or similar | `$HOST signing SSH Key` |
+| 1Password item | `<hostname> SSH Key` | `<hostname> signing SSH Key` |
 | Register | All registries (auth key) | GitHub + Codeberg only (signing key) |
 
 No automated rotation command exists. This is a known gap.
@@ -175,6 +175,15 @@ rm -rf $CrostiniDir/secrets/$HOST/
 **Effect:** next `update-env` falls through to 1Password retrieval (or prompts for manual restore).
 
 **Caution:** verify that either local files or 1Password has the credentials before invalidating. The cache may be the only plaintext copy after a partial restore failure.
+
+## 1Password Naming Convention
+
+All SSH keys are stored in the **Private** vault. Item names follow a strict hostname-based convention. Code uses `opAuthKeyItem`, `opSigningKeyItem`, and `OpVault` constants -- these are the single source of truth. This table is a reading aid.
+
+| Key type | Item name | Example | op URI |
+|----------|-----------|---------|--------|
+| Auth | `<hostname> SSH Key` | `calliope SSH Key` | `op://Private/<hostname> SSH Key/private key?ssh-format=openssh` |
+| Signing | `<hostname> signing SSH Key` | `calliope signing SSH Key` | `op://Private/<hostname> signing SSH Key/private key?ssh-format=openssh` |
 
 ## Known Secrets
 

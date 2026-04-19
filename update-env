@@ -72,7 +72,7 @@ sshKeyEpilogue() {
       echo
       echo "=== NEW SSH KEY GENERATED ==="
       echo
-      echo "1. Store in 1Password as: $hostname SSH Key (Private vault)"
+      echo "1. Store in 1Password as: $(opAuthKeyItem $hostname) ($OpVault vault)"
       echo
       echo "2. Register via 1Password browser extension:"
       echo "     https://github.com/settings/keys (Authentication Key)"
@@ -1074,7 +1074,8 @@ restoreSshKeyImpl() {
   local localKey="$HOME/.ssh/id_ed25519"
   local cacheDir="$CrostiniDir/ssh/$hostname"
   local cacheKey="$cacheDir/id_ed25519"
-  local opItem="$hostname SSH Key"
+  local opItem
+  opItem=$(opAuthKeyItem "$hostname")
 
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   rm -f "$CrostiniDir/np_id_ed25519" "$CrostiniDir/np_id_ed25519.pub"
@@ -1097,7 +1098,7 @@ restoreSshKeyImpl() {
   [[ -t 0 ]] && state[hasTty]=1
   if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
     state[opReady]=1
-    $op item get "$opItem" --vault Private >/dev/null 2>&1 && state[opHasItem]=1
+    $op item get "$opItem" --vault $OpVault >/dev/null 2>&1 && state[opHasItem]=1
   fi
 
   local action
@@ -1197,7 +1198,7 @@ restoreSshKeyImpl() {
 sshKeyRestoreFromOp() {
   local opItem=$1 localKey=$2 repoPub=$3 cacheDir=$4 cacheKey=$5
   echo "Restoring SSH key from 1Password ($opItem)..."
-  $op read --out-file "$localKey" "op://Private/$opItem/private key?ssh-format=openssh" || {
+  $op read --out-file "$localKey" "op://$OpVault/$opItem/private key?ssh-format=openssh" || {
     echo "ERROR: 1Password SSH key retrieval failed." >&2
     return 1
   }
@@ -1348,8 +1349,9 @@ restoreSigningKey() {
   (( state[repoHasPub] )) && state[repoFp]=$($ssh_keygen -lf "$repoPub" 2>/dev/null | awk '{print $2}')
   if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
     state[opReady]=1
-    local opItem="$hostname signing SSH Key"
-    $op item get "$opItem" --vault Private >/dev/null 2>&1 && state[opHasItem]=1
+    local opItem
+    opItem=$(opSigningKeyItem "$hostname")
+    $op item get "$opItem" --vault $OpVault >/dev/null 2>&1 && state[opHasItem]=1
   fi
 
   local action
@@ -1361,7 +1363,7 @@ restoreSigningKey() {
       chmod 600 "$localKey"
       if (( state[opReady] && !state[opHasItem] )); then
         echo "Signing key exists locally but not in 1Password."
-        echo "  Store as: $opItem (Private vault)"
+        echo "  Store as: $opItem ($OpVault vault)"
       fi
       ;;
 
@@ -1370,7 +1372,7 @@ restoreSigningKey() {
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       echo "Signing key .pub sidecar added to repo. Commit and push."
       if (( state[opReady] && !state[opHasItem] )); then
-        echo "  Also store in 1Password as: $opItem (Private vault)"
+        echo "  Also store in 1Password as: $opItem ($OpVault vault)"
       fi
       ;;
 
@@ -1381,7 +1383,7 @@ restoreSigningKey() {
 
     restore_from_op )
       echo "Restoring signing key from 1Password ($opItem)..."
-      $op read --out-file "$localKey" "op://Private/$opItem/private key?ssh-format=openssh" || {
+      $op read --out-file "$localKey" "op://$OpVault/$opItem/private key?ssh-format=openssh" || {
         echo "ERROR: 1Password signing key retrieval failed." >&2
         return 1
       }
@@ -1406,7 +1408,7 @@ restoreSigningKey() {
       cp "$localKey.pub" "$repoPub" 2>/dev/null || true
       echo "Signing key generated."
       echo
-      echo "1. Store in 1Password as: $hostname signing SSH Key (Private vault)"
+      echo "1. Store in 1Password as: $(opSigningKeyItem $hostname) ($OpVault vault)"
       echo
       echo "2. Register via 1Password browser extension:"
       echo "     https://github.com/settings/keys (Signing Key)"
@@ -1425,7 +1427,8 @@ runSigningKeyPreflight() {
   hostname=$(lib.MachineHostname)
   local localKey=$HOME/.ssh/id_ed25519_signing
   local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
-  local opItem="$hostname signing SSH Key"
+  local opItem
+    opItem=$(opSigningKeyItem "$hostname")
 
   local -A skState=(
     [localExists]=0 [sidecarTracked]=0
@@ -1438,7 +1441,7 @@ runSigningKeyPreflight() {
   fi
   if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
     skState[opReady]=1
-    $op item get "$opItem" --vault Private >/dev/null 2>&1 && skState[opHasItem]=1
+    $op item get "$opItem" --vault $OpVault >/dev/null 2>&1 && skState[opHasItem]=1
   fi
 
   signingKeyPreflight skState "$hostname"
@@ -1457,7 +1460,7 @@ signingKeyPreflight() {
   if (( !STATE[sidecarTracked] )); then
     echo "WARNING: signing key .pub sidecar not committed to repo."
     echo "  Complete the registration workflow:"
-    echo "  1. Store in 1Password as: $hostname signing SSH Key (Private vault)"
+    echo "  1. Store in 1Password as: $(opSigningKeyItem $hostname) ($OpVault vault)"
     echo "  2. Register via 1Password browser extension:"
     echo "       https://github.com/settings/keys (Signing Key)"
     echo "       https://codeberg.org/user/settings/keys (Signing Key)"
@@ -1466,7 +1469,7 @@ signingKeyPreflight() {
 
   if (( STATE[opReady] && !STATE[opHasItem] )); then
     echo "WARNING: signing key not in 1Password."
-    echo "  Store as: $hostname signing SSH Key (Private vault)"
+    echo "  Store as: $(opSigningKeyItem $hostname) ($OpVault vault)"
   fi
 }
 
@@ -1722,6 +1725,12 @@ map() {
 ## globals
 
 NL=$'\n'
+
+# 1Password item naming convention. Single source of truth.
+# See docs/secrets-lifecycle.md "1Password Naming Convention".
+opAuthKeyItem() { echo "$1 SSH Key"; }
+opSigningKeyItem() { echo "$1 signing SSH Key"; }
+OpVault=Private
 
 ## boilerplate
 
