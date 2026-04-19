@@ -45,6 +45,9 @@
       extraSpecialArgs = commonSpecialArgs;
     };
 
+    # Deprecated alias -- remove after confirming no downstream consumers.
+    homeConfigurations.penguin = self.homeConfigurations.crostini;
+
     packages.${hmSystem} = {
       inherit (bashTools) taskBash mkBash tesht;
       home-manager = home-manager.packages.${hmSystem}.default;
