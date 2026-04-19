@@ -154,6 +154,7 @@ stage1() {
     section nix
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
+    writeNixConfTask
     loosely source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
     verifyNixFlakes
 
@@ -846,6 +847,29 @@ installNixTask() {
   prog   on
 
   cmd installNix
+}
+
+# nixConfContent returns the declarative nix.conf content.
+# Enables flakes, auto-optimise, max-jobs. Trusts only cache.nixos.org.
+# No third-party caches (see security.md).
+nixConfContent() {
+  cat <<'EOF'
+experimental-features = nix-command flakes
+auto-optimise-store = true
+max-jobs = auto
+EOF
+}
+
+writeNixConfTask() {
+  local path=/etc/nix/nix.conf
+  desc  'write declarative nix.conf'
+  runas root
+
+  nixConfUpToDate() { [[ -f $path ]] && diff -q "$path" <(nixConfContent) >/dev/null 2>&1; }
+  ok nixConfUpToDate
+
+  writeNixConf() { nixConfContent >$path; }
+  cmd writeNixConf
 }
 
 # verifyNixFlakes checks that nix is runnable and flakes are enabled.
