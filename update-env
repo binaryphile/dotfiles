@@ -1574,7 +1574,8 @@ _lib_dir=$(resolveSourceDir) 2>/dev/null
 if [[ -n ${_lib_dir:-} && -f $_lib_dir/scripts/lib.bash ]]; then
   source $_lib_dir/scripts/lib.bash
 else
-  eval "$(curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/scripts/lib.bash)" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
+  echo "fatal: scripts/lib.bash not found. Run update-env from the dotfiles repo or its symlink." >&2
+  exit 1
 fi
 unset -v _lib_dir
 
