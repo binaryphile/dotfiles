@@ -1426,6 +1426,67 @@ test_nixConfContent() {
   [[ $got == *"auto-optimise-store"* ]] || { echo "missing auto-optimise-store"; return 1; }
 }
 
+# test_stage1TaskGroups tests the pure decision function that maps platform
+# to the set of task groups stage1 should run. No mocks, no I/O -- pure
+# input/output. Validates the key invariant: NixOS does not run nix,
+# nix.conf, or home-manager tasks; crostini runs credentials.
+test_stage1TaskGroups() {
+  local -A case1=(
+    [name]='nixos gets no platform-specific groups'
+    [testPlatform]=nixos
+    [wantEmpty]=1
+  )
+  local -A case2=(
+    [name]='crostini gets apt, hostname, gpoc, nix, credential'
+    [testPlatform]=crostini
+    [wantGroups]='apt hostname gpoc nix credential'
+  )
+  local -A case3=(
+    [name]='debian gets apt and nix but not hostname, gpoc, or credential'
+    [testPlatform]=debian
+    [wantGroups]='apt nix'
+    [wantAbsent]='hostname gpoc credential'
+  )
+  local -A case4=(
+    [name]='linux gets nix only'
+    [testPlatform]=linux
+    [wantGroups]='nix'
+    [wantAbsent]='apt hostname gpoc credential'
+  )
+  local -A case5=(
+    [name]='macos gets nix only'
+    [testPlatform]=macos
+    [wantGroups]='nix'
+    [wantAbsent]='apt hostname gpoc credential'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    local got
+    got=$(stage1TaskGroups "$testPlatform")
+
+    if [[ -n ${wantEmpty:-} ]]; then
+      [[ -z $got ]] || { echo "$testPlatform: want empty, got: $got"; return 1; }
+      return 0
+    fi
+    local group IFS=' '
+    if [[ -n ${wantGroups:-} ]]; then
+      for group in $wantGroups; do
+        [[ $got == *"$group"* ]] || { echo "$testPlatform should include $group, got: $got"; return 1; }
+      done
+    fi
+    if [[ -n ${wantAbsent:-} ]]; then
+      for group in $wantAbsent; do
+        [[ $got != *"$group"* ]] || { echo "$testPlatform should NOT include $group, got: $got"; return 1; }
+      done
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
 # test_panelHermetic runs the nix-packaged panel binary under a stripped
 # PATH (only the wrapper's own deps). Verifies key subcommands exit
 # without "command not found" errors, proving the runtime dep closure
