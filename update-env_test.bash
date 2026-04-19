@@ -1426,38 +1426,38 @@ test_nixConfContent() {
   [[ $got == *"auto-optimise-store"* ]] || { echo "missing auto-optimise-store"; return 1; }
 }
 
-# test_stage1TaskGroups tests the pure decision function that maps platform
-# to the set of task groups stage1 should run. No mocks, no I/O -- pure
-# input/output. Validates the key invariant: NixOS does not run nix,
-# nix.conf, or home-manager tasks; crostini runs credentials.
-test_stage1TaskGroups() {
+# test_platformTaskGroups tests the pure decision function that maps platform
+# to the set of task groups both stages use. No mocks, no I/O -- pure
+# input/output. Key invariants: NixOS gets no groups; hm only runs on
+# platforms with flake configs (crostini, debian); crostini runs credentials.
+test_platformTaskGroups() {
   local -A case1=(
     [name]='nixos gets no platform-specific groups'
     [testPlatform]=nixos
     [wantEmpty]=1
   )
   local -A case2=(
-    [name]='crostini gets apt, hostname, gpoc, nix, credential'
+    [name]='crostini gets apt, hostname, gpoc, nix, hm, credential'
     [testPlatform]=crostini
-    [wantGroups]='apt hostname gpoc nix credential'
+    [wantGroups]='apt hostname gpoc nix hm credential'
   )
   local -A case3=(
-    [name]='debian gets apt and nix but not hostname, gpoc, or credential'
+    [name]='debian gets apt, nix, hm but not hostname, gpoc, or credential'
     [testPlatform]=debian
-    [wantGroups]='apt nix'
+    [wantGroups]='apt nix hm'
     [wantAbsent]='hostname gpoc credential'
   )
   local -A case4=(
-    [name]='linux gets nix only'
+    [name]='linux gets nix only, not hm'
     [testPlatform]=linux
     [wantGroups]='nix'
-    [wantAbsent]='apt hostname gpoc credential'
+    [wantAbsent]='apt hostname gpoc hm credential'
   )
   local -A case5=(
-    [name]='macos gets nix only'
+    [name]='macos gets nix only, not hm'
     [testPlatform]=macos
     [wantGroups]='nix'
-    [wantAbsent]='apt hostname gpoc credential'
+    [wantAbsent]='apt hostname gpoc hm credential'
   )
 
   subtest() {
@@ -1465,7 +1465,7 @@ test_stage1TaskGroups() {
     eval "$(tesht.Inherit $casename)"
 
     local got
-    got=$(stage1TaskGroups "$testPlatform")
+    got=$(platformTaskGroups "$testPlatform")
 
     if [[ -n ${wantEmpty:-} ]]; then
       [[ -z $got ]] || { echo "$testPlatform: want empty, got: $got"; return 1; }
