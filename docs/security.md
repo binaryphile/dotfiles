@@ -114,7 +114,7 @@ The following threat actors and attack vectors are the ones this security model 
 - File permissions (`chmod 600` on private keys, `chmod 700` on staging dirs) -- defense-in-depth against accidental exposure only.
 - `SSH_ASKPASS_REQUIRE=never` prevents askpass fallback from leaking prompts to unexpected processes.
 - `age -p` prompts on TTY; passphrase does not appear in process argv or shell history.
-- Staging directories use `mktemp` with signal traps (`withCleanupTrap`) for cleanup on INT/TERM.
+- Staging directories use `mktemp` for cleanup on completion.
 
 *NixOS-specific vectors:*
 - NixOS is a multi-user system (unlike single-user Crostini containers). Other users or system services could access Ted's files if permissions are misconfigured. However, NixOS uses proper Unix multi-user isolation -- `~/.ssh/` at mode 700 is meaningful here, unlike Crostini's single-user container.
@@ -242,7 +242,6 @@ Every `eval` in the script, with input source and trust level:
 | 1345 | `$(SSH_ASKPASS_REQUIRE=never $keychain --eval id_ed25519)` | `keychain` command output | PATH-dependent | `keychain` is not invoked by absolute path. In production, `$keychain` is hardcoded to `keychain`; in test mode (`DOTFILES_TEST=1`), it's injectable via env. |
 | 1643 | `"$command $arg"` (in `each`) | Caller-supplied command + stdin lines | Repo-controlled | `$arg` is unquoted in the eval. Safe when input is controlled (repo filenames, heredoc literals), but structurally fragile -- shell metacharacters in input would execute. |
 | 1664 | `"echo \"$EXPRESSION\""` (in `map`) | Caller-supplied expression template | Repo-controlled | Expression is a single-quoted literal in all call sites. `$()` or backticks in the expression would execute. Safe only because callers are trusted. |
-| 880-881 | `"${prevInt:-trap - INT}"` (in `withCleanupTrap`) | `trap -p` output | Shell-internal | Restores previous trap handlers. Input is bash's own `trap -p` output -- safe. |
 | 1613 | `"$prevOpts_"` (in `loosely`) | `set +o` output | Shell-internal | Restores shell options. Input is bash's own `set +o` output -- safe. |
 
 The `curl | eval` fallback for `lib.bash` (previously the widest code-injection surface) has been removed. The script now requires being run from the cloned repo.
@@ -254,7 +253,7 @@ Every external download, with verification status:
 | Line | URL | Method | Verification | Executes as |
 |------|-----|--------|--------------|-------------|
 | 1688 | `raw.githubusercontent.com/.../task.bash` (pinned commit) | `curl > tmp; source tmp` | Commit hash in URL (no cryptographic verification) | User (sourced) |
-| 733 | `install.lix.systems/lix` | `curl \| sh -s` | None | User (sh subprocess, but installs to /nix) |
+| installNix | `github.com/.../nix-installer/releases/.../nix-installer-*` | `curl > tmp; chmod +x; exec` | SHA-256 verified against pinned hash | User (Determinate Nix installer binary) |
 | 442 | `github.com/.../globalprotect-openconnect/.../v$version/$deb` | `curl > tmp; sudo dpkg -i` | SHA-256 verified against pinned hash | **Root** (dpkg) |
 | 389 | `raw.githubusercontent.com/.../vim-plug/.../plug.vim` | `curl > file` | None | Not executed directly |
 
@@ -266,12 +265,10 @@ Exact moments secrets appear in cleartext on disk or in memory:
 
 | Line | Secret | Form | Location | Duration | Permissions |
 |------|--------|------|----------|----------|-------------|
-| 1120-1142 | SSH private key | Plaintext | `~/.ssh/.stage.XXXXXX/` (mktemp -d, mode 700) | Decryption through install (~seconds) | 700 (dir), 600 (file via tar) |
-| 1138 | SSH private key | Plaintext | `$CrostiniDir/ssh/<hostname>/` | Persistent (cache) | 600 (file); dir permissions depend on shared mount |
-| 967-1010 | SSH private key | Plaintext | `~/.ssh/id_ed25519` | Persistent (operational) | 600 |
-| 1289-1302 | Secrets bundle | Decrypted tar | `~/secrets.bundle.XXXXXX` (mktemp, mode 600) | Decryption through extraction (~seconds) | 600 |
-| 1299-1314 | Individual secrets | Plaintext files | `~/secrets.stage.XXXXXX/` (mktemp -d, mode 700) | Extraction through move (~seconds) | 700 (dir), 600 (files) |
-| 1318-1323 | Individual secrets | Plaintext files | `$CrostiniDir/secrets/<hostname>/` | Persistent (cache) | 700 (dir), 600 (files); shared mount caveats |
+| restoreSshKeyImpl | SSH private key | Plaintext | `~/.ssh/id_ed25519` | Persistent (operational) | 600 |
+| sshKeyRestoreFromOp | SSH private key | Plaintext (1Password) | Process memory during `op read` | Retrieval (~seconds) | N/A (memory only, written to file with 600) |
+| restoreSshKeyImpl | SSH private key | Plaintext | `$CrostiniDir/ssh/<hostname>/` | Persistent (cache) | 600 (file); dir permissions depend on shared mount |
+| restoreSecrets | Individual secrets | Plaintext files | `$CrostiniDir/secrets/<hostname>/` | Persistent (cache) | 600 (files); shared mount caveats |
 | permanent | Individual secrets | Plaintext files | `~/secrets/` | Persistent (operational) | 700 (dir), 600 (files) |
 | restoreSigningKey | SSH signing key | Plaintext | `~/.ssh/id_ed25519_signing` | Persistent (operational) | 600 (no passphrase) |
 | restoreSigningKey | SSH signing key | Plaintext (1Password) | Process memory during `op read` | Retrieval (~seconds) | N/A (memory only, written to file with 600) |
@@ -468,7 +465,7 @@ Effectiveness: **prevents** (blocks the attack), **detects** (reveals it happene
 | 1Password vault | SSH keys, secrets at rest | Prevents | Vault encryption + master password + 2FA + server-side rate limiting |
 | `op` CLI session | In-transit retrieval | Prevents | Biometric/password auth, 10-min memory cache, no disk persistence |
 | File permissions | Local plaintext | Slows | `chmod 600`/`700`. Defense-in-depth on multi-user systems; not a boundary on single-user Crostini containers |
-| Signal traps | Temp file cleanup | Prevents (partial) | `withCleanupTrap` in `update-env`. Covers INT/TERM; not KILL or power loss |
+| Signal traps | Temp file cleanup | Slows | `mktemp` directories cleaned up on completion. No explicit INT/TERM traps after age-to-repo removal -- temp files may leak on signal. Low risk since remaining temp dirs contain no secrets (secrets restore uses plain file copy, not staged decryption). |
 | `SSH_ASKPASS_REQUIRE=never` | Askpass fallback | Prevents | Blocks broken nix askpass from leaking prompts to unexpected processes |
 | `.gitignore` | Accidental commit | Slows | Advisory; blocks `git add` for private key patterns. Not a security boundary -- `git add -f` bypasses |
 | Fingerprint validation | Key/hostname mismatch | Detects | Self-consistency check against repo `.pub`. Does not detect repo compromise |

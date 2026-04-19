@@ -166,8 +166,8 @@ stage1() {
   # Dev tools (task.bash, mk.bash, tesht) are nix-packaged in bash-tools.nix
   # and installed by home-manager above. Clones moved to stage 2.
 
-  # Credential restore + agent load + auth preflight (after age is installed
-  # by home-manager). Working shell includes full identity -- SSH push, clone.
+  # Credential restore + agent load + auth preflight.
+  # Working shell includes full identity -- SSH push, clone.
   case $Platform in crostini )
     section credential
     try restoreSshKey
@@ -213,7 +213,6 @@ credentialPreflight() {
       ;;
   esac
   local missing=()
-  command -v age &>/dev/null          || missing+=("age")
   [[ -d ~/dotfiles ]]                 || missing+=("~/dotfiles")
   if [[ ! -f $CrostiniDir/hostname ]]; then
     missing+=("hostname (run 'update-env -1 <hostname>' first)")

@@ -94,11 +94,11 @@ Per CLAUDE.md: docs first, then implementation.
 | UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Partial | Two-stage deployment works. 1Password CLI (`op`) integration not yet implemented -- credential restore falls back to manual retrieval |
-| UC-4a Rotate SSH Key | Partial | Manual procedure works. 1Password storage is manual (no `op` automation yet) |
-| UC-4b Manage Secrets | Partial | Local secrets work. 1Password as backup store is manual (no `op` automation yet) |
-| UC-4c Recover from Credential Failure | Partial | Cache and local recovery work. 1Password retrieval is manual |
-| UC-4d Decommission a Machine | Partial | Repo and cache cleanup works. 1Password cleanup is manual |
+| UC-4 Environment Deployment | Working | Two-stage + credential-only (`-c`). SSH keys restored from 1Password via `op`. Signing key preflight warns on incomplete registration. |
+| UC-4a Rotate SSH Key | Partial | Manual procedure works. `op` retrieves auth and signing keys. 1Password storage after generation is manual. |
+| UC-4b Manage Secrets | Partial | Local secrets work. 1Password as backup store is manual -- no `op` automation for secrets (multiple files, no standard schema). |
+| UC-4c Recover from Credential Failure | Working | Local, cache, and 1Password recovery paths all functional. |
+| UC-4d Decommission a Machine | Partial | Repo and cache cleanup works. 1Password cleanup is manual. |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
 | UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via flake input |

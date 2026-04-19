@@ -152,11 +152,11 @@ See UC-4c in [use-cases.md](use-cases.md).
 4. If local is authoritative: update repo `.pub`, store in 1Password
 5. If neither matches registries: determine which key is registered, keep that one, update everything else
 
-### Corrupt secrets cache
+### Corrupt or missing secrets cache
 
-**Symptom:** `validateSecretsArchive` rejects with "not a valid tar archive", "invalid member name", or "unexpected file type" errors.
+**Symptom:** `update-env` prints "cache restore failed" or cache directory is empty/missing.
 
-**Path A** (local `~/secrets/` files intact): re-run `update-env` to rebuild cache from local files
+**Path A** (local `~/secrets/` files intact): re-run `update-env` -- cache is rebuilt from local files
 
 **Path B** (local empty, 1Password has secrets): retrieve from 1Password, populate `~/secrets/`
 
