@@ -62,19 +62,19 @@ packaging, implementation status.
 
 ## Test results
 
-84/84 pass. `home-manager build` succeeds.
+85/85 pass. `home-manager build` succeeds.
 
 ## Testing
 
 ```bash
-tesht update-env_test.bash test_each test_keepIf test_map test_verifySha256 \
-  test_nixInstallerAsset test_installNix test_verifyNixFlakes \
-  test_signingKeyAction test_restoreSigningKey test_installKey \
-  test_pubFingerprint test_crostiniHostname test_authPreflight \
-  test_restoreSecretsTierSelection test_withSecretMissingFile \
-  test_usageText test_credentialPreflight test_cliHelp \
-  test_cliCredential test_sshKeyAction \
-  test_signingKeyPreflight test_withSecret
+tesht update-env_test.bash test_each test_keepIf test_map test_stream \
+  test_verifySha256 test_nixInstallerAsset test_installNix \
+  test_verifyNixFlakes test_signingKeyAction test_restoreSigningKey \
+  test_installKey test_pubFingerprint test_crostiniHostname \
+  test_authPreflight test_restoreSecretsTierSelection \
+  test_withSecret test_withSecretMissingFile test_usageText \
+  test_credentialPreflight test_cliHelp test_cliCredential \
+  test_sshKeyAction test_signingKeyPreflight
 ```
 
 ## Context for next agent
