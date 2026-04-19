@@ -68,7 +68,7 @@ For either key type, the procedure is:
 |------|----------|-------------|
 | Delete | `rm ~/.ssh/id_ed25519{,.pub}` `rm ~/dotfiles/ssh/id_ed25519_$HOST.pub` `rm -rf $CrostiniDir/ssh/$HOST/` | `rm ~/.ssh/id_ed25519_signing{,.pub}` `rm ~/dotfiles/ssh/id_ed25519_signing_$HOST.pub` |
 | 1Password item | `<hostname> SSH Key` | `<hostname> signing SSH Key` |
-| Register | All registries (auth key) | GitHub + Codeberg only (signing key) |
+| Register | All registries (auth key) | GitHub only (signing key) |
 
 No automated rotation command exists. This is a known gap.
 

@@ -178,7 +178,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
     - Signing key: `<hostname> signing SSH Key` in Private vault
   - Register keys with registries via the 1Password browser extension (open the registry URL, use 1Password to fill the key directly from the vault item):
     - Auth key: GitHub, Codeberg, Bitbucket, Stash (VPN required)
-    - Signing key: GitHub, Codeberg (Signing Key type)
+    - Signing key: GitHub only (Signing Key type; Codeberg does not support SSH signing verification)
   - Crostini: configure ChromeOS Chrome proxy (per-network, one-time; instructions printed in output):
     - ChromeOS Settings > Network > connection > Proxy > Automatic proxy configuration
     - URL: `http://127.0.0.1:8120/proxy.pac`

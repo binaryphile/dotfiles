@@ -542,7 +542,7 @@ Separate from machine compromise -- covers scenarios where a key is leaked (back
 10. Review `known_hosts` for signs of MITM during the exposure window
 
 **Signing key:**
-1. **Contain:** remove signing key from GitHub/Codeberg signing key settings
+1. **Contain:** remove signing key from GitHub signing key settings
 2. Delete local key and repo sidecar
 3. Remove from 1Password
 4. Generate new key: `update-env`
