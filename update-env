@@ -1399,7 +1399,6 @@ restoreSigningKey() {
       echo "Signing key restored from 1Password."
       echo "Register via 1Password browser extension if not already registered:"
       echo "  https://github.com/settings/keys (Signing Key)"
-      echo "  https://codeberg.org/user/settings/keys (Signing Key)"
       ;;
 
     generate )
@@ -1417,7 +1416,6 @@ restoreSigningKey() {
       echo
       echo "2. Register via 1Password browser extension:"
       echo "     https://github.com/settings/keys (Signing Key)"
-      echo "     https://codeberg.org/user/settings/keys (Signing Key)"
       echo
       echo "3. Commit and push:"
       echo "     cd ~/dotfiles && git add ssh/ && git commit && git push"
@@ -1468,7 +1466,6 @@ signingKeyPreflight() {
     echo "  1. Store in 1Password as: $(opSigningKeyItem $hostname) ($OpVault vault)"
     echo "  2. Register via 1Password browser extension:"
     echo "       https://github.com/settings/keys (Signing Key)"
-    echo "       https://codeberg.org/user/settings/keys (Signing Key)"
     echo "  3. Commit: cd ~/dotfiles && git add ssh/ && git commit && git push"
   fi
 
