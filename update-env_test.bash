@@ -1422,6 +1422,23 @@ test_cliCredential() {
   fi
 }
 
+# test_nixConfContent tests that the declarative nix.conf content enables
+# flakes, trusts only cache.nixos.org, and does not include third-party caches.
+# Pure output-based test -- no filesystem.
+test_nixConfContent() {
+  local got
+  got=$(nixConfContent)
+
+  # Must enable flakes
+  [[ $got == *"flakes"* ]] || { echo "missing flakes"; return 1; }
+
+  # Must not trust third-party caches
+  [[ $got != *"cache.lix.systems"* ]] || { echo "contains lix cache"; return 1; }
+
+  # Must have auto-optimise
+  [[ $got == *"auto-optimise-store"* ]] || { echo "missing auto-optimise-store"; return 1; }
+}
+
 # test_panelHermetic runs the nix-packaged panel binary under a stripped
 # PATH (only the wrapper's own deps). Verifies key subcommands exit
 # without "command not found" errors, proving the runtime dep closure
