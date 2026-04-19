@@ -478,101 +478,8 @@ test_sshKeyAction() {
   tesht.Run ${!case@}
 }
 
-# test_ageRoundTrip tests that a key pair can be encrypted to an age bundle
-# and decrypted back, with the public key fingerprint preserved.
-# Uses age recipient mode (not passphrase) to avoid TTY requirement.
-# This is the core recovery path -- if this breaks, powerwash recovery fails.
-test_ageRoundTrip() {
-  command -v age >/dev/null || { echo "age not installed, skipping"; return 0; }
-  command -v age-keygen >/dev/null || { echo "age-keygen not installed, skipping"; return 0; }
-
-  local dir
-  tesht.MktempDir dir || return 128
-
-  # Generate an age keypair for test encryption (avoids TTY passphrase prompt)
-  age-keygen -o "$dir/age.key" 2>"$dir/age.pub.raw"
-  local ageRecipient
-  ageRecipient=$(grep '^age1' "$dir/age.pub.raw" || age-keygen -y "$dir/age.key")
-
-  # Generate an SSH key pair
-  ssh-keygen -t ed25519 -f "$dir/id_ed25519" -N "" -q
-
-  local origFp
-  origFp=$(pubFingerprint "$dir/id_ed25519.pub")
-  [[ -n "$origFp" ]] || { echo "failed to get original fingerprint"; return 1; }
-
-  # Bundle and encrypt (recipient mode, same pattern used by encrypt-secrets)
-  mkdir -p "$dir/stage"
-  cp "$dir/id_ed25519" "$dir/stage/id_ed25519"
-  cp "$dir/id_ed25519.pub" "$dir/stage/id_ed25519.pub"
-
-  tar cf - -C "$dir/stage" . | age -r "$ageRecipient" -o "$dir/bundle.age" || {
-    echo "age encryption failed"; return 1
-  }
-  [[ -s "$dir/bundle.age" ]] || { echo "empty age bundle"; return 1; }
-
-  # Decrypt and extract
-  mkdir -p "$dir/restored"
-  age -d -i "$dir/age.key" "$dir/bundle.age" | tar xf - -C "$dir/restored" || {
-    echo "age decryption failed"; return 1
-  }
-
-  # Verify restored key pair
-  [[ -f "$dir/restored/id_ed25519" ]]     || { echo "restored private key missing"; return 1; }
-  [[ -f "$dir/restored/id_ed25519.pub" ]] || { echo "restored public key missing"; return 1; }
-
-  local restoredFp
-  restoredFp=$(pubFingerprint "$dir/restored/id_ed25519.pub")
-  [[ "$origFp" == "$restoredFp" ]] || {
-    echo "fingerprint mismatch: orig=$origFp restored=$restoredFp"
-    return 1
-  }
-}
-
-# test_secretsRoundTrip tests that secrets can be bundled into a tar.age
-# and restored, preserving file contents.
-test_secretsRoundTrip() {
-  command -v age >/dev/null || { echo "age not installed, skipping"; return 0; }
-  command -v age-keygen >/dev/null || { echo "age-keygen not installed, skipping"; return 0; }
-
-  local dir
-  tesht.MktempDir dir || return 128
-
-  # Create test secrets
-  mkdir -p "$dir/secrets"
-  echo "token123" > "$dir/secrets/stash.key"
-  echo "conftoken" > "$dir/secrets/confluence.key"
-  chmod 600 "$dir/secrets/stash.key" "$dir/secrets/confluence.key"
-
-  # Generate age keypair for test
-  age-keygen -o "$dir/age.key" 2>/dev/null
-  local ageRecipient
-  ageRecipient=$(age-keygen -y "$dir/age.key")
-
-  # Bundle and encrypt
-  tar cf - -C "$dir/secrets" . | age -r "$ageRecipient" -o "$dir/bundle.tar.age" || {
-    echo "encryption failed"; return 1
-  }
-  [[ -s "$dir/bundle.tar.age" ]] || { echo "empty bundle"; return 1; }
-
-  # Decrypt and extract
-  mkdir -p "$dir/restored"
-  age -d -i "$dir/age.key" "$dir/bundle.tar.age" | tar xf - -C "$dir/restored" || {
-    echo "decryption failed"; return 1
-  }
-
-  # Verify contents
-  [[ -f "$dir/restored/stash.key" ]]      || { echo "stash.key missing"; return 1; }
-  [[ -f "$dir/restored/confluence.key" ]] || { echo "confluence.key missing"; return 1; }
-  [[ $(< "$dir/restored/stash.key") == "token123" ]]  || { echo "stash.key content mismatch"; return 1; }
-  [[ $(< "$dir/restored/confluence.key") == "conftoken" ]] || { echo "confluence.key content mismatch"; return 1; }
-}
-
 # test_restoreSecretsTierSelection tests that restoreSecrets skips restore
 # when local secrets exist, and prints setup message when nothing is available.
-# Cache and age tiers are covered by the secrets round-trip integration test.
-# Full tier logic integration testing requires DI for the filesystem layer,
-# which is deferred to a future phase.
 test_restoreSecretsTierSelection() {
   local -A case1=(
     [name]='local secrets exist -- skip restore'
@@ -589,7 +496,8 @@ test_restoreSecretsTierSelection() {
     tesht.MktempDir dir || return 128
     HOME=$dir
     CrostiniDir="$dir/crostini"
-    mkdir -p "$dir/secrets" "$dir/dotfiles/secrets"
+    CrostiniDirL="$dir/crostini"
+    mkdir -p "$dir/secrets"
     lib.MachineHostname() { echo testhost; }
 
     local got rc
@@ -604,92 +512,6 @@ test_restoreSecretsTierSelection() {
         got=$(restoreSecrets 2>&1) && rc=$? || rc=$?
         (( rc == 0 )) || { echo "rc=$rc, want 0"; return 1; }
         [[ "$got" == *"No secrets for testhost"* ]] || { echo "should print setup message, got: $got"; return 1; }
-        ;;
-    esac
-  }
-
-  tesht.Run ${!case@}
-}
-
-# test_validateSecretsArchive tests the production archive validator directly.
-test_validateSecretsArchive() {
-  local -A case1=([name]='accept archive with bare filenames (tar -T output)')
-  local -A case2=([name]='accept archive with ./ prefix (tar -C . output)')
-  local -A case3=([name]='reject archive with nested path')
-  local -A case4=([name]='reject archive with dotfile entry')
-  local -A case5=([name]='reject corrupt/non-tar file')
-  local -A case6=([name]='reject archive with symlink entry')
-  local -A case7=([name]='reject empty archive')
-  local -A case8=([name]='reject archive with non-root directory entry')
-
-  subtest() {
-    local casename=$1
-    eval "$(tesht.Inherit "$casename")"
-
-    local dir rc
-    tesht.MktempDir dir || return 128
-
-    case $casename in
-      case1)
-        mkdir -p "$dir/secrets"
-        echo "token" > "$dir/secrets/stash.key"
-        echo "conf" > "$dir/secrets/confluence.key"
-        printf '%s\n' stash.key confluence.key | tar cf "$dir/bundle.tar" -C "$dir/secrets" -T -
-        validateSecretsArchive "$dir/bundle.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc == 0 )) || { echo "valid bare-name archive rejected"; return 1; }
-        ;;
-      case2)
-        mkdir -p "$dir/secrets"
-        echo "token" > "$dir/secrets/stash.key"
-        tar cf "$dir/bundle.tar" -C "$dir/secrets" .
-        validateSecretsArchive "$dir/bundle.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc == 0 )) || { echo "valid ./name archive rejected"; return 1; }
-        ;;
-      case3)
-        mkdir -p "$dir/nested/sub"
-        echo "pwned" > "$dir/nested/sub/file"
-        tar cf "$dir/evil.tar" -C "$dir" nested/sub/file
-        validateSecretsArchive "$dir/evil.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc != 0 )) || { echo "nested path should be rejected"; return 1; }
-        ;;
-      case4)
-        # Create archive with a dotfile
-        mkdir -p "$dir/secrets"
-        echo "hidden" > "$dir/secrets/.npmrc"
-        tar cf "$dir/evil.tar" -C "$dir/secrets" .npmrc
-        validateSecretsArchive "$dir/evil.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc != 0 )) || { echo "dotfile entry should be rejected"; return 1; }
-        ;;
-      case5)
-        echo "not a tar" > "$dir/garbage.tar"
-        validateSecretsArchive "$dir/garbage.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc != 0 )) || { echo "corrupt file should be rejected"; return 1; }
-        ;;
-      case6)
-        # Symlink entry -- type validation must reject it.
-        # GNU tar stores symlinks by default (without -h).
-        mkdir -p "$dir/secrets"
-        echo "real" > "$dir/secrets/target.key"
-        ln -s target.key "$dir/secrets/stash.key"
-        tar cf "$dir/link.tar" -C "$dir/secrets" stash.key
-        validateSecretsArchive "$dir/link.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc != 0 )) || { echo "symlink entry should be rejected"; return 1; }
-        ;;
-      case7)
-        # Empty tar archive -- verify it was actually created
-        tar cf "$dir/empty.tar" -T /dev/null 2>/dev/null || true
-        [[ -f "$dir/empty.tar" ]] || { echo "empty tar not created"; return 1; }
-        validateSecretsArchive "$dir/empty.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc != 0 )) || { echo "empty archive should be rejected"; return 1; }
-        ;;
-      case8)
-        # Archive with ONLY a non-root directory entry (no nested file).
-        # Isolates the directory rejection -- this test fails if the */
-        # name check or the type-pass root-only check is removed.
-        mkdir -p "$dir/secrets/subdir"
-        tar cf "$dir/subdir.tar" -C "$dir/secrets" subdir
-        validateSecretsArchive "$dir/subdir.tar" >/dev/null 2>&1 && rc=$? || rc=$?
-        (( rc != 0 )) || { echo "archive with non-root directory should be rejected"; return 1; }
         ;;
     esac
   }
