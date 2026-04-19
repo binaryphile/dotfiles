@@ -961,27 +961,23 @@ sshKeygenTask() {
 # sourced from environment only when DOTFILES_TEST=1, otherwise hardcoded.
 # See bash style guide # Injectable dependencies.
 if [[ ${DOTFILES_TEST:-} == 1 ]]; then
-  age=${age:-age}
   curl=${curl:-curl}
   nix=${nix:-nix}
   sha256sum=${sha256sum:-sha256sum}
   ssh_keygen=${ssh_keygen:-ssh-keygen}
   ssh_add=${ssh_add:-ssh-add}
   keychain=${keychain:-keychain}
-  tar=${tar:-tar}
   ssh=${ssh:-ssh}
   ip=${ip:-ip}
   op=${op:-op}
   uname_s=${uname_s:-$(uname -s)}
   uname_m=${uname_m:-$(uname -m)}
 else
-  age=age
   curl=curl
   nix=nix
   ssh_keygen=ssh-keygen
   ssh_add=ssh-add
   keychain=keychain
-  tar=tar
   ssh=ssh
   ip=ip
   op=op
@@ -995,39 +991,6 @@ else
 fi
 
 SshKeyStatus=present
-SshStageDir=""    # tracked for signal cleanup
-SecretsTmpFiles=() # tracked for signal cleanup
-
-cleanupSshStage() {
-  if [[ -n $SshStageDir && -d $SshStageDir ]]; then
-    rm -rf "$SshStageDir"
-  fi
-  SshStageDir=""
-}
-
-cleanupSecretsTmp() {
-  cleanupOne() { [[ -e $1 ]] && rm -rf "$1"; return 0; }
-  printf '%s\n' "${SecretsTmpFiles[@]}" | each cleanupOne
-  SecretsTmpFiles=()
-}
-
-# withCleanupTrap CLEANUP FUNC [ARGS...] -- call FUNC with INT/TERM trap that
-# runs CLEANUP then re-raises the signal (preserving abort semantics).
-# Saves and restores previous trap handlers. Does NOT suppress set -e inside
-# FUNC -- the function runs under normal errexit behavior.
-withCleanupTrap() {
-  local cleanup=$1 func=$2; shift 2
-  local prevInt prevTerm
-  prevInt=$(trap -p INT)
-  prevTerm=$(trap -p TERM)
-  trap "$cleanup; trap - INT; kill -INT \$\$" INT
-  trap "$cleanup; trap - TERM; kill -TERM \$\$" TERM
-  $func "$@"
-  local rc=$?
-  eval "${prevInt:-trap - INT}"
-  eval "${prevTerm:-trap - TERM}"
-  return $rc
-}
 
 # sshKeyAction -- pure decision function for SSH key restore.
 #
@@ -1286,116 +1249,39 @@ sshKeyGenerate() {
   SshKeyStatus=generated
 }
 
-restoreSshKey() { withCleanupTrap cleanupSshStage restoreSshKeyImpl; }
+restoreSshKey() { restoreSshKeyImpl; }
 
-# restoreSecrets -- three-tier restore for per-machine secrets bundle.
-# Same model as SSH key: local -> mount cache -> age decrypt from repo.
-# Secrets are flat files in ~/secrets/. Bundle is secrets/<hostname>.tar.age.
-restoreSecrets() { withCleanupTrap cleanupSecretsTmp restoreSecretsImpl; }
-
-restoreSecretsImpl() {
+# restoreSecrets -- two-tier restore for per-machine secrets.
+# Secrets are flat files in ~/secrets/. Backed up to 1Password, not the repo.
+# Restore: local -> mount cache -> manual from 1Password.
+restoreSecrets() {
   local hostname
   hostname=$(lib.MachineHostname)
   lib.ValidateHostname $hostname || return 1
   local secretsDir="$HOME/secrets"
-  local repoBundle="$HOME/dotfiles/secrets/${hostname}.tar.age"
   local cacheDir="$CrostiniDir/secrets/$hostname"
 
   mkdirp $secretsDir && chmod 700 "$secretsDir"
 
-  # Repo bundle hash for freshness
-  local repoHash=""
-  [[ -f $repoBundle ]] && repoHash=$(sha256sum "$repoBundle" | awk '{print $1}')
-
-  # Tier 1: local secrets exist -- check freshness
+  # Tier 1: local secrets exist
   if [[ -n $(lib.Glob $secretsDir/*) ]]; then
-    local localHash=""
-    [[ -f $secretsDir/.bundle-hash ]] && localHash=$(< "$secretsDir/.bundle-hash")
-    if [[ -n $repoHash && -n $localHash && $localHash != "$repoHash" ]]; then
-      echo "WARNING: secrets may be stale (repo bundle updated). Run: scripts/encrypt-secrets" >&2
-    fi
     return 0
   fi
 
-  # Tier 2: mount cache (namespaced by hostname, freshness checked)
-  if [[ -d $cacheDir && -f $cacheDir/.bundle-hash ]]; then
-    local cachedHash
-    cachedHash=$(< "$cacheDir/.bundle-hash")
-    if [[ -z $repoHash || $cachedHash == "$repoHash" ]] && [[ -n $(lib.Glob $cacheDir/*) ]]; then
-      echo "Restoring secrets from mount cache ($hostname)..."
-      local stageDir
-      stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
-      chmod 700 "$stageDir"
-      if cp "$cacheDir"/* "$cacheDir"/.bundle-hash "$stageDir"/ 2>/dev/null; then
-        chmod 600 "$stageDir"/* 2>/dev/null
-        mv "$stageDir"/* "$stageDir"/.bundle-hash "$secretsDir"/ 2>/dev/null
-        rmdir "$stageDir" 2>/dev/null
-        return 0
-      fi
-      rm -rf "$stageDir"
-      echo "WARNING: cache restore failed. Falling through to decrypt." >&2
-    elif [[ -n $repoHash ]]; then
-      echo "Mount secrets cache stale. Falling through to decrypt."
-    fi
-  fi
-
-  # Tier 3: age decrypt tarball from repo
-  if [[ -f $repoBundle ]]; then
-    if [[ ! -t 0 ]]; then
-      echo "Secrets encrypted in repo but no TTY."
+  # Tier 2: mount cache (namespaced by hostname)
+  if [[ -d $cacheDir ]] && [[ -n $(lib.Glob $cacheDir/*) ]]; then
+    echo "Restoring secrets from mount cache ($hostname)..."
+    local stageDir
+    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
+    chmod 700 "$stageDir"
+    if cp "$cacheDir"/* "$stageDir"/ 2>/dev/null; then
+      chmod 600 "$stageDir"/* 2>/dev/null
+      mv "$stageDir"/* "$secretsDir"/ 2>/dev/null
+      rmdir "$stageDir" 2>/dev/null
       return 0
     fi
-    command -v -- $age >/dev/null 2>&1 || { echo $age not found; return 1; }
-    echo Decrypting secrets for $hostname...
-    # Decrypt to temp file first, validate archive members, then extract
-    local tmpBundle stageDir
-    tmpBundle=$(mktemp "$secretsDir.bundle.XXXXXX"); SecretsTmpFiles=("$tmpBundle")
-    if ! $age --decrypt "$repoBundle" >$tmpBundle || [[ ! -s $tmpBundle ]]; then
-      rm -f "$tmpBundle"
-      echo "ERROR: secrets decryption failed." >&2
-      return 1
-    fi
-    if ! validateSecretsArchive $tmpBundle; then
-      rm -f "$tmpBundle"
-      return 1
-    fi
-    stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX"); SecretsTmpFiles=("$tmpBundle" "$stageDir")
-    chmod 700 "$stageDir"
-    if $tar xf "$tmpBundle" -C "$stageDir"; then
-      rm -f "$tmpBundle"
-      # Enforce flat regular files only (post-extraction safety net)
-      if find "$stageDir" -mindepth 1 -not -type f | grep -q .; then
-        rm -rf "$stageDir"
-        echo "ERROR: secrets bundle contains non-regular files." >&2
-        return 1
-      fi
-      chmod 600 "$stageDir"/* 2>/dev/null
-      # Record bundle hash for freshness
-      echo $repoHash >$stageDir/.bundle-hash
-      # Move into live dir (including dotfiles)
-      mv "$stageDir"/* "$stageDir"/.bundle-hash "$secretsDir"/ 2>/dev/null
-      rmdir "$stageDir" 2>/dev/null
-      # Cache to mount (atomic: temp dir then rename)
-      if [[ -d $CrostiniDir ]]; then
-        local tmpCache
-        tmpCache=$(mktemp -d "$cacheDir.XXXXXX")
-        chmod 700 "$tmpCache"
-        if cp "$secretsDir"/* "$secretsDir"/.bundle-hash "$tmpCache"/ 2>/dev/null; then
-          chmod 600 "$tmpCache"/* 2>/dev/null
-          rm -rf "$cacheDir" 2>/dev/null
-          mv "$tmpCache" "$cacheDir"
-        else
-          rm -rf "$tmpCache"
-          echo "WARNING: secrets cache write failed" >&2
-        fi
-      fi 2>/dev/null
-    else
-      rm -f "$tmpBundle"
-      rm -rf "$stageDir"
-      echo "ERROR: secrets extraction failed." >&2
-      return 1
-    fi
-    return 0
+    rm -rf "$stageDir"
+    echo "WARNING: cache restore failed." >&2
   fi
 
   echo No secrets for $hostname. Create ~/secrets/ files, then run scripts/encrypt-secrets.
@@ -1692,76 +1578,6 @@ else
   eval "$(curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/scripts/lib.bash)" || { echo "fatal: scripts/lib.bash not found" >&2; exit 1; }
 fi
 unset -v _lib_dir
-
-# validateSecretsArchive TARFILE -- validate archive members before extraction.
-# Checks both names AND types. Accepts only flat regular files with names
-# matching lib.ValidSecretName. Rejects symlinks, hardlinks, directories (except
-# root "."), devices, fifos, and any invalid names.
-# Returns 1 with error to stderr on invalid entries or tar listing failure.
-validateSecretsArchive() {
-  local tarfile=$1
-
-  # Name validation: tar -tf
-  local entries_
-  if ! entries_=$($tar tf "$tarfile" 2>/dev/null); then
-    echo "ERROR: failed to list secrets bundle contents (corrupt or not a tar)." >&2
-    return 1
-  fi
-  if [[ -z $entries_ ]]; then
-    echo "ERROR: secrets bundle is empty." >&2
-    return 1
-  fi
-  # Name validation pass
-  local entry name bad_="" regularCount=0
-  while IFS= read -r entry; do
-    [[ -z $entry ]] && continue
-    # Root directory in both forms
-    [[ $entry == . || $entry == ./ ]] && continue
-    # Reject non-root directory entries (trailing /)
-    [[ $entry == */ ]] && { bad_="$bad_$NL  name: $entry (non-root directory)"; continue; }
-    name=$entry
-    [[ $name == ./* ]] && name=${name#./}
-    if ! lib.ValidSecretName $name; then
-      bad_="$bad_$NL  name: $entry"
-    fi
-  done <<< "$entries_"
-
-  # Type validation pass: tar -tvf -- first char is the entry type (GNU tar).
-  # Only regular files ('-') accepted. Directory ('d') accepted only for root.
-  local verbose_
-  if ! verbose_=$($tar tvf "$tarfile" 2>/dev/null); then
-    echo "ERROR: failed to inspect secrets bundle types." >&2
-    return 1
-  fi
-  while IFS= read -r entry; do
-    [[ -z $entry ]] && continue
-    local typeChar=${entry:0:1}
-    case $typeChar in
-      d)
-        # Only root directory allowed -- check if name ends with " ./" or " ."
-        # tar tvf format: "drwx... user/group size date time name"
-        if [[ $entry == *" ./"  || $entry == *" ." ]]; then
-          continue
-        fi
-        bad_="$bad_$NL  type: $entry (non-root directory)"
-        ;;
-      -) (( regularCount++ )) ;; # regular file -- ok, count it
-      *)
-        bad_="$bad_$NL  type: $entry"
-        ;;
-    esac
-  done <<< "$verbose_"
-
-  if [[ -n $bad_ ]]; then
-    echo "ERROR: secrets bundle contains invalid entries:$bad_" >&2
-    return 1
-  fi
-  if (( regularCount == 0 )); then
-    echo "ERROR: secrets bundle contains no regular files." >&2
-    return 1
-  fi
-  return 0
-}
 
 pubFingerprint() {
   [[ -f $1 && -s $1 ]] || return 0
