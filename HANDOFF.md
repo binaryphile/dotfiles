@@ -45,7 +45,7 @@ packaging, implementation status.
 ## Outstanding
 
 ### P2 (from adversarial reviews)
-1. **Panel hermetic runtime test** -- audited but no stripped-PATH test
+1. **Panel hermetic runtime test** -- DONE. `test_panelHermetic` runs packaged panel under stripped PATH, caught missing `hostname` dep (fixed: use `$HOSTNAME` instead of external command)
 2. **tmux package split diffuse** -- functional but selection spread across
    shared.nix (removed), linux-base.nix (tmux-with-panel), macos (plain)
 
@@ -62,7 +62,7 @@ packaging, implementation status.
 
 ## Test results
 
-85/85 pass. `home-manager build` succeeds.
+92/92 pass. `home-manager build` succeeds.
 
 ## Testing
 
@@ -74,7 +74,7 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
   test_authPreflight test_restoreSecretsTierSelection \
   test_withSecret test_withSecretMissingFile test_usageText \
   test_credentialPreflight test_cliHelp test_cliCredential \
-  test_sshKeyAction test_signingKeyPreflight
+  test_sshKeyAction test_signingKeyPreflight test_panelHermetic
 ```
 
 ## Context for next agent
