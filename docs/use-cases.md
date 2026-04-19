@@ -145,7 +145,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
 - **Main Success Scenario:**
   1. Ted runs the deployment command with a hostname (first run) or without (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
-  2. System installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
+  2. System installs package manager, VPN client, and all packages. Writes a declarative nix.conf (Crostini/standalone only) that enables flakes and trusts only `cache.nixos.org` -- no third-party caches. Dev tools, editor, shell config available after this step. VPN is usable.
   3. System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
   4. System restores signing key from local or 1Password (or generates new). Warns if signing key needs registration on GitHub/Codeberg.
   5. System restores secrets from local, mount cache, or 1Password.

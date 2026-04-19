@@ -45,7 +45,7 @@ packaging, implementation status.
 ## Outstanding
 
 ### Remaining
-1. **Declarative nix.conf ownership** (P2) -- split by platform
+1. **Declarative nix.conf ownership** (P2) -- DONE. `writeNixConfTask` writes `/etc/nix/nix.conf` with flakes, auto-optimise, no third-party caches. Runs as root. Removes stale Lix cache trust.
 2. **Signed tag/release for bootstrap** (P3) -- verify repo before exec
 
 ### Housekeeping
@@ -57,7 +57,7 @@ packaging, implementation status.
 
 ## Test results
 
-92/92 pass. `home-manager build` succeeds.
+93/93 pass. `home-manager build` succeeds.
 
 ## Testing
 
@@ -69,7 +69,8 @@ tesht update-env_test.bash test_each test_keepIf test_map test_stream \
   test_authPreflight test_restoreSecretsTierSelection \
   test_withSecret test_withSecretMissingFile test_usageText \
   test_credentialPreflight test_cliHelp test_cliCredential \
-  test_sshKeyAction test_signingKeyPreflight test_panelHermetic
+  test_sshKeyAction test_signingKeyPreflight test_panelHermetic \
+  test_nixConfContent
 ```
 
 ## Context for next agent
