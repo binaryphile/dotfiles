@@ -136,18 +136,18 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Scope:** User environment (all hosts)
 - **Level:** User goal
 - **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, or new NixOS host
-- **Preconditions:** Network connected. Crostini: ChromeOS file sharing enabled. Crostini first run: hostname required. NixOS: SSH keys pre-existing.
+- **Preconditions:** Network connected. Crostini: ChromeOS file sharing enabled. Crostini first run: hostname required. All platforms: 1Password account accessible (signing key source).
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
   - Future Ted -- works without remembering steps; idempotent re-runs fix drift
-  - Security -- private keys in 1Password, not in repo; signed commits with force-push disabled; executed downloads hash-verified (same-repo trust root -- see [security.md](security.md)); TOFU host-key model
+  - Security -- private keys in 1Password, not in repo; signing key never on disk (1Password SSH agent); signed commits with force-push disabled; executed downloads hash-verified (same-repo trust root -- see [security.md](security.md)); TOFU host-key model
   - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
   - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
 - **Main Success Scenario:**
   1. Ted runs `curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/update-env | bash -s -- -1 <hostname>` (bare machine) or `update-env` (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
   2. System clones dotfiles, installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
   3. (Crostini only) System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
-  4. (Crostini only) System restores signing key from local or 1Password (or generates new). Warns if signing key needs registration on GitHub/Codeberg.
+  4. Signing key: 1Password SSH agent provides the signing key directly (no on-disk key needed). If the key doesn't exist in 1Password, generates new and prompts to store. Warns if signing key needs registration on GitHub.
   5. (Crostini only) System restores secrets from local or mount cache. If neither exists, prints instructions for manual creation.
   6. System clones dev tool and project repos, prints remaining manual steps
   Credential-only mode (`update-env -c`, Crostini only): runs steps 3-5 only, for completing identity setup after stage 1 without re-running the full pipeline. Requires packages and hostname already configured.
@@ -162,17 +162,21 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 3e. No auth key anywhere -> generate; store in 1Password manually; resume at step 4
   - 3f. Auth key mismatches repo `.pub` -> collision error; fail
   - 3g. Agent load fails -> warn "key not in agent"; preflight skips registry checks
-  - 4a. Signing key exists locally -> accept; resume at step 5
-  - 4b. Signing key in 1Password -> restore; resume at step 5
-  - 4c. Signing key missing everywhere -> generate, prompt to store in 1Password and register on GitHub/Codeberg; resume at step 5
+  - 4a. Signing key in 1Password, 1Password agent running -> ready to sign; resume at step 5
+  - 4b. Signing key not in 1Password -> generate, store in 1Password, register on GitHub; resume at step 5
+  - 4c. 1Password not running -> signing unavailable; commits unsigned until 1Password starts (break-glass: temporarily disable branch protection)
   - 3h. Credential setup needed after interrupted stage 1 -> `update-env -c` runs credentials only; resume at step 6
-  - 5a. Non-Crostini host -> skip credential restore (steps 3-5); resume at step 6
+  - 5a. Non-Crostini host -> skip auth key and secrets restore (steps 3, 5); signing via 1Password agent still applies (step 4); resume at step 6
   - 6a. Repo has uncommitted local changes -> stash, update, restore; resume at step 6
   - 6b. Provider auth fails -> reports per provider; private repos skipped; separate success
   - 6c. VPN-dependent repo unreachable -> fails fast; resume at next repo
   - *a. Any step fails partway -> re-run converges (idempotent)
 - **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges.
 - **Minimal Manual Steps** (printed inline by update-env with registry URLs):
+  - 1Password setup (one-time per machine):
+    - Sign in to 1Password GUI app
+    - Enable SSH agent: Settings > Developer > SSH Agent
+    - Agent restricts offered keys via `~/.config/1Password/ssh/agent.toml` (managed by update-env)
   - Store keys in 1Password (if newly generated):
     - Auth key: `<hostname> SSH Key` in Private vault
     - Signing key: `<hostname> signing SSH Key` in Private vault
@@ -182,8 +186,8 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - Crostini: configure ChromeOS Chrome proxy (per-network, one-time; instructions printed in output):
     - ChromeOS Settings > Network > connection > Proxy > Automatic proxy configuration
     - URL: `http://127.0.0.1:8120/proxy.pac`
-- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH auth and signing keys restored; commits signed; user informed of remaining manual steps
-- **Technology:** update-env, 1Password CLI (`op`), ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4), [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4), and [security.md](security.md).
+- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH auth key restored; signing via 1Password SSH agent; commits signed; user informed of remaining manual steps
+- **Technology:** update-env, 1Password GUI (`_1password-gui`, provides SSH agent + `op-ssh-sign`), 1Password CLI (`op`), ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4), [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4), and [security.md](security.md).
 
 ---
 
@@ -200,11 +204,11 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - Security -- old keys deregistered; new keys stored in 1Password, not in repo. See [security.md](security.md)
 - **Main Success Scenario:**
   1. Ted verifies current keys are in 1Password (if not, stores them now)
-  2. Ted deletes local keys and cache
+  2. Auth key: Ted deletes local key and cache. Signing key: Ted deletes the item in 1Password (no local key to delete).
   3. Ted runs `update-env` -- generates new keys
   4. Ted stores new keys in 1Password
-  5. Ted commits new `.pub` sidecars (not private keys) and pushes
-  6. Ted registers auth key with all registries, signing key with GitHub and Codeberg; deregisters old keys
+  5. Ted commits new auth `.pub` sidecar and pushes
+  6. Ted registers auth key with all registries, signing key with GitHub; deregisters old keys
 - **Extensions:**
   - 1a. Key not in 1Password and only copy is local -> store in 1Password before deleting
   - 3a. `op` available -> new keys stored in 1Password automatically

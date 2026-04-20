@@ -316,7 +316,21 @@ Private keys are stored in 1Password, not in the repo. See [Security Model](#sec
 | Auth | `~/.ssh/id_ed25519` | Yes | keychain | SSH to registries, remote hosts |
 | Signing | 1Password vault | N/A | 1Password SSH agent | Git commit/tag signing |
 
-**1Password SSH agent for signing:** the 1Password GUI app (`_1password-gui` in nix) provides an SSH agent socket at `~/.1password/agent.sock`. Git is configured with `gpg.ssh.program = op-ssh-sign` (bundled with the 1Password app) so signing goes through 1Password's agent -- the private key never leaves the 1Password process. `SSH_AUTH_SOCK` must point to the 1Password socket for signing to work. On-disk signing keys (`~/.ssh/id_ed25519_signing`) are legacy artifacts from before the 1Password agent was adopted; they are not needed when the 1Password agent is running.
+**1Password SSH agent for signing:** the 1Password GUI app (`_1password-gui` in nix, added to `linux-base.nix`) provides an SSH agent socket at `~/.1password/agent.sock`. Git is configured with `gpg.ssh.program = op-ssh-sign` (bundled with the 1Password app, on PATH via home.packages) so signing goes through 1Password's agent -- the private key never leaves the 1Password process. `SSH_AUTH_SOCK` must point to the 1Password socket for signing to work. On-disk signing keys (`~/.ssh/id_ed25519_signing`) are legacy artifacts from before the 1Password agent was adopted; they are not needed when the 1Password agent is running.
+
+**Per-machine agent isolation (`agent.toml`):** by default, the 1Password SSH agent offers ALL SSH keys in the vault to any machine where 1Password runs. This collapses per-machine runtime isolation -- a compromised machine could use any machine's key via the agent socket (use-authority expansion, not key-material extraction). `~/.config/1Password/ssh/agent.toml` restricts offered keys to the current machine's items:
+
+```toml
+[[ssh-keys]]
+vault = "Private"
+item = "calliope signing SSH Key"
+
+[[ssh-keys]]
+vault = "Private"
+item = "calliope SSH Key"
+```
+
+This is operational hygiene, not a security boundary -- a same-user attacker can edit the file. Per-machine compartmentalization remains valuable for revocation/rotation lifecycle, but runtime isolation against same-user compromise is not achievable with a shared vault (see [security.md](security.md)). Agent forwarding (`ForwardAgent`) must remain disabled; it would let remote hosts use any offered key. Currently hand-managed; to be managed by update-env (P2).
 
 **Restore priority** (stage 1 step 4):
 1. **Local** -- `~/.ssh/id_ed25519` exists and `.pub` fingerprint matches repo `.pub` -> accept
@@ -324,7 +338,10 @@ Private keys are stored in 1Password, not in the repo. See [Security Model](#sec
 3. **1Password** -- retrieve private key via `op` CLI (or manually from app) -> install to `~/.ssh/id_ed25519`
 4. **Generate** -- no key exists anywhere -> generate new passphrase-protected key, store in 1Password, commit `.pub` sidecar to repo
 
-**Signing key restore priority** (stage 1 step 4, after auth key):
+**Signing key restore priority** (stage 1 step 4, after auth key -- transitional, pending removal):
+
+The preferred signing path uses the 1Password SSH agent exclusively (no on-disk key). The restore logic below is a legacy code path that still exists in `update-env` and may materialize a signing key on disk. It is tracked for removal in HANDOFF.md P2.
+
 1. **Local** -- `~/.ssh/id_ed25519_signing` exists -> accept
 2. **1Password** -- `op` authenticated and item `<hostname> signing SSH Key` exists in Private vault -> retrieve via `op read "op://Private/<hostname> signing SSH Key/private key?ssh-format=openssh"`, derive `.pub` via `ssh-keygen -y`
 3. **Generate** -- no key in 1Password -> generate with `ssh-keygen -t ed25519 -N ""`, prompt to store in 1Password and register on GitHub as a signing key
