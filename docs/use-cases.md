@@ -140,7 +140,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
   - Future Ted -- works without remembering steps; idempotent re-runs fix drift
-  - Security -- private keys in 1Password, not in repo; signed commits with force-push disabled; executed downloads hash-verified; TOFU host-key model. See [security.md](security.md)
+  - Security -- private keys in 1Password, not in repo; signed commits with force-push disabled; executed downloads hash-verified (same-repo trust root -- see [security.md](security.md)); TOFU host-key model
   - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
   - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
 - **Main Success Scenario:**
