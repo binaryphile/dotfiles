@@ -60,7 +60,11 @@ docs/                           # use-cases.md, design.md, security.md, secrets-
 
 ### Deployment (UC-4)
 
-`update-env` takes a bare machine to fully configured. Bootstrap entry point: `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. update-env fetches its own dependencies (lib.bash, task.bash) from GitHub over HTTPS whenever `TASK_BASH_LIB` is unset -- not only on bare-machine first run but also when re-running after losing the nix profile or on platforms without home-manager flake configs. lib.bash is fetched from branch tip with no verification (same trust anchor as the outer curl-pipe). task.bash is fetched from a pinned commit and SHA-256 verified before sourcing, but the expected hash lives in `update-env` itself -- an attacker who can modify the repo can change the rev, hash, and bootstrap logic together, so the hash check protects against network tampering and accidental mismatch but not repo compromise (see [Security Model](#security-model)). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store via `TASK_BASH_LIB`, replacing the bootstrap copy for the remainder of the run. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages:
+`update-env` takes a bare machine to fully configured. Bootstrap entry point: `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`.
+
+**Bootstrap dependencies:** update-env fetches lib.bash and task.bash from GitHub over HTTPS whenever `TASK_BASH_LIB` is unset. This is not limited to bare-machine first run -- it also fires when re-running after losing the nix profile or on platforms without home-manager flake configs. lib.bash is fetched from branch tip with no verification (same trust anchor as the outer curl-pipe). task.bash is fetched from a pinned commit and SHA-256 verified before sourcing; the expected hash lives in `update-env` itself, so the check protects against network tampering but not repo compromise (see [Security Model](#security-model)). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store via `TASK_BASH_LIB`, replacing the bootstrap copy for the remainder of the run.
+
+Two stages:
 
 **Stage 1** (critical path -- working shell with identity):
 
