@@ -59,15 +59,16 @@
 
     devShells = forEachSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          config.allowUnfree = true;
+        pkgs = import nixpkgs { inherit system; };
+        devBashTools = import ./bash-tools.nix {
+          inherit pkgs task-bash-src mk-bash-src tesht-src;
         };
       in {
         default = pkgs.mkShellNoCC {
           buildInputs = with pkgs; [
-            coreutils git jq scc
-          ] ++ (if pkgs.stdenv.isLinux then [ kcov vscode ] else [ code-cursor ]);
+            coreutils git jq scc wl-clipboard
+          ] ++ (if pkgs.stdenv.isLinux then [ kcov ] else [])
+            ++ [ devBashTools.tesht devBashTools.mkBash ];
           shellHook = ''
             export IN_NIX_DEVELOP=1
             echo "Welcome to the development shell!"

@@ -1426,6 +1426,47 @@ test_nixConfContent() {
   [[ $got == *"auto-optimise-store"* ]] || { echo "missing auto-optimise-store"; return 1; }
 }
 
+# test_writeNixConfTask tests the task through real task.bash plumbing with
+# runas root. Integration test -- mocks sudo at the process boundary (inter-system)
+# to verify the cmd string is self-contained and survives bash -c.
+test_writeNixConfTask() {
+  ## arrange
+  local dir
+  tesht.MktempDir dir || return 128
+
+  local target=$dir/nix.conf
+
+  # fake sudo: strip -u <user>, run bash -c <cmd> unprivileged
+  mkdir -p "$dir/bin"
+  cat >"$dir/bin/sudo" <<'MOCK'
+#!/bin/bash
+shift 2   # drop -u root
+exec "$@" # run: bash -c '<cmd>'
+MOCK
+  chmod +x "$dir/bin/sudo"
+
+  PATH="$dir/bin:$PATH"
+
+  ## act
+  local got_ rc
+  got_=$(writeNixConfTask "$target" 2>&1) && rc=$? || rc=$?
+
+  ## assert
+  (( rc == 0 )) || { echo "rc=$rc, want 0: $got_"; return 1; }
+  [[ -f $target ]] || { echo "nix.conf not created"; return 1; }
+
+  local want_
+  want_=$(nixConfContent)
+  local fileContent_
+  fileContent_=$(< "$target")
+  [[ $fileContent_ == "$want_" ]] || {
+    echo "content mismatch"
+    echo "got=${fileContent_@Q}"
+    echo "want=${want_@Q}"
+    return 1
+  }
+}
+
 # test_platformTaskGroups tests the pure decision function that maps platform
 # to the set of task groups both stages use. No mocks, no I/O -- pure
 # input/output. Key invariants: NixOS gets no groups; hm only runs on
