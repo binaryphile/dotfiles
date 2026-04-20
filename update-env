@@ -878,7 +878,9 @@ writeNixConfTask() {
   nixConfUpToDate() { [[ -f $path ]] && diff -q "$path" "$tmp" >/dev/null 2>&1; }
   ok nixConfUpToDate
 
-  cmd "install -m 644 -- '$tmp' '$path'"
+  local cmd_
+  printf -v cmd_ 'install -m 644 -- %q %q' "$tmp" "$path"
+  cmd "$cmd_"
 }
 
 # verifyNixFlakes checks that nix is runnable and flakes are enabled.

@@ -1,9 +1,11 @@
 [user]
   email = ted.lilley@gmail.com
   name = Ted Lilley
-  signingkey = ~/.ssh/id_ed25519_signing.pub
+  signingkey = ~/.config/git/signing-key.pub
 [gpg]
   format = ssh
+[gpg "ssh"]
+  program = op-ssh-sign
 [commit]
   gpgsign = true
 [tag]

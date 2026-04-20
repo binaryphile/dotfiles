@@ -69,7 +69,7 @@ in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ notify-send-bridge tmux-with-panel ];
+  home.packages = [ notify-send-bridge tmux-with-panel pkgs._1password-gui ];
 
   # Dotfile symlinks migrated from update-env. mkOutOfStoreSymlink keeps
   # them as live symlinks into ~/dotfiles so edits take effect immediately,

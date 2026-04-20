@@ -1436,12 +1436,19 @@ test_writeNixConfTask() {
 
   local target=$dir/nix.conf
 
-  # fake sudo: strip -u <user>, run bash -c <cmd> unprivileged
+  # fake sudo: strip flags, run remaining command unprivileged
   mkdir -p "$dir/bin"
   cat >"$dir/bin/sudo" <<'MOCK'
 #!/bin/bash
-shift 2   # drop -u root
-exec "$@" # run: bash -c '<cmd>'
+while (( $# )); do
+  case $1 in
+    -u) shift 2 ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *)  break ;;
+  esac
+done
+exec "$@"
 MOCK
   chmod +x "$dir/bin/sudo"
 
