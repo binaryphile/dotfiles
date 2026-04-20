@@ -62,7 +62,10 @@ docs/                           # use-cases.md, design.md, security.md, secrets-
 
 `update-env` takes a bare machine to fully configured. Bootstrap entry point: `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`.
 
-**Bootstrap dependencies:** update-env fetches lib.bash and task.bash from GitHub over HTTPS whenever `TASK_BASH_LIB` is unset. This is not limited to bare-machine first run -- it also fires when re-running after losing the nix profile or on platforms without home-manager flake configs. lib.bash is fetched from branch tip with no verification (same trust anchor as the outer curl-pipe). task.bash is fetched from a pinned commit and SHA-256 verified before sourcing; the expected hash lives in `update-env` itself (same-repo trust root -- see [Security Model](#security-model) for trust analysis). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store via `TASK_BASH_LIB`, replacing the bootstrap copy for the remainder of the run.
+**Bootstrap dependencies:** update-env requires lib.bash and task.bash before any task runs. Each has its own bootstrap path:
+
+- **lib.bash** is sourced from the local repo (`scripts/lib.bash`) when update-env runs from disk. During curl-pipe bootstrap (`curl ... | bash`), `resolveSourceDir` fails and lib.bash is fetched from GitHub branch tip with no verification -- same trust anchor as the outer curl-pipe.
+- **task.bash** is sourced from the nix store via `TASK_BASH_LIB` when set (after home-manager switch). When `TASK_BASH_LIB` is unset, task.bash is fetched from a pinned GitHub commit and SHA-256 verified before sourcing. This is not limited to bare-machine first run -- it fires on any run where `TASK_BASH_LIB` is absent: after losing the nix profile, or on platforms without home-manager flake configs. The expected hash lives in `update-env` itself (same-repo trust root -- see [Security Model](#security-model) for trust analysis). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store, replacing the bootstrap copy for the remainder of the run.
 
 Two stages:
 
