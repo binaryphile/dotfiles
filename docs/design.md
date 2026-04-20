@@ -60,7 +60,7 @@ docs/                           # use-cases.md, design.md, security.md, secrets-
 
 ### Deployment (UC-4)
 
-`update-env` takes a bare machine to fully configured. Bootstrap entry point: `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. On bare machines, update-env fetches its own dependencies (lib.bash, task.bash) from GitHub over HTTPS -- same trust anchor as the outer curl-pipe. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages:
+`update-env` takes a bare machine to fully configured. Bootstrap entry point: `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. update-env fetches its own dependencies (lib.bash, task.bash) from GitHub over HTTPS whenever `TASK_BASH_LIB` is unset -- not only on bare-machine first run but also when re-running after losing the nix profile or on platforms without home-manager flake configs. lib.bash is fetched from branch tip with no verification (same trust anchor as the outer curl-pipe). task.bash is fetched from a pinned commit and SHA-256 verified before sourcing, but the expected hash lives in `update-env` itself -- an attacker who can modify the repo can change the rev, hash, and bootstrap logic together, so the hash check protects against network tampering and accidental mismatch but not repo compromise (see [Security Model](#security-model)). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store via `TASK_BASH_LIB`, replacing the bootstrap copy for the remainder of the run. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`. Two stages:
 
 **Stage 1** (critical path -- working shell with identity):
 
@@ -379,7 +379,7 @@ Per-machine secrets stored in `~/secrets/`. Backed up to 1Password -- not to the
 **Scripts:**
 - `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball for local backup or 1Password export. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
 - `scripts/with-secret` -- injects file-based secret as env var into child process only. Last-resort shim for tools requiring env vars.
-- `scripts/lib.bash` -- shared helpers (`lib.MachineHostname`, `lib.ValidateHostname`, `lib.ValidSecretName`, `lib.Glob`). Sourced by both `update-env` and `encrypt-secrets`. During bare-machine bootstrap (curl-pipe), fetched via `curl | eval` from GitHub -- same trust anchor as the outer bootstrap command.
+- `scripts/lib.bash` -- shared helpers (`lib.MachineHostname`, `lib.ValidateHostname`, `lib.ValidSecretName`, `lib.Glob`). Sourced by both `update-env` and `encrypt-secrets`. During bootstrap (when the local repo is not yet cloned), fetched via `curl | eval` from GitHub -- same trust anchor as the outer bootstrap command.
 
 Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.md](secrets-lifecycle.md).
 
