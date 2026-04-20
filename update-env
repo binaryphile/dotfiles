@@ -352,11 +352,10 @@ stage2() {
   try codebergCloneAndLinkTask tandem-protocol
   try scaffoldTask ~/projects/tandem-protocol
   try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
-  each task.Ln < <(
-    lib.Glob ~/projects/tandem-protocol/commands/* |
-      keepIf isFile |
-      map path '$path ~/.claude/commands/$(basename $path)'
-  )
+  lib.Glob ~/projects/tandem-protocol/commands/* |
+    keepIf isFile |
+    map path '$path ~/.claude/commands/$(basename $path)' |
+    each task.Ln
 
   section era
   try codebergCloneAndLinkTask era
@@ -708,7 +707,7 @@ claudeMemoryRedirectsTask() {
       cp "$redirectSrc" "$memDir/MEMORY.md"
     }
     installRedirect $HOME/dotfiles
-    each installRedirect < <(map path '$HOME/projects/$path' <<'    END'
+    map path '$HOME/projects/$path' <<'    END' | each installRedirect
       era
       fp.bash
       mk.bash
@@ -722,7 +721,6 @@ claudeMemoryRedirectsTask() {
       share
       dal
     END
-    )
   }
   cmd claudeRedirectsInstall
 }
@@ -1744,8 +1742,8 @@ OpVault=Private
 # Fix in task.bash: use explicit -m flag as a separate arg.
 
 # Pinned to the same rev as bash-tools.nix taskBash. Update both together.
-TaskBashBootstrapRev=88d13a87a7c0e5407dafb1d83712cd26423712a6
-TaskBashBootstrapSha256=a3e2d4c2c68c589756e00862e2e100f59c4b4557cc540c97ac2e45bd94885c21
+TaskBashBootstrapRev=56af017ca8e2031f273b6713a07c73c21ab1cefb
+TaskBashBootstrapSha256=e6c2dc1ad2742bb44228eb6ba9899f9a18bb37e64126af213e0a44b3955c6b97
 
 if [[ -n ${TASK_BASH_LIB:-} ]]; then
   [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB >&2; exit 1; }
