@@ -867,15 +867,18 @@ EOF
 }
 
 writeNixConfTask() {
-  local path=/etc/nix/nix.conf
+  local path=${1:-/etc/nix/nix.conf}
+  local tmp
+  tmp=$(mktemp)
+  nixConfContent >"$tmp"
+
   desc  'write declarative nix.conf'
   runas root
 
-  nixConfUpToDate() { [[ -f $path ]] && diff -q "$path" <(nixConfContent) >/dev/null 2>&1; }
+  nixConfUpToDate() { [[ -f $path ]] && diff -q "$path" "$tmp" >/dev/null 2>&1; }
   ok nixConfUpToDate
 
-  writeNixConf() { nixConfContent >$path; }
-  cmd writeNixConf
+  cmd "install -m 644 -- '$tmp' '$path'"
 }
 
 # verifyNixFlakes checks that nix is runnable and flakes are enabled.
