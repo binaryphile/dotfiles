@@ -2,7 +2,7 @@
 
 How this repo satisfies [use-cases.md](use-cases.md). Each **use case (UC-N)** is a user-facing goal documented there; section headings here reference them parenthetically.
 
-Ted's shared user environment. Works on all hosts. NixOS system and Sway design: `~/nixos-config/design.md`.
+Ted's shared user environment. Works on all hosts. NixOS system and Sway design: `~/nixos-config/docs/design.md`.
 
 ## Principles
 
@@ -49,11 +49,12 @@ contexts/
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
 tmux.conf                       # Context-dependent symlink
 ssh/config, ssh/authorized_keys  # Tracked; HM-managed client config (symlinked via linux-base.nix)
-ssh/*.pub                        # Per-machine public key sidecars: auth (fingerprint validation) and signing (commit verification)
+ssh/*.age, ssh/*.pub             # DEPRECATED: per-machine age-encrypted keys (replaced by 1Password SSH agent)
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
-scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, encrypt-secrets, with-secret, lib.bash, load-sparkline)
-docs/                           # use-cases.md, design.md, security.md, secrets-lifecycle.md, environment-lifecycle.md, vpn.md, uc-init.md
+scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, lib.bash, load-sparkline, encrypt-secrets [deprecated], with-secret [deprecated])
+secrets/                        # DEPRECATED: per-machine age-encrypted secret bundles (replaced by 1Password vaults)
+docs/                           # use-cases.md, design.md, security.md, secrets-lifecycle.md, environment-lifecycle.md, threat-model.md, vpn.md, uc-init.md, scaffold.md
 ```
 
 ## Component Design
@@ -78,10 +79,10 @@ Two stages:
 
 **Stage 2** (projects, dev tool repos):
 
-5. Re-run home-manager (idempotent convergence -- no-op if stage 1 already applied the same config).
-6. Platform-specific setup (crostini only)
-7. Clone dev tool repos for development (task.bash, fp.bash, mk.bash, tesht). Symlinked to `~/.local/bin/` for interactive use and executable overrides. Tools themselves already available via nix (step 3).
-8. Clone and link project repos (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
+5. Re-run home-manager with full config (VPN packages).
+6. Credential setup: Ted unlocks work credential account (1Password). `authPreflight` tests SSH auth to each registry via 1Password SSH agent. No secrets restored to disk -- credentials accessed at runtime via wrappers (UC-11).
+7. Platform-specific setup (crostini only)
+8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
 10. Neovim plugins, daily notes
 
@@ -291,123 +292,113 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 - Uses policies instead of per-profile config -- policies apply to all profiles regardless of profile path, which varies per machine
 - Works on both NixOS (home-manager as NixOS module) and Debian/Crostini (standalone home-manager) -- policies are baked into the wrapped Firefox package at build time
 
-### Security Model
+### Credential Architecture (UC-4, UC-4a-e, UC-11)
 
-See [security.md](security.md) for the full security model: threat actors, trust boundaries, confidentiality and integrity models, accepted risks, and controls.
+Credentials and SSH keys are managed in 1Password with vault-level compartmentalization. No secrets on disk. No secrets in shell environment beyond a tool's process lifetime.
 
-**Key constraints for this section:** this repo is public. No encrypted secret material may be committed. Private keys and secrets are backed up to 1Password, not to the repo. The mount cache stores plaintext on ChromeOS-host-visible storage (accepted tradeoff). Fingerprint validation against repo `.pub` is self-consistency, not authenticity. All commits are SSH-signed; force-push is disallowed on `main`.
+**Supersedes:** SSH Key Bootstrap (per-machine age-encrypted key bundles) and Secrets Bundling (per-machine age-encrypted tarballs in `~/secrets/`). Those mechanisms, including `scripts/encrypt-secrets`, `scripts/with-secret`, `ssh/*.age`, `ssh/*.pub`, and `secrets/*.tar.age`, are deprecated.
 
-### SSH Key Bootstrap (UC-4)
+#### Security Model
 
-Per-machine SSH keys identified by hostname. Public key sidecars committed to the repo for validation:
+Blast radius is bounded per machine by 1Password vault access policies -- each machine sees only the vaults assigned to it. On a multi-project machine, per-project isolation relies on a compliance check in the wrapper. The unlocked work credential account can read any visible vault; the compliance check verifies that the wrapper only retrieves from the declared project vault. **This is a detective control, not a preventive boundary.** The wrapper voluntarily limits itself; a compromised process with account access could read any visible vault.
 
-```
-ssh/
-  id_ed25519_calumny.pub             # auth key public sidecar (fingerprint validation)
-  id_ed25519_signing_calumny.pub     # signing key public sidecar (commit verification)
-```
+This is an honest tradeoff. The old age-bundle model had per-machine secret bundles, but the secrets themselves (API tokens, PATs) were account-level -- the same tokens on every machine. Per-machine bundling provided organizational separation, not meaningful blast-radius reduction for those secrets. The new model bounds visibility per machine via vault policies, which is at least equivalent.
 
-Private keys are stored in 1Password, not in the repo. See [Security Model](#security-model).
+**Shared SSH key:** One ed25519 key pair in a shared SSH vault, visible to all enrolled machines. Accepted tradeoff -- all machines access the same registries. Rotation via UC-4a.
 
-**Two keys per machine:** each machine has separate ed25519 keys for SSH authentication and git commit signing. Per cryptographic key separation principle (NIST SP 800-57 Part 1 Section 5.2 "General Guidance"; OpenSSH 8.2+ treats signing keys as distinct from authentication keys), keys are not reused across purposes. The auth key has a passphrase and is loaded into the agent via keychain. The signing key is stored in 1Password and used via the 1Password SSH agent -- private key material never touches disk for signing.
+#### Vault Compartmentalization
 
-| Key | Path | Passphrase | Agent | Purpose |
-|-----|------|------------|-------|---------|
-| Auth | `~/.ssh/id_ed25519` | Yes | keychain | SSH to registries, remote hosts |
-| Signing | 1Password vault | N/A | 1Password SSH agent | Git commit/tag signing |
+Credentials are organized into project-scoped vaults in the work credential account (enterprise 1Password). Each vault contains only the credentials needed by one project or service group.
 
-**1Password SSH agent for signing:** the 1Password GUI app (`_1password-gui` in nix, added to `linux-base.nix`) provides an SSH agent socket at `~/.1password/agent.sock`. Git is configured with `gpg.ssh.program = op-ssh-sign` (bundled with the 1Password app, on PATH via home.packages) so signing goes through 1Password's agent -- the private key never leaves the 1Password process. `SSH_AUTH_SOCK` must point to the 1Password socket for signing to work. On-disk signing keys (`~/.ssh/id_ed25519_signing`) are legacy artifacts from before the 1Password agent was adopted; they are not needed when the 1Password agent is running.
+Example vault structure:
 
-**Per-machine agent isolation (`agent.toml`):** by default, the 1Password SSH agent offers ALL SSH keys in the vault to any machine where 1Password runs. This collapses per-machine runtime isolation -- a compromised machine could use any machine's key via the agent socket (use-authority expansion, not key-material extraction). `~/.config/1Password/ssh/agent.toml` restricts offered keys to the current machine's items:
+| Vault | Contents | Machines with access |
+|-------|----------|---------------------|
+| `ssh` | Shared SSH key pair | All enrolled machines |
+| `urma-atlassian` | Jira/Confluence API token, Stash PAT | Machines running urma |
 
-```toml
-[[ssh-keys]]
-vault = "Private"
-item = "calliope signing SSH Key"
+Vault access policies are administered in the 1Password account admin console (external process, not managed by dotfiles). When a machine's project set changes, three things must be updated together:
+1. Vault access policy in 1Password admin
+2. Machine allowlist in dotfiles
+3. Project vault declaration in the project repo
 
-[[ssh-keys]]
-vault = "Private"
-item = "calliope SSH Key"
-```
+#### Two-Level Allowlist
 
-This is operational hygiene, not a security boundary -- a same-user attacker can edit the file. Per-machine compartmentalization remains valuable for revocation/rotation lifecycle, but runtime isolation against same-user compromise is not achievable with a shared vault (see [security.md](security.md)). Agent forwarding (`ForwardAgent`) must remain disabled; it would let remote hosts use any offered key. Currently hand-managed; to be managed by update-env (P2).
+The compliance check uses two declarations to verify scope before retrieving credentials:
 
-**Restore priority** (stage 1 step 4):
-1. **Local** -- `~/.ssh/id_ed25519` exists and `.pub` fingerprint matches repo `.pub` -> accept
-2. **Mount cache** -- `$CrostiniDir/ssh/<hostname>/id_ed25519` with `.pub` fingerprint matching repo `.pub` -> restore, no passphrase needed
-3. **1Password** -- retrieve private key via `op` CLI (or manually from app) -> install to `~/.ssh/id_ed25519`
-4. **Generate** -- no key exists anywhere -> generate new passphrase-protected key, store in 1Password, commit `.pub` sidecar to repo
+**Machine allowlist** -- checked into dotfiles, per-machine config. Lists every vault this machine should see (the union of its projects' vaults plus the shared SSH vault). Location TBD during implementation (likely `contexts/<machine>/vaults.allow` or similar).
 
-**Signing key restore priority** (stage 1 step 4, after auth key -- transitional, pending removal):
+**Project vault declaration** -- checked into each project repo. Declares which vault(s) this project's wrapper should read from. Location TBD (likely a dotfile in the project root, e.g., `.vault-require`).
 
-The preferred signing path uses the 1Password SSH agent exclusively (no on-disk key). The restore logic below is a legacy code path that still exists in `update-env` and may materialize a signing key on disk. It is tracked for removal in HANDOFF.md P2.
+At tool startup (UC-11), the wrapper:
+1. Lists visible vaults via the 1Password SDK
+2. Compares against the machine allowlist -- must match exactly (no extra, no missing)
+3. Checks the project's required vault is in the visible set
+4. Only then retrieves credentials from the project vault
 
-1. **Local** -- `~/.ssh/id_ed25519_signing` exists -> accept
-2. **1Password** -- `op` authenticated and item `<hostname> signing SSH Key` exists in Private vault -> retrieve via `op read "op://Private/<hostname> signing SSH Key/private key?ssh-format=openssh"`, derive `.pub` via `ssh-keygen -y`
-3. **Generate** -- no key in 1Password -> generate with `ssh-keygen -t ed25519 -N ""`, prompt to store in 1Password and register on GitHub as a signing key
+Every failure is fail-closed:
+- No machine allowlist -> no access
+- No project vault declaration -> no access
+- Visible vaults don't match allowlist -> no access (scope violation)
+- Project vault not accessible -> no access
+- Missing credential in vault -> no access
 
-**Decision logic** (`signingKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action, same pattern as `sshKeyAction` for auth keys. Code is authoritative; this table is a reading aid.
+#### Wrapper Pattern
 
-| State | Action | Notes |
-|-------|--------|-------|
-| local exists, repo sidecar exists, fingerprints match | `present` | no-op |
-| local exists, repo sidecar exists, fingerprints differ | `collision` | error |
-| local exists, no repo sidecar | `present_no_sidecar` | copy .pub to repo |
-| no local, `op` authenticated, item exists | `restore_from_op` | retrieve from 1Password |
-| no local, no `op` or item missing | `generate` | new key; store in 1Password manually |
+Each project that needs credentials has a wrapper script (e.g., `urma/bin/mcp-atlassian`) that:
+1. Checks for `.env` files in CWD and ancestor dirs -- fails if found (mitigates `load_dotenv(override=True)` credential override; see threat model)
+2. Runs the two-level compliance check
+3. Authenticates to 1Password via Python SDK `DesktopAuth` (Unix socket to desktop app -- no secret key input)
+4. Resolves `op://` credential references from the project vault
+5. Exports credentials as environment variables scoped to the child process
+6. Execs the target tool (e.g., `uvx mcp-atlassian-with-bitbucket` inside `nix develop`)
 
-The signing key is simpler than the auth key: no passphrase, no mount cache, no age encryption.
+Credentials never touch disk. The `exec` ensures credentials exist only in the child process's environment, not in the parent shell.
 
-**Why 1Password agent instead of on-disk key:** the signing key is used on every commit. Previously it was stored on disk without a passphrase (too much friction for per-commit use). The 1Password SSH agent eliminates this tradeoff -- the key is protected by 1Password's vault encryption and biometric/master password unlock, but signing is frictionless once 1Password is unlocked. The private key never touches the filesystem, removing the "attacker who can read the signing key" threat entirely for the signing key (auth key still has this exposure via `~/.ssh/id_ed25519`).
+**Error handling principles** (from earlier wrapper iterations):
+- Never use `export VAR=$(cmd)` -- masks failures under `set -e`
+- Capture secret-read errors separately from secret values
+- Log which secret failed and why to stderr
+- Compliance check errors must name the specific mismatch (extra vault, missing vault, missing allowlist)
 
-**Why no mount cache:** the signing key can be regenerated trivially (no passphrase, no registry dependencies beyond GitHub signing key registration). Caching plaintext on the ChromeOS shared mount for a key that takes seconds to regenerate is not worth the confidentiality cost. Auth keys use the cache because they're registered with multiple providers and rotating them is expensive.
+**Wrapper architecture options** (to be resolved):
 
-The 1Password item naming convention is documented in [secrets-lifecycle.md 1Password Naming Convention](secrets-lifecycle.md#1password-naming-convention). Code uses `opAuthKeyItem`, `opSigningKeyItem`, and `OpVault` constants as the single source of truth.
+| Option | Pros | Cons |
+|--------|------|------|
+| Pure Python wrapper | Single language, clean error handling, `os.execvpe` | Needs Python available outside `nix develop` |
+| Bash calling Python helper | Bash handles nix develop, Python handles secrets + compliance | Split-brain error handling |
+| Python inside nix develop | Everything in devShell, Python + SDK available | Wrapper itself needs nix develop to start |
 
-**Trust model:** private key is trusted to match `.pub` if the pair was produced together by `ssh-keygen`. Fingerprint validation against the repo `.pub` is a self-consistency check, not an authenticity guarantee (see [Security Model](#security-model)). Manual `.pub` replacement is unsupported.
+#### SSH Agent
 
-**Hostname as machine identity:** admin-assigned, stored in `$CrostiniDir/hostname` on Crostini, `$HOSTNAME` on NixOS. `penguin` (Crostini default) is rejected. Collision guard: repo `.pub` fingerprint vs local `.pub` fingerprint -- mismatch = collision error. Hostname validated with `[a-z0-9][a-z0-9-]*`.
+1Password's built-in SSH agent serves the shared key to all terminal sessions after unlock. No per-machine key generation. No age encryption. No keychain eval (currently `bash/apps/keychain/init.bash` -- to be removed during implementation).
 
-**Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines. Prevents interactive prompts during bootstrap while rejecting changed host keys on subsequent connections.
+**Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines (unchanged from previous model).
 
-**Auth preflight** (stage 1 step 4): guards registry checks with a fingerprint-specific agent test -- gets the `.pub` fingerprint via `ssh-keygen -lf`, then checks `ssh-add -l` for that fingerprint. If the specific key is not in the agent (empty agent, wrong key loaded, or unreadable `.pub`), reports "key not in agent" and skips registry checks. This prevents the misleading "key not registered" diagnostic that `BatchMode=yes` SSH failures would otherwise produce (the failure looks identical whether the key was rejected by the registry or never offered). When the key is confirmed in the agent, tests SSH auth to GitHub, Codeberg, Bitbucket using `BatchMode=yes`, `IdentitiesOnly=yes`, explicit identity file. Distinguishes "not registered" from "unreachable." VPN-gated stash tested only when `tun0` is up.
+**Auth preflight** (stage 2 of `update-env`): Tests SSH auth to each registry using the 1Password SSH agent. Distinguishes "not registered" from "unreachable." VPN-gated registries tested only when `tun0` is up.
 
-**Signing key preflight** (stage 1, after auth preflight): warns if the signing key exists locally but its `.pub` sidecar is untracked by git. An untracked sidecar means the key was generated but the registration workflow (store in 1Password, register on GitHub, commit sidecar, push) was not completed. Also warns when `op` is available but the signing key item (`<hostname> signing SSH Key`) is not in 1Password. Prevents the confusing failure mode where commits are signed but rejected by a protected branch because the key isn't registered. Non-blocking -- prints warnings with registration URLs and 1Password item name, does not prevent `update-env` from completing.
+#### Enrollment Lifecycle
 
-**Decision logic** (`sshKeyAction` in `update-env`): pure function mapping filesystem state to exactly one action. Code is authoritative; this table is a reading aid.
+New machine enrollment (UC-4e):
+1. Install 1Password desktop app (NixOS: `programs._1password-gui` module; Crostini: manual)
+2. Sign into work credential account
+3. Authorize device
+4. Enable SSH agent and programmatic access in 1Password settings
+5. Declare machine allowlist in dotfiles
+6. Verify visible vaults match allowlist (fail-closed on mismatch)
 
-| State | Action | Notes |
-|-------|--------|-------|
-| local exists, localFp == repoFp | `present` | strongest match |
-| local exists, localFp != repoFp | `collision` | error: two keys for same hostname |
-| no local, cache exists, cacheFp matches | `restore_from_cache` | fast path (no passphrase) |
-| no local, `op` available | `restore_from_op` | retrieve from 1Password |
-| no local, no cache, no `op`, tty | `generate` | new key; store in 1Password manually |
-| any path needing tty but no tty | `missing_noninteractive` | pre-provision required |
+Decommission (UC-4d): deauthorize device in 1Password admin. Machine can no longer access any vault.
 
-`SshKeyStatus` values (set by restore, read by `sshKeyEpilogue`): `present`, `restored`, `generated`, `collision`, `missing_noninteractive`.
+#### What This Repo Owns vs External
 
-Operator workflows (bootstrap, rotation, recovery, decommission): [secrets-lifecycle.md](secrets-lifecycle.md).
-
-### Secrets Management (UC-4)
-
-Per-machine secrets stored in `~/secrets/`. Backed up to 1Password -- not to the repo. See [Security Model](#security-model).
-
-**Filename policy:** `lib.ValidSecretName` -- alphanumeric start, then `[a-zA-Z0-9._-]*`. No dotfiles, no paths, no spaces. Shared between `scripts/encrypt-secrets` (producer) and `restoreSecrets` (consumer) via `scripts/lib.bash`.
-
-**Restore priority:**
-1. **Local** -- `~/secrets/` has non-dot files -> accept (no restore needed)
-2. **Mount cache** -- `$CrostiniDir/secrets/<hostname>/` has files -> restore (Crostini only)
-3. **Manual** -- retrieve from 1Password via app or `op` CLI, populate `~/secrets/`
-
-**Restore behavior:** restore only runs when `~/secrets/` is empty (Tier 1 short-circuits if any non-dot files exist). Cache restore copies files additively; never overwrites existing secrets. Tier 3 is manual -- `update-env` prints instructions but does not automate 1Password retrieval for secrets (unlike SSH keys, secrets are multiple files with no standard 1Password schema).
-
-**Scripts:**
-- `scripts/encrypt-secrets` -- bundles `~/secrets/` (valid non-dot files only) into age-encrypted tarball for local backup or 1Password export. Warns about excluded dotfiles. Sources `scripts/lib.bash`.
-- `scripts/with-secret` -- injects file-based secret as env var into child process only. Last-resort shim for tools requiring env vars.
-- `scripts/lib.bash` -- shared helpers (`lib.MachineHostname`, `lib.ValidateHostname`, `lib.ValidSecretName`, `lib.Glob`). Sourced by both `update-env` and `encrypt-secrets`. During bootstrap (when the local repo is not yet cloned), fetched via `curl | eval` from GitHub -- same trust anchor as the outer bootstrap command.
-
-Operator workflows (add/update/remove, rotation, recovery): [secrets-lifecycle.md](secrets-lifecycle.md).
+| Concern | Owner |
+|---------|-------|
+| Vault access policies | 1Password admin console (external) |
+| Machine allowlist | Dotfiles (checked in, per-machine) |
+| Project vault declaration | Project repo (checked in) |
+| Compliance check logic | Wrapper scripts (per-project) |
+| SSH agent config | 1Password desktop app settings (manual) |
+| Credential items | 1Password vault (managed by Ted) |
 
 ### VPN (UC-7)
 

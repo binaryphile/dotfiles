@@ -2,7 +2,7 @@
 
 ## Context
 
-This repo is a fleet configuration management system for Ted's user environment. It targets a heterogeneous fleet -- NixOS workstations and disposable Crostini VMs on commodity Chromebooks. System-level config and Sway live in nixos-config; this repo owns everything from the user session down.
+This repo is a fleet configuration management system for Ted's user environment. It targets a heterogeneous fleet -- NixOS workstations and disposable Crostini VMs on commodity Chromebooks. System-level config and Sway live in nixos-config; this repo owns everything from the user session down. The repo is private on GitHub. Branch protection on `main` requires signed commits and disallows force-push.
 
 Ted moves between machines freely. Any machine is replaceable. Goal: run one command, be productive on any host.
 
@@ -26,16 +26,18 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 | Ted | Have browsers, messaging, media, and productivity apps available | UC-2 | Subfunction |
 | Ted | Navigate, search, and organize files efficiently | UC-3 | Subfunction |
 | Ted | Complete, consistent environment on a new or rebuilt machine | UC-4 | User goal |
-| Ted | Replace SSH key across machines and registries | UC-4a | Subfunction |
-| Ted | Add, update, or remove a secret | UC-4b | Subfunction |
-| Ted | Recover from credential failure | UC-4c | Subfunction |
-| Ted | Remove retired machine's credentials | UC-4d | Subfunction |
+| Ted | Replace the shared SSH key across all machines and registries | UC-4a | Subfunction |
+| Ted | Add, update, or remove a work credential | UC-4b | Subfunction |
+| Ted | Restore credential access after a failure | UC-4c | Subfunction |
+| Ted | Revoke a retired machine's access to work credentials | UC-4d | Subfunction |
+| Ted | Enroll a new machine for scoped work credential access | UC-4e | Subfunction |
 | Claude | Deliver a validated change to packages, dotfiles, or configs | UC-5 | User goal |
 | Claude | Resume work with full context | UC-6 | Subfunction |
 | Ted | Reach work resources via corporate VPN | UC-7 | User goal |
 | Ted | Open VPN-only URLs in ChromeOS host Chrome | UC-8 | User goal |
 | Ted | Get phone push notifications from desktop tools | UC-9 | User goal |
 | Ted | See ambient system/service health in tmux status bar | UC-10 | User goal |
+| Ted | Use a tool that requires work credentials | UC-11 | Subfunction |
 
 ---
 
@@ -136,163 +138,167 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Scope:** User environment (all hosts)
 - **Level:** User goal
 - **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, or new NixOS host
-- **Preconditions:** Network connected. Crostini: ChromeOS file sharing enabled. Crostini first run: hostname required. All platforms: 1Password account accessible (signing key source).
+- **Preconditions:** Network connected. Machine enrolled with work credential account (UC-4e).
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
-  - Future Ted -- works without remembering steps; idempotent re-runs fix drift
-  - Security -- private keys in 1Password, not in repo; signing key never on disk (1Password SSH agent); signed commits with force-push disabled; executed downloads hash-verified (same-repo trust root -- see [security.md](security.md)); TOFU host-key model
-  - UC-1 (development) -- depends on git (with SSH identity), editor, tmux, dev tool repos
-  - UC-7 (VPN) -- depends on SSH keys registered with providers and VPN client installed
+  - Ted (returning after rebuild) -- works without remembering steps; idempotent re-runs fix drift
+  - Ted (security-conscious) -- vault visibility bounded per machine; per-project access verified at tool startup; TOFU host-key model
 - **Main Success Scenario:**
-  1. Ted runs `curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/update-env | bash -s -- -1 <hostname>` (bare machine) or `update-env` (subsequent). Only interaction required: hostname and 1Password auth (or passphrases if restoring from cache).
-  2. System clones dotfiles, installs package manager, VPN client, and all packages. Dev tools, editor, shell config available after this step. VPN is usable.
-  3. (Crostini only) System restores SSH auth key from local, mount cache, or 1Password (or generates new). Loads into agent, validates provider auth.
-  4. Signing key: 1Password SSH agent provides the signing key directly (no on-disk key needed). If the key doesn't exist in 1Password, generates new and prompts to store. Warns if signing key needs registration on GitHub.
-  5. (Crostini only) System restores secrets from local or mount cache. If neither exists, prints instructions for manual creation.
-  6. System clones dev tool and project repos, prints remaining manual steps
-  Credential-only mode (`update-env -c`, Crostini only): runs steps 3-5 only, for completing identity setup after stage 1 without re-running the full pipeline. Requires packages and hostname already configured.
+  1. Ted runs `update-env`
+  2. System provisions a working shell environment (packages, configs, symlinks)
+  3. Ted unlocks work credential account
+  4. System validates SSH auth to each registry
+  5. System clones project repos and reports remaining manual steps
 - **Extensions:**
-  - 1a. Crostini first run, no hostname -> fail with instructions
-  - 1b. Crostini, ChromeOS shared storage not mounted -> fail with instructions
-  - 2a. Package lock held -> waits; resume at step 2
-  - 3a. Auth key exists locally, matches repo `.pub` -> accept; resume at step 4
-  - 3b. Mount cache valid -> restore auth key without passphrase; resume at step 4
-  - 3c. No TTY -> skip credentials; HTTPS clones still work; separate success
-  - 3d. No auth key locally or in cache, `op` available -> retrieve from 1Password; resume at step 4
-  - 3e. No auth key anywhere -> generate; store in 1Password manually; resume at step 4
-  - 3f. Auth key mismatches repo `.pub` -> collision error; fail
-  - 3g. Agent load fails -> warn "key not in agent"; preflight skips registry checks
-  - 4a. Signing key in 1Password, 1Password agent running -> ready to sign; resume at step 5
-  - 4b. Signing key not in 1Password -> generate, store in 1Password, register on GitHub; resume at step 5
-  - 4c. 1Password not running -> signing unavailable; commits unsigned until 1Password starts (break-glass: temporarily disable branch protection)
-  - 3h. Credential setup needed after interrupted stage 1 -> `update-env -c` runs credentials only; resume at step 6
-  - 5a. Non-Crostini host -> skip auth key and secrets restore (steps 3, 5); signing via 1Password agent still applies (step 4); resume at step 6
-  - 6a. Repo has uncommitted local changes -> stash, update, restore; resume at step 6
-  - 6b. Provider auth fails -> reports per provider; private repos skipped; separate success
-  - 6c. VPN-dependent repo unreachable -> fails fast; resume at next repo
-  - *a. Any step fails partway -> re-run converges (idempotent)
-- **Minimal Guarantee:** Best-effort rollback on failure; idempotent re-run converges.
-- **Minimal Manual Steps** (printed inline by update-env with registry URLs):
-  - 1Password setup (one-time per machine):
-    - Sign in to 1Password GUI app
-    - Enable SSH agent: Settings > Developer > SSH Agent
-    - Agent restricts offered keys via `~/.config/1Password/ssh/agent.toml` (managed by update-env)
-  - Store keys in 1Password (if newly generated):
-    - Auth key: `<hostname> SSH Key` in Private vault
-    - Signing key: `<hostname> signing SSH Key` in Private vault
-  - Register keys with registries via the 1Password browser extension (open the registry URL, use 1Password to fill the key directly from the vault item):
-    - Auth key: GitHub, Codeberg, Bitbucket, Stash (VPN required)
-    - Signing key: GitHub only (Signing Key type; Codeberg does not support SSH signing verification)
-  - Crostini: configure ChromeOS Chrome proxy (per-network, one-time; instructions printed in output):
-    - ChromeOS Settings > Network > connection > Proxy > Automatic proxy configuration
-    - URL: `http://127.0.0.1:8120/proxy.pac`
-- **Success Guarantee:** Shell, git, editor, tmux, VPN, dev tools, packages, dotfile symlinks in place; SSH auth key restored; signing via 1Password SSH agent; commits signed; user informed of remaining manual steps
-- **Technology:** update-env, 1Password GUI (`_1password-gui`, provides SSH agent + `op-ssh-sign`), 1Password CLI (`op`), ssh-keygen, home-manager (flake), Nix. See [design.md Deployment](design.md#deployment-uc-4), [design.md SSH Key Bootstrap](design.md#ssh-key-bootstrap-uc-4), and [security.md](security.md).
+  - 2a. *NixOS host:* System skips package manager install (already managed by NixOS). Resume step 3.
+  - 3a. *Work credential account not enrolled:* Enrollment required (UC-4e). Fail (credential goals not met).
+  - 3b. *Credential account unavailable:* Credential setup skipped; HTTPS clones still work; credential-dependent repos skipped. Fail (credential goals not met).
+  - 4a. *Provider auth fails:* Reports per provider; private repos skipped. Fail (partial deployment).
+  - 5a. *VPN-dependent repo unreachable:* Skips that repo. Resume at next repo.
+- **Minimal Guarantee:** Machine usable for HTTPS-only work even if credential setup fails.
+- **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; remaining manual steps documented.
+- **Technology:** update-env (bash), 1Password, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4).
+
+**Migration note (UC-4 family):** UC-4a through UC-4d previously used age-encrypted SSH key bundles and secrets tarballs in `~/secrets/`. That model is replaced by 1Password with vault-level compartmentalization. Blast radius is bounded per machine (vault access policies control which vaults a machine can see). On a multi-project machine, per-project isolation relies on compliance checks in the wrapper, not on a technical enforcement boundary -- the unlocked account can read any visible vault. The compliance check (UC-11 steps 2-3) is a detective control, not a preventive one. See design.md for the credential architecture.
 
 ---
 
 ### UC-4a: Rotate SSH Keys
 
 - **Primary Actor:** Ted
-- **Goal:** Replace current SSH keys (auth and/or signing) with new ones across machines and registries
-- **Scope:** 1Password + dotfiles repo (.pub sidecars) + Git registry settings
+- **Goal:** Replace the shared SSH key across all machines and registries
+- **Scope:** Work credential account + Git registry settings
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** Suspected compromise, scheduled rotation, or key algorithm upgrade
-- **Preconditions:** Current keys exist in 1Password or locally. Old `.pub` sidecars in repo.
+- **Preconditions:** Work credential account unlocked; SSH key in the shared SSH vault
 - **Stakeholders:**
-  - Ted -- continued access to all Git registries after rotation; continued commit verification
-  - Security -- old keys deregistered; new keys stored in 1Password, not in repo. See [security.md](security.md)
+  - Ted -- continued access to all Git registries after rotation
+  - Ted (security-conscious) -- old key invalidated promptly; exposure window minimized
 - **Main Success Scenario:**
-  1. Ted verifies current keys are in 1Password (if not, stores them now)
-  2. Auth key: Ted deletes local key and cache. Signing key: Ted deletes the item in 1Password (no local key to delete).
-  3. Ted runs `update-env` -- generates new keys
-  4. Ted stores new keys in 1Password
-  5. Ted commits new auth `.pub` sidecar and pushes
-  6. Ted registers auth key with all registries, signing key with GitHub; deregisters old keys
+  1. Ted generates a new SSH key in the credential manager
+  2. Ted registers new public key with registries
+  3. Ted deregisters old public key from registries
+  4. Ted verifies SSH auth to all registries from any enrolled machine
 - **Extensions:**
-  - 1a. Key not in 1Password and only copy is local -> store in 1Password before deleting
-  - 3a. `op` available -> new keys stored in 1Password automatically
-  - 3b. `op` not available -> Ted stores manually; `update-env` prints reminder
-  - 5a. Signing key only rotation -> auth key and registrations unchanged
-  - 6a. Registry unreachable (VPN down) -> defer; re-run preflight later
-- **Minimal Guarantee:** Old keys backed up in 1Password before deletion; no key lost
-- **Success Guarantee:** New key in 1Password, `.pub` in repo, registered with all registries, old key deregistered
-- **Procedure:** [secrets-lifecycle.md Key rotation](secrets-lifecycle.md#key-rotation)
+  - 2a. *Registry unreachable:* That registry deferred. Resume step 2 for remaining registries.
+  - 4a. *Auth fails on a machine:* Resume step 4.
+- **Minimal Guarantee:** Old key retained until explicitly deleted. No key lost.
+- **Success Guarantee:** New key active, registered with all registries, old key deregistered. All enrolled machines use the new key.
 
 ---
 
-### UC-4b: Manage Secrets
+### UC-4e: Enroll a Machine for Work Credentials
 
 - **Primary Actor:** Ted
-- **Goal:** Add, update, or remove a secret and propagate to 1Password
-- **Scope:** `~/secrets/` directory + 1Password vault
-- **Level:** Subfunction (supports UC-4, UC-7, UC-9)
-- **Trigger:** New service credential, changed token, retired secret
-- **Preconditions:** `~/secrets/` exists; 1Password account accessible
+- **Goal:** A new or rebuilt machine can access work credentials, scoped to only the projects it needs
+- **Scope:** Work credential account + machine setup
+- **Level:** Subfunction (supports UC-4)
+- **Trigger:** New machine provisioned, or existing machine rebuilt/reimaged
+- **Preconditions:** Work credential account exists with vault-level access policies configured
 - **Stakeholders:**
-  - Ted -- secrets available on all machines after 1Password sync
-  - Security -- secrets in 1Password vault, not in repo. See [security.md](security.md)
+  - Ted -- machine ready for credential-dependent work with minimal manual steps
+  - Ted (security-conscious) -- machine sees only project vaults it needs; no fail-open defaults
 - **Main Success Scenario:**
-  1. Ted adds/edits/removes file in `~/secrets/`
-  2. Ted stores updated secrets in 1Password (via `op` CLI or app)
-  3. On Crostini: re-run `update-env` to refresh mount cache from `~/secrets/`
+  1. Ted installs the credential manager on the machine
+  2. Ted signs into the work credential account
+  3. Ted authorizes this device
+  4. Ted enables SSH agent and programmatic access
+  5. Ted declares the machine allowlist (which project vaults this machine should see)
+  6. Ted verifies visible vaults match the declared allowlist
+  7. Ted verifies SSH auth to a registry
 - **Extensions:**
-  - 1a. Filename invalid (dotfile, spaces, paths) -> encrypt-secrets warns and excludes
-  - 2a. `op` not available -> store manually via 1Password app
-  - 3a. On another machine -> retrieve from 1Password on next `update-env`
-- **Minimal Guarantee:** Local secrets unchanged on failure
-- **Success Guarantee:** Secrets in 1Password; other machines can retrieve on next `update-env`
-- **Procedure:** [secrets-lifecycle.md Add, update, remove](secrets-lifecycle.md#add-update-remove)
+  - 1a. *NixOS:* Installed via system config. Resume step 2.
+  - 1b. *Crostini:* Installed manually. Resume step 2.
+  - 2a. *Account credentials unavailable:* Account recovery required. Fail.
+  - 5a. *No allowlist exists for this machine's project set:* Fail (enrollment incomplete).
+  - 6a. *Unexpected vaults visible:* Vault access policies do not match allowlist. Fail (scope violation -- do not proceed).
+  - 6b. *Expected vault missing:* Vault not assigned to this user/group. Fail (enrollment incomplete).
+  - 7a. *Auth fails:* Resume step 4.
+- **Minimal Guarantee:** Machine usable without credentials; HTTPS clones and manual credential entry still work. Scope violations block enrollment -- never silently proceed with too-broad access.
+- **Success Guarantee:** Machine authorized; sees only assigned project vaults; SSH agent serving keys; programmatic access available.
+- **Technology & Data Variations:**
+  - NixOS: `programs._1password-gui` NixOS module. Crostini: manual install.
+
+**External processes supporting the compliance model:**
+- **Vault access policy administration:** Granting or revoking a machine's access to a project vault, and creating new project vaults, are performed in the 1Password account admin console. When a machine's project set changes, the vault policy, machine allowlist, and project vault declarations must be updated together.
+- **Machine allowlist declaration:** Created during enrollment (UC-4e step 5) and maintained in dotfiles/machine config. Lists the union of project vaults this machine should see.
+- **Project vault declaration:** Each project repo declares which vault(s) it requires. Created when a project first adopts credentialed tools (UC-5). UC-11 fails closed if this declaration is absent.
+
+---
+
+### UC-4b: Manage Work Credentials
+
+- **Primary Actor:** Ted
+- **Goal:** Add, update, or remove a work credential so project tools can access it
+- **Scope:** Work credential account + per-project tool configuration
+- **Level:** Subfunction (supports UC-1, UC-11)
+- **Trigger:** New service credential needed, token rotated, credential retired
+- **Preconditions:** Work credential account configured with appropriate project vault
+- **Stakeholders:**
+  - Ted -- credentials available on enrolled machines without manual file copying
+  - Ted (security-conscious) -- new credential lands in the correct project vault, not a shared/global location; credentials never on disk
+- **Main Success Scenario:**
+  1. Ted creates or updates the credential in the appropriate project vault
+  2. Credential syncs to enrolled machines with access to that vault
+  3. Ted configures the tool to use the new credential if needed (UC-5)
+  4. Ted verifies the tool works
+- **Extensions:**
+  - 1a. *Credential placed in wrong vault:* Credential visible to unintended machines until corrected. Resume step 1.
+  - 3a. *Existing credential rotated, same vault location:* No tool configuration change needed. Resume step 4.
+  - 4a. *Tool fails to resolve credential:* Credential reference and vault item do not match. Resume step 3.
+- **Minimal Guarantee:** Existing credentials unchanged on failure. Tool configuration unchanged until committed.
+- **Success Guarantee:** Credential in correct project vault; tools resolve it on enrolled machines with that vault access.
 
 ---
 
 ### UC-4c: Recover from Credential Failure
 
 - **Primary Actor:** Ted
-- **Goal:** Restore working SSH key or secrets after a failure (fingerprint mismatch, collision, missing key, corrupt cache)
-- **Scope:** 1Password + local filesystem + mount cache
+- **Goal:** Restore credential access after a failure
+- **Scope:** Work credential account + tool configuration
 - **Level:** Subfunction (supports UC-4)
-- **Trigger:** `update-env` reports an error during credential restore
-- **Preconditions:** At least one copy of the credential exists (local, cache, or 1Password)
+- **Trigger:** Tool reports a credential error, or SSH auth fails
+- **Preconditions:** Work credential account exists with credentials
 - **Stakeholders:**
-  - Ted -- restore access to Git registries and secrets
-  - Security -- recovery should not bypass trust model. See [security.md](security.md)
+  - Ted -- restore access to services and registries
+  - Ted (security-conscious) -- recovery must not widen access scope; compliance invariant must hold after recovery
 - **Main Success Scenario:**
-  1. Ted identifies the failure type from `update-env` output
-  2. Ted follows the matching recovery procedure
-  3. Ted re-runs `update-env` to verify
+  1. Ted observes a credential error from a tool or SSH failure
+  2. Ted identifies the cause from the error message
+  3. Ted resolves the cause
+  4. Ted verifies the tool works
+  5. Ted verifies vault scope is unchanged (UC-11 compliance check passes)
 - **Extensions:**
-  - 1a. Key in 1Password but not local -> retrieve via `op` or manually
-  - 1b. Fingerprint mismatch -> determine authoritative key (1Password is source of truth), fix local
-  - 1c. Collision (local key != repo `.pub`) -> compare against 1Password; keep the matching one
-  - 1d. Corrupt cache -> clear cache, restore from 1Password
-  - 1e. Key not in 1Password, not local, not in cache -> irrecoverable; regenerate (UC-4a)
-- **Minimal Guarantee:** No data destroyed without explicit operator action; cache checked before clearing
-- **Success Guarantee:** Credentials restored; `update-env` completes without errors
-- **Procedure:** [secrets-lifecycle.md Recovery Procedures](secrets-lifecycle.md#recovery-procedures)
+  - 2a. *Account locked:* Resume step 3.
+  - 2b. *Account not running:* Resume step 3.
+  - 2c. *Enrollment incomplete (UC-4e):* Fail (cannot recover without enrollment).
+  - 2d. *Credential missing from vault (UC-4b):* Resume step 3.
+  - 2e. *Account locked out:* Out of scope (account provider recovery).
+  - 5a. *Vault scope changed during recovery:* Fail (scope violation).
+- **Minimal Guarantee:** No credentials destroyed. Compliance invariant not bypassed.
+- **Success Guarantee:** Credentials accessible; tools work; vault scope unchanged.
 
 ---
 
 ### UC-4d: Decommission a Machine
 
 - **Primary Actor:** Ted
-- **Goal:** Remove a retired machine's key material from repo, 1Password, and registries
-- **Scope:** 1Password + dotfiles repo + Git registry settings + mount cache
+- **Goal:** Retired machine can no longer access work credentials
+- **Scope:** Work credential account
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** Machine retired, repurposed, or hostname changed
 - **Preconditions:** Machine is no longer in use (or hostname reassigned)
 - **Stakeholders:**
-  - Ted -- clean repo and vault, no stale keys
-  - Security -- old key deregistered from registries; removed from 1Password
+  - Ted -- no stale device authorizations
+  - Ted (security-conscious) -- retired machine cannot access any vault; shared SSH key unaffected (registries still accessible from other enrolled machines)
 - **Main Success Scenario:**
-  1. Ted removes `.pub` sidecar from repo
-  2. Ted removes SSH key and secrets from 1Password (or archives)
-  3. Ted clears mount cache (if Crostini)
-  4. Ted deregisters old `.pub` from registries
-  5. Ted commits and pushes
-- **Minimal Guarantee:** Repo unchanged on failure (git rm is reversible before commit)
-- **Success Guarantee:** No credentials for the retired hostname remain in repo, 1Password, cache, or registries
-- **Procedure:** [secrets-lifecycle.md Cleanup and decommission](secrets-lifecycle.md#cleanup-and-decommission)
+  1. Ted deauthorizes the machine in the work credential account
+  2. Ted removes any machine-specific config from dotfiles repo (if present)
+- **Extensions:**
+  - 1a. *Machine already wiped:* Device still authorized remotely. Resume step 1.
+  - 1b. *Suspected compromise:* Credential rotation also required (UC-4a, UC-4b). Resume step 2.
+- **Minimal Guarantee:** Account admin changes are explicit; no silent deauthorization.
+- **Success Guarantee:** Retired machine cannot access any work credentials. Shared SSH key unaffected.
 
 ---
 
@@ -427,7 +433,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Scope:** notify-send wrapper (Nix-managed script)
 - **Level:** User goal
 - **Trigger:** Ted triggers an action that calls `notify-send` (e.g., calendar reminder fires, build completes)
-- **Preconditions:** ntfy app installed on phone; phone subscribed to a private topic; topic name in `~/secrets/ntfy-topic`
+- **Preconditions:** ntfy app installed on phone; phone subscribed to a private topic; topic name available (via 1Password or config)
 - **Stakeholders:**
   - Ted -- reliable phone reminders for time-sensitive events even when away from the laptop
   - Calendar reminders (khal-notify) -- depends on this for phone delivery
@@ -440,7 +446,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Extensions:**
   - 1a. Tool doesn't use `notify-send` -> wrap it or have it call notify-send; resume at step 1
   - 2a. Local notification daemon missing -> desktop popup fails; resume at step 3
-  - 3a. `~/secrets/ntfy-topic` missing -> phone push skipped silently; separate success (local only)
+  - 3a. ntfy topic unavailable -> phone push skipped silently; separate success (local only)
   - 3b. Network unreachable -> push is fire-and-forget; local notification unaffected; separate success (local only)
   - 4a. Phone not subscribed -> notification lost; fail (phone delivery)
 - **Minimal Guarantee:** Local notification always works; phone push failure never blocks the caller
@@ -497,3 +503,67 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 
 **State coloring** (mirrors waybar.css): on = hidden (health) or white (always-shown); light gray = partial; dark gray = off; amber = unknown.
 
+---
+
+### UC-11: Use a Credentialed Tool
+
+- **Primary Actor:** Ted
+- **Goal:** Tools that need work credentials start successfully with scope-verified access
+- **Scope:** Per-project tool configuration
+- **Level:** Subfunction (supports UC-1)
+- **Secondary Actors:** Work credential account (1Password desktop app)
+- **Trigger:** Ted starts a tool that requires credentials (e.g., Claude Code with MCP servers)
+- **Preconditions:** Work credential account unlocked (nixos-config UC-1d or equivalent); credential items exist in the project's vault
+- **Stakeholders:**
+  - Ted -- tools connect to services after one unlock; no per-tool credential entry
+  - Ted (security-conscious) -- tool retrieves credentials from its declared project vault after scope checks; vault visibility bounded per machine; credentials never on disk
+- **Main Success Scenario:**
+  1. Ted starts a tool that needs credentials
+  2. System verifies visible vaults match this machine's declared allowlist
+  3. System verifies the project's required vault is accessible
+  4. System retrieves credentials from the project vault
+  5. Tool starts and operates with credentials
+- **Extensions:**
+  - 2a. *Credential account not running:*
+    Clear error. Fail.
+  - 2b. *Credential account locked:*
+    Ted prompted to unlock. Resume step 2. If dismissed: fail.
+  - 2c. *Visible vaults do not match machine allowlist:*
+    Clear error naming the extra or missing vaults. Fail (scope violation).
+  - 2d. *No machine allowlist declared:*
+    Fail (no allowlist = no access).
+  - 3a. *Project's required vault not accessible:*
+    Clear error naming the missing vault. Fail.
+  - 3b. *No project vault requirement declared:*
+    Fail (no declaration = no access).
+  - 4a. *Credential not found in vault:*
+    Clear error naming the missing credential. Fail.
+  - 5a. *Tool fails to start:*
+    Credentials not leaked. Fail.
+- **Minimal Guarantee:** No credentials on disk. Scope violations block credential access entirely -- never fail open.
+- **Success Guarantee:** Tool running with credentials retrieved from the declared project vault; machine vault visibility and project vault requirement verified before retrieval; credentials not on disk.
+- **Special Requirement:** No failure path may leave credentials on disk or in the parent shell environment.
+- **Technology:** 1Password Python SDK, per-project wrapper scripts. Two-level allowlist: machine allowlist (union of all project vaults this machine needs, in dotfiles/machine config) and project allowlist (vaults this project needs, in the project repo). See [design.md: Credential Architecture](design.md#credential-architecture-uc-4-uc-4a-e-uc-11).
+
+---
+
+## Status
+
+| Use Case | Status | Notes |
+|----------|--------|-------|
+| UC-1 Software Development | Working | |
+| UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
+| UC-3 File Management | Working | |
+| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. NixOS, Crostini, Debian, macOS |
+| UC-4a Rotate SSH Key | Pending migration | Rewritten for 1Password; blocked on 1Password install |
+| UC-4b Manage Work Credentials | Pending migration | Rewritten for 1Password; replaces age bundle workflow |
+| UC-4c Recover from Credential Failure | Pending migration | Simplified for 1Password; old failure modes eliminated |
+| UC-4d Decommission a Machine | Pending migration | Rewritten for 1Password device deauthorization |
+| UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
+| UC-5 Make a Config Change | Working | |
+| UC-6 Start a New Session | Working | |
+| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via getFlake, NixOS via flake input; SAML callback validated end-to-end on Crostini |
+| UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
+| UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
+| UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
+| UC-11 Use a Credentialed Tool | Not started | Blocked on nixos-config UC-1d + vault policy setup |
