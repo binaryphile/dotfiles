@@ -357,7 +357,7 @@ The original design had per-project wrapper scripts (e.g., `urma/bin/mcp-atlassi
 
 Credentials never touch disk. The `exec` ensures credentials exist only in the child process's environment, not in the parent shell.
 
-**Error handling principles** (from earlier wrapper iterations):
+**Error handling principles** (from earlier iterations, apply to `op-run`):
 - Never use `export VAR=$(cmd)` -- masks failures under `set -e`
 - Capture secret-read errors separately from secret values
 - Log which secret failed and why to stderr
@@ -367,23 +367,23 @@ Credentials never touch disk. The `exec` ensures credentials exist only in the c
 
 | Option | Pros | Cons |
 |--------|------|------|
-| Pure Python wrapper | Single language, clean error handling, `os.execvpe` | Needs Python available outside `nix develop` |
+| Pure Python | Single language, clean error handling, `os.execvpe` | Needs Python available outside `nix develop` |
 | Bash calling Python helper | Bash handles nix develop, Python handles secrets + compliance | Split-brain error handling |
 | Python inside nix develop | Everything in devShell, Python + SDK available | Wrapper itself needs nix develop to start |
 
 #### Launcher Enforcement (`op-run`)
 
-The wrapper pattern above is a discipline mechanism — it enforces correct usage but is bypassable by any same-user process. To raise the bar above pure convention without requiring OS sandboxing, credentialed tools are invoked through a single launcher (`op-run`) that becomes the only supported credential path.
+The steps above describe a discipline mechanism — correct usage but bypassable by any same-user process. To raise the bar above pure convention without requiring OS sandboxing, credentialed tools are invoked through a single launcher (`op-run`) that becomes the only supported credential path.
 
 **Properties:**
-1. **Single supported entry point.** All credentialed tool invocations route through `op-run <tool> [args...]`. Project configs (`.mcp.json`) and shell aliases point to `op-run`, not to tools or wrappers directly.
+1. **Single supported entry point.** All credentialed tool invocations route through `op-run <tool> [args...]`. Project configs (`.mcp.json`) and shell aliases point to `op-run`, not to tools directly.
 2. **Policy is in the launcher, not the tool.** `op-run` performs project identification, two-level allowlist verification, `.env` pre-flight, and credential retrieval. The tool receives env vars and runs. No tool-level credential config needed.
 3. **No reusable direct credential path.** Managed configs do not contain raw `op://` references or DesktopAuth invocations that a user or tool could copy-paste to bypass `op-run`.
 4. **Tamper-evident.** The launcher's expected hash is checked into dotfiles. Shell init or host apply verifies the installed launcher matches the expected hash. Tampering is detectable (though not preventable by a same-user attacker — this is still soft enforcement, but with evidence).
 5. **Fail-closed for managed tools.** No project declaration → no launch. No allowlist → no launch. Hash mismatch → no launch.
 6. **Audit logging.** Local append-only log of: timestamp, project, tool, credential set accessed. Not a security control against malicious same-user attackers, but catches accidental misuse, drift, and provides operational review history.
 
-**What this adds over the bare wrapper:**
+**What `op-run` adds over bare per-project scripts:**
 - Accidental bypass becomes harder (no direct invocation path to copy)
 - Drift from policy is detectable via hash check and audit log
 - Claude Code or other automation can't silently take a shortcut
