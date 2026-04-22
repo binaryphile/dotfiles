@@ -82,7 +82,7 @@ Two stages:
 **Stage 2** (projects, dev tool repos):
 
 5. Re-run home-manager with full config (VPN packages).
-6. Credential setup: Ted unlocks work credential account (1Password). `authPreflight` tests SSH auth to each registry via 1Password SSH agent. No secrets restored to disk -- credentials accessed at runtime via wrappers (UC-11).
+6. Credential setup: Ted unlocks work credential account (1Password). `authPreflight` tests SSH auth to each registry via 1Password SSH agent. No secrets restored to disk -- credentials accessed at runtime via `op-run` (UC-11).
 7. Platform-specific setup (crostini only)
 8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
@@ -330,9 +330,9 @@ The compliance check uses two declarations to verify scope before retrieving cre
 
 **Machine allowlist** -- checked into dotfiles, per-machine config. Lists every vault this machine should see (the union of its projects' vaults plus the shared SSH vault). Location TBD during implementation (likely `contexts/<machine>/vaults.allow` or similar).
 
-**Project vault declaration** -- checked into each project repo. Declares which vault(s) this project's wrapper should read from. Location TBD (likely a dotfile in the project root, e.g., `.vault-require`).
+**Project vault declaration** -- checked into each project repo. Declares which vault(s) `op-run` should read from for this project. Location TBD (likely a dotfile in the project root, e.g., `.vault-require`).
 
-At tool startup (UC-11), the wrapper:
+At tool startup (UC-11), `op-run`:
 1. Lists visible vaults via the 1Password SDK
 2. Compares against the machine allowlist -- must match exactly (no extra, no missing)
 3. Checks the project's required vault is in the visible set
@@ -345,9 +345,9 @@ Every failure is fail-closed:
 - Project vault not accessible -> no access
 - Missing credential in vault -> no access
 
-#### Wrapper Pattern
+#### Wrapper Pattern (superseded by `op-run`)
 
-Each project that needs credentials has a wrapper script (e.g., `urma/bin/mcp-atlassian`) that:
+The original design had per-project wrapper scripts (e.g., `urma/bin/mcp-atlassian`). `op-run` centralizes the credential retrieval logic, but the wrapper steps remain as the specification for what `op-run` does internally:
 1. Checks for `.env` files in CWD and ancestor dirs -- fails if found (mitigates `load_dotenv(override=True)` credential override; see threat model)
 2. Runs the two-level compliance check
 3. Authenticates to 1Password via Python SDK `DesktopAuth` (Unix socket to desktop app -- no secret key input)
