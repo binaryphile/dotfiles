@@ -474,7 +474,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Preconditions:** Work credential account unlocked (nixos-config UC-1d or equivalent); credential items exist in the project's vault
 - **Stakeholders:**
   - Ted -- tools connect to services after one unlock; no per-tool credential entry
-  - Ted (security-conscious) -- tool retrieves credentials from its declared project vault after scope checks; vault visibility bounded per machine; credentials never on disk
+  - Ted (security-conscious) -- tool accesses only the credentials it was declared to need; vault visibility bounded per machine; credentials never on disk
 - **Main Success Scenario:**
   1. Ted starts a tool that needs credentials
   2. System verifies visible vaults match this machine's declared allowlist
@@ -499,7 +499,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
   - 5a. *Tool fails to start:*
     Credentials not leaked. Fail.
 - **Minimal Guarantee:** No credentials on disk. Scope violations block credential access entirely -- never fail open.
-- **Success Guarantee:** Tool running with credentials retrieved from the declared project vault; machine vault visibility and project vault requirement verified before retrieval; credentials not on disk.
+- **Success Guarantee:** Tool running with declared credentials; scope verified; credentials not on disk.
 - **Special Requirement:** No failure path may leave credentials on disk or in the parent shell environment.
 - **Technology:** 1Password Python SDK, per-project wrapper scripts. Two-level allowlist: machine allowlist (union of all project vaults this machine needs, in dotfiles/machine config) and project allowlist (vaults this project needs, in the project repo). See [design.md: Credential Architecture](design.md#credential-architecture-uc-4-uc-4a-e-uc-11).
 
