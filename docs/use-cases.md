@@ -159,7 +159,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; remaining manual steps documented.
 - **Technology:** update-env (bash), 1Password, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4).
 
-**Migration note (UC-4 family):** UC-4a through UC-4d previously used age-encrypted SSH key bundles and secrets tarballs in `~/secrets/`. That model is replaced by 1Password with vault-level compartmentalization. Blast radius is bounded per machine (vault access policies control which vaults a machine can see). On a multi-project machine, per-project isolation relies on compliance checks in the wrapper, not on a technical enforcement boundary -- the unlocked account can read any visible vault. The compliance check (UC-11 steps 2-3) is a detective control, not a preventive one. See design.md for the credential architecture.
+**Migration note (UC-4 family):** UC-4a through UC-4d previously used age-encrypted SSH key bundles and secrets tarballs in `~/secrets/`. That model is replaced by 1Password with vault-level compartmentalization. Blast radius is bounded per machine (vault access policies control which vaults a machine can see). On a multi-project machine, per-project isolation relies on the `op-run` launcher's compliance check, an enforced workflow boundary — the unlocked account can read any visible vault, but `op-run` verifies scope before retrieval. See design.md for the credential architecture.
 
 ---
 
@@ -501,7 +501,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Minimal Guarantee:** No credentials on disk. Scope violations block credential access entirely -- never fail open.
 - **Success Guarantee:** Tool running with declared credentials; scope verified; credentials not on disk.
 - **Special Requirement:** No failure path may leave credentials on disk or in the parent shell environment.
-- **Technology:** 1Password Python SDK, per-project wrapper scripts. Two-level allowlist: machine allowlist (union of all project vaults this machine needs, in dotfiles/machine config) and project allowlist (vaults this project needs, in the project repo). See [design.md: Credential Architecture](design.md#credential-architecture-uc-4-uc-4a-e-uc-11).
+- **Technology:** 1Password Python SDK, `op-run` launcher. Two-level allowlist: machine allowlist (union of all project vaults this machine needs, in dotfiles/machine config) and project allowlist (vaults this project needs, in the project repo). See [design.md: Credential Architecture](design.md#credential-architecture-uc-4-uc-4a-e-uc-11).
 
 ---
 
