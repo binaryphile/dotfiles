@@ -374,7 +374,7 @@ Credentials never touch disk. The `exec` ensures credentials exist only in the c
 The wrapper pattern above is a discipline mechanism — it enforces correct usage but is bypassable by any same-user process. To raise the bar above pure convention without requiring OS sandboxing, credentialed tools are invoked through a single launcher (`op-run`) that becomes the only supported credential path.
 
 **Properties:**
-1. **Single entry point.** All credentialed tool invocations route through `op-run <tool> [args...]`. Project configs (`.mcp.json`) and shell aliases point to `op-run`, not to tools or wrappers directly.
+1. **Single supported entry point.** All credentialed tool invocations route through `op-run <tool> [args...]`. Project configs (`.mcp.json`) and shell aliases point to `op-run`, not to tools or wrappers directly.
 2. **Policy is in the launcher, not the tool.** `op-run` performs project identification, two-level allowlist verification, `.env` pre-flight, and credential retrieval. The tool receives env vars and runs. No tool-level credential config needed.
 3. **No reusable direct credential path.** Managed configs do not contain raw `op://` references or DesktopAuth invocations that a user or tool could copy-paste to bypass `op-run`.
 4. **Tamper-evident.** The launcher's expected hash is checked into dotfiles. Shell init or host apply verifies the installed launcher matches the expected hash. Tampering is detectable (though not preventable by a same-user attacker — this is still soft enforcement, but with evidence).
@@ -391,6 +391,10 @@ The wrapper pattern above is a discipline mechanism — it enforces correct usag
 - Hard per-process isolation (still same-user, still `/proc` readable)
 - Protection against malicious same-user process calling the 1Password socket directly
 - Prevention of credential exfiltration from a running tool
+
+**Environment whitelist:** `op-run` does not pass the full inherited environment to the child process. It explicitly whitelists the env vars the tool needs (credentials + non-secret config like URLs) and strips everything else. This reduces the surface for env-based confusion or leakage without requiring process sandboxing.
+
+**Effective local trust boundary:** An unlocked 1Password session is the effective local trust boundary. Once unlocked, any same-user process can reach the DesktopAuth socket. All enforcement above the socket level (`op-run`, compliance check, audit logging) is workflow enforcement, not security isolation. The unlock gate is the last hard boundary.
 
 **Classification:** Enforced workflow boundary — stronger than convention, weaker than OS isolation. See threat model for the full enforcement boundary table.
 
