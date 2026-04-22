@@ -82,7 +82,7 @@ Two stages:
 **Stage 2** (projects, dev tool repos):
 
 5. Re-run home-manager with full config (VPN packages).
-6. Credential setup: Ted unlocks work credential account (1Password). `authPreflight` tests SSH auth to each registry via 1Password SSH agent. No secrets restored to disk -- credentials accessed at runtime via wrappers (UC-11).
+6. Credential setup: Ted unlocks work credential account (1Password). `authPreflight` tests SSH auth to each registry via 1Password SSH agent. No secrets restored to disk -- credentials accessed at runtime via `op-run` (UC-11).
 7. Platform-specific setup (crostini only)
 8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
