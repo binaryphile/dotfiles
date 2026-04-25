@@ -7,6 +7,13 @@ verification-oriented change checklist.
 
 Also see `~/projects/urma/obsidian/URMA_SWOT.md` for strategic analysis.
 
+## Repository structure
+
+The `obsidian/` directory inside `~/projects/urma` is a **non-submodule sub-repo**
+— its own git repository nested inside urma, gitignored by the parent. It contains
+project documentation, research, guides, and domain knowledge. Changes to obsidian
+are committed in the obsidian repo, not in the urma repo. Set up via `mk-urma`.
+
 ## Where to look first
 
 | Area | Path |

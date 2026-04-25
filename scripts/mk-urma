@@ -28,6 +28,11 @@ cmd.setup() (
   END
   export FONTAWESOME_PACKAGE_TOKEN=$(<~/fa-token.txt)
   mk.Cue ./urma install
+
+  # obsidian is a non-submodule sub-repo (its own git repo, gitignored by parent)
+  if [[ ! -d ~/projects/urma/obsidian/.git ]]; then
+    mk.Cue git clone git@stash.digi.com:~tlilley/urma-obsidian ~/projects/urma/obsidian
+  fi
 )
 
 ## globals
