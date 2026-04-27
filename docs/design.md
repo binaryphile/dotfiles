@@ -97,7 +97,7 @@ Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual 
 - **Phase** -- legacy label in `update-env` box comments (PHASE 1-7). Numbering does not map 1:1 to steps. Docs use "step" for the canonical sequence.
 - **Section** -- progress marker emitted by `section <name>` calls in `update-env`; typically sub-step granularity (e.g. one `section` per repo clone within a step).
 
-All public repo clones use HTTPS fetch with SSH push URLs (idempotent remote migration on every run). Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git pull --rebase --autostash` so repos with uncommitted local changes are updated without losing work.
+All public repo clones use HTTPS for the initial `task.GitClone` (before SSH keys exist), then migrate to SSH for both fetch and push on every run. Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git pull --rebase --autostash` so repos with uncommitted local changes are updated without losing work.
 
 Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> linux. `platform` is injectable via the standard DI pattern (lowercase function variable, overridable by `local` in tests). `platformTaskGroups` is a pure decision function mapping platform to the set of task groups both stages should run (apt, hostname, gpoc, nix, hm, credential). `nix` and `hm` are separate groups because not all nix platforms have home-manager flake configs in this repo. Tested purely without mocking stage internals. For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
 

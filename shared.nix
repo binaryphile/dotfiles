@@ -1,6 +1,8 @@
-{ config, pkgs, bashTools ? import ./bash-tools.nix { inherit pkgs; }, ... }:
+{ config, pkgs, bashTools ? null, ... }:
 
-{
+let
+  effectiveBashTools = if bashTools != null then bashTools else import ./bash-tools.nix { inherit pkgs; };
+in {
   home.packages = with pkgs; [
     age
     bottom
@@ -33,7 +35,7 @@
     tree
     vpn-slice
     zip
-  ] ++ [ bashTools.mkBash bashTools.tesht ];
+  ] ++ [ effectiveBashTools.mkBash effectiveBashTools.tesht ];
 
   home.sessionVariables = {
     EDITOR = "nvim";
@@ -41,8 +43,8 @@
     CFGDIR = "$HOME/.config";
     SECRETS = "$HOME/secrets";
     XDG_CONFIG_HOME = "$HOME/.config";
-    TASK_BASH_LIB = "${bashTools.taskBash}/lib/task.bash";
-    MK_BASH_LIB = "${bashTools.mkBash}/lib/mk.bash";
+    TASK_BASH_LIB = "${effectiveBashTools.taskBash}/lib/task.bash";
+    MK_BASH_LIB = "${effectiveBashTools.mkBash}/lib/mk.bash";
   };
   home.sessionPath = [
     "$HOME/.local/bin"

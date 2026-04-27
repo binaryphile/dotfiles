@@ -143,8 +143,7 @@ stage1() {
   #  +-------------------------------------------------------------+
   section dotfiles
   task.GitClone https://github.com/binaryphile/dotfiles ~/dotfiles main
-  try git -C ~/dotfiles remote set-url origin https://github.com/binaryphile/dotfiles.git
-  try git -C ~/dotfiles remote set-url --push origin git@github.com:binaryphile/dotfiles.git
+  try git -C ~/dotfiles remote set-url origin git@github.com:binaryphile/dotfiles.git
   try task.GitUpdate ~/dotfiles
   each task.Ln <<'  END'
     contexts/"$Platform"                          ~/dotfiles/context
@@ -435,8 +434,7 @@ stage2() {
 
   section neovim
   try task.GitClone https://github.com/binaryphile/dot_vim ~/.config/nvim master
-  try git -C ~/.config/nvim remote set-url origin https://github.com/binaryphile/dot_vim.git
-  try git -C ~/.config/nvim remote set-url --push origin git@github.com:binaryphile/dot_vim.git
+  try git -C ~/.config/nvim remote set-url origin git@github.com:binaryphile/dot_vim.git
   try task.GitUpdate ~/.config/nvim
   curlTask https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim ~/.local/share/nvim/site/autoload/plug.vim
   nvimHeadlessPlugInstallTask
@@ -516,8 +514,7 @@ bitbucketCloneAndLinkTask() {
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone https://codeberg.org/binaryphile/$repo ~/projects/$repo $branch
-  try git -C ~/projects/"$repo" remote set-url origin "https://codeberg.org/binaryphile/$repo.git"
-  try git -C ~/projects/"$repo" remote set-url --push origin "git@codeberg.org:binaryphile/$repo.git"
+  try git -C ~/projects/"$repo" remote set-url origin "git@codeberg.org:binaryphile/$repo.git"
   try task.GitUpdate ~/projects/$repo
 }
 
@@ -776,8 +773,7 @@ gitExcludeTask() {
 githubCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone https://github.com/binaryphile/$repo ~/projects/$repo $branch
-  try git -C ~/projects/"$repo" remote set-url origin "https://github.com/binaryphile/$repo.git"
-  try git -C ~/projects/"$repo" remote set-url --push origin "git@github.com:binaryphile/$repo.git"
+  try git -C ~/projects/"$repo" remote set-url origin "git@github.com:binaryphile/$repo.git"
   try task.GitUpdate ~/projects/$repo
 }
 
