@@ -315,7 +315,7 @@ This is an honest tradeoff. The old age-bundle model had per-machine secret bund
 
 #### Vault Compartmentalization
 
-Credentials are organized into project-scoped vaults in the work credential account (enterprise 1Password). Each vault contains only the credentials needed by one project or service group.
+Credentials are organized into project-scoped vaults in the work credential account (enterprise 1Password). Each vault contains only the credentials needed by one project or service group. SSH keys currently reside in a personal 1Password account (Private vault) and will migrate to the corporate account when sub-account access is configured. `OpVault` in update-env and `agent.toml` will need updating at that point.
 
 Example vault structure:
 
@@ -410,6 +410,8 @@ The steps above describe a discipline mechanism — correct usage but bypassable
 1Password's built-in SSH agent serves the shared key to all terminal sessions after unlock. No per-machine key generation. No age encryption. No keychain eval (currently `bash/apps/keychain/init.bash` -- to be removed during implementation).
 
 **IdentityAgent configuration:** `ssh/config` sets `IdentityAgent ~/.1password/agent.sock` in the `Host *` block, directing all SSH connections through the 1Password agent. This is how SSH auth consolidates into 1Password -- no separate `SSH_AUTH_SOCK` management or keychain agent bootstrap needed. The signing key (`user.signingkey = ~/.ssh/id_ed25519_signing.pub` in gitconfig) identifies which vault key `op-ssh-sign` uses for commit signing.
+
+**Per-machine agent isolation (`agent.toml`):** `~/.config/1Password/ssh/agent.toml` restricts which vault keys the 1Password agent offers. Without it, the agent offers ALL keys -- including other machines' keys. Managed by `agentTomlTask` in update-env (hostname-dependent, generated from `opAuthKeyItem` and `opSigningKeyItem`). Operational hygiene, not a security boundary -- a same-user attacker can edit the file.
 
 **Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines (unchanged from previous model).
 

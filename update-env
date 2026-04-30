@@ -189,6 +189,7 @@ stage1() {
     try restoreSigningKey
     try restoreSecrets
     try loadSshKey
+    try agentTomlTask
     section auth-preflight
     try authPreflight
     try runSigningKeyPreflight
@@ -660,6 +661,40 @@ chromeDevtoolsMcpRegisterTask() {
       mv ~/.claude.json.tmp ~/.claude.json
   }
   cmd chromeDevtoolsMcpRegister
+}
+
+# agentTomlTask writes ~/.config/1Password/ssh/agent.toml to restrict which
+# keys the 1Password SSH agent offers to the current machine. Without this,
+# the agent offers ALL vault keys to every server (use-authority expansion).
+agentTomlTask() {
+  local hostname
+  hostname=$(lib.MachineHostname)
+  local path=$HOME/.config/1Password/ssh/agent.toml
+  desc "write 1Password agent.toml for $hostname"
+
+  agentTomlUpToDate() {
+    [[ -f $path ]] && diff -q $path <(agentTomlContent $hostname) >/dev/null 2>&1
+  }
+  ok agentTomlUpToDate
+
+  agentTomlInstall() {
+    mkdir -p $(dirname $path)
+    agentTomlContent $hostname >$path
+  }
+  cmd agentTomlInstall
+}
+
+agentTomlContent() {
+  local hostname=$1
+  cat <<EOF
+[[ssh-keys]]
+vault = "$OpVault"
+item = "$(opSigningKeyItem $hostname)"
+
+[[ssh-keys]]
+vault = "$OpVault"
+item = "$(opAuthKeyItem $hostname)"
+EOF
 }
 
 # claudeBaseCopyTask copies the base CLAUDE.md (Conventions, Secrets) to
