@@ -6,9 +6,9 @@ How the dotfiles environment moves through bootstrap, maintenance, and multi-mac
 
 ### Bootstrap
 
-A bare machine reaches productive state by cloning the dotfiles repo, then running `update-env -1 <hostname>`. The repo is private, so Ted clones it manually (e.g., `gh auth login` + `gh repo clone`). For the detailed step-by-step, see [design.md Deployment](design.md#deployment-uc-4).
+A bare machine reaches productive state via `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. On bare machines, update-env fetches its own dependencies (lib.bash, task.bash) from GitHub over HTTPS. For the detailed step-by-step, see [design.md Deployment](design.md#deployment-uc-4).
 
-- **Stage 1** (`update-env -1 <hostname>`) -- system setup, packages, credential restore. After this: working shell, VPN, SSH identity.
+- **Stage 1** (`update-env -1 <hostname>`, or curl-piped on bare machines) -- system setup, packages, credential restore. After this: working shell, VPN, SSH identity.
 - **Stage 2** (`update-env -2`) -- project repos, dev tool clones, neovim. After this: full development environment.
 
 `update-env` is idempotent. First run does everything; re-runs converge. Hostname is required on first Crostini run, optional thereafter. Bare `update-env` runs both stages; `-1`/`-2` flags run individual stages; `-c`/`--credential` runs only credential setup (SSH key, signing key, secrets, agent, auth preflight) for completing identity after an interrupted or non-interactive stage 1.
@@ -71,9 +71,9 @@ Per CLAUDE.md: docs first, then implementation.
 
 ### Changing credential handling
 
-1. Review [security.md](security.md) for trust boundaries and constraints
-2. Update security.md if trust model changes
-3. Update secrets-lifecycle.md procedures
+1. Decrypt and review security.md for trust boundaries and constraints (encrypted -- see docs/.age-recipients)
+2. Update security.md if trust model changes, re-encrypt
+3. Update secrets-lifecycle.md procedures (encrypted), re-encrypt
 4. Update use-cases.md (UC-4a through UC-4d) if workflows change
 5. Implement and test
 

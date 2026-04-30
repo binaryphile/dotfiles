@@ -19,6 +19,13 @@ Default to drafting ticket content for Ted to create. Create tickets directly
 searching the web. Covers: bash, nix, go, security analysis, use case writing,
 investigation methodology, agent orchestration, and more.
 
+# Security Docs
+
+`docs/security.md`, `docs/secrets-lifecycle.md`, and `docs/threat-model.md` are
+encrypted at rest (`.age` files). They are not readable by agents. When changing
+credential handling or trust boundaries, tell Ted to decrypt and review them
+(`scripts/security-docs decrypt`).
+
 # Secrets
 
 Two rules:
