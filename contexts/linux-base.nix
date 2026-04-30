@@ -124,6 +124,7 @@ in
 
   programs.vdirsyncer.enable = true;
   services.vdirsyncer.enable = true;
+  systemd.user.services.vdirsyncer.Unit.ConditionPathExists = "%h/secrets/calendar-ics.url";
 
   programs.khal = {
     enable = true;
