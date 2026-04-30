@@ -34,7 +34,7 @@ home.nix                        # Symlink to active context's home.nix
 flake.nix, flake.lock           # Crostini HM configs, lockfile-pinned bash tools, multi-system dev shell (tesht, mk, kcov, wl-clipboard)
 bash-tools.nix                  # Bash dev tool derivations (flake sources or fetchFromGitHub fallback)
 update-env                      # Idempotent deployment script (installs nix, bootstraps shell)
-claude/                         # Claude Code config: settings.json + CLAUDE.md (base, stage 1) + CLAUDE-era.md (era/guides, stage 2)
+claude/                         # Claude Code config: settings.json + CLAUDE.md (base + guides, stage 1) + CLAUDE-era.md (era, stage 2)
 bash/
   init.bash                     # Entry point -> .bashrc, .bash_profile, .profile
   apps/                         # Per-app modules (env, init, cmds, deps)
