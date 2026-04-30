@@ -10,10 +10,8 @@
       source = ../claude/settings.json;
       force = true;
     };
-    ".claude/CLAUDE.md" = {
-      source = ../claude/CLAUDE.md;
-      force = true;
-    };
+    # CLAUDE.md is NOT managed by HM -- update-env stage 2 appends era config,
+    # which requires a writable file. See claudeBaseCopyTask + claudeEraConfigTask.
     ".claude/projects/-home-ted-projects-dal/CLAUDE.md" = {
       source = ../claude/dal-project.md;
       force = true;
