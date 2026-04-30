@@ -273,18 +273,18 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Goal:** SSH key available without repeated passphrase entry
 - **Scope:** All hosts
 - **Level:** Subfunction
-- **Trigger:** Login shell startup
+- **Trigger:** Ted unlocks 1Password
 - **Main Success Scenario:**
-  1. SSH agent starts or is reused
-  2. id_ed25519 key loaded
+  1. 1Password SSH agent socket becomes available
+  2. SSH config directs connections through the agent (`IdentityAgent`)
   3. SSH operations work without passphrase prompts
 - **Extensions:**
-  - 1a. keychain not installed -> agent not started, SSH prompts for passphrase
-  - 2a. id_ed25519 not found -> keychain prompts or errors
+  - 1a. 1Password not running -> SSH operations fail; start 1Password and unlock
+  - 1b. 1Password locked -> agent socket exists but operations prompt for unlock
 - **Postconditions:**
   - **Success:** SSH operations work without passphrase prompts
-  - **Failure:** No agent; SSH prompts for passphrase each time
-- **Technology:** keychain (shared.nix), bash/apps/keychain/init.bash
+  - **Failure:** 1Password unavailable; SSH operations fail until unlocked
+- **Technology:** 1Password SSH agent (`~/.1password/agent.sock`), `IdentityAgent` in ssh/config. Keychain retained as break-glass fallback (bash/apps/keychain/init.bash).
 
 ---
 
