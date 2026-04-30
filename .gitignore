@@ -5,3 +5,6 @@ kcov/
 assets/
 result
 result-*
+docs/security.md
+docs/secrets-lifecycle.md
+docs/threat-model.md
