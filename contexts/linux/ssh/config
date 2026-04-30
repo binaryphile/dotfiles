@@ -1,6 +1,7 @@
 UseRoaming no
 
 Host *
+IdentityAgent ~/.1password/agent.sock
 UserKnownHostsFile ~/.ssh/new_known_hosts ~/.ssh/known_hosts
 ControlMaster auto
 ControlPersist yes
