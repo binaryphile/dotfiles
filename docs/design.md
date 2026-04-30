@@ -7,7 +7,7 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 ## Principles
 
 1. **One environment, all hosts.** Same config on NixOS and Crostini. Platform differences handled by `contexts/`.
-2. **Symlinks over copies.** Configs live here. Home directory gets symlinks. See [Why symlinks, not immutable copies](#why-symlinks-not-immutable-copies) under Deployment.
+2. **Managed deployment.** Configs live here. Deployed read-only. Change the source, commit, run `update-env`. See [Managed config deployment](#managed-config-deployment) under Deployment.
 3. **Single-file bash init.** One entry point replaces `.bashrc`, `.bash_profile`, `.profile`. Explicit mode detection, no hidden sourcing rules. See [Why a single entry point](#why-a-single-entry-point).
 4. **Idempotent deployment.** `update-env` works on fresh or existing machines. Converges to desired state.
 5. **Nix for packages, dotfiles for config.** `home.nix` says what to install. Dotfiles say how to configure.
@@ -121,9 +121,13 @@ Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -
 
 The `home.file` blocks use `mkOutOfStoreSymlink` to preserve edit-in-place semantics -- symlinks point at the live source files in `~/dotfiles/`, not into the nix store, so editing the source is immediately visible without `home-manager switch`.
 
-#### Why symlinks, not immutable copies
+#### Managed config deployment
 
-The NixOS model copies config files into the read-only nix store, making them immune to runtime mutation. This is valuable when the consumer of a config is a program that might silently overwrite it. But the files managed here -- bash modules, tmux.conf, gitconfig, ssh config, ranger, liquidprompt -- are files the user writes and controls. No program writes back to them; the drift risk is zero. Symlinks give instant feedback: edit the source file, the change is live. Immutable copies would require a rebuild/deploy step for every edit, adding friction without solving a real problem. The `home.file` blocks that do exist (Claude config, gpgui desktop entry, proxy PAC) use `force: true` or are generated -- cases where immutability or atomic replacement actually matters. If a file were ever at risk of being silently modified by a program, the right move would be to promote it to a `home.file` block rather than building a parallel copy mechanism.
+Config files deployed by update-env or home-manager are read-only at the destination. The correct change path is: edit the source in `~/dotfiles`, commit, push, then run `update-env` (or `home-manager switch`) on each machine to converge. Direct edits to deployed files are overwritten on the next run.
+
+Home-manager files use `mkOutOfStoreSymlink` where edit-in-place semantics are needed during active development (e.g., bash modules being iterated on). Otherwise, files are deployed as copies or store-path symlinks that prevent direct mutation. The `home.file` blocks with `force: true` (Claude settings, gpgui desktop entry) are cases where a program may overwrite the file and HM restores it on switch.
+
+Files requiring runtime mutation (e.g., CLAUDE.md, which stage 2 appends to) must not be managed by HM's store-copy mechanism -- they are owned by update-env instead (see `claudeBaseCopyTask`).
 
 **Post-install messages** -- `sshKeyEpilogue` prints 1Password storage instructions (item name convention: `<hostname> SSH Key`) and registry URLs when a key is generated. Registration is done via the 1Password browser extension -- open the registry URL, use 1Password to fill the public key directly from the vault item. No manual copy-paste of key material. The signing key flow similarly prints the 1Password item name (`<hostname> signing SSH Key`) on generate, plus reminders when the key exists locally but not in 1Password. `postInstallMessages` prints Crostini-specific setup (PAC URL and ChromeOS proxy instructions) inline. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
 
@@ -404,6 +408,8 @@ The steps above describe a discipline mechanism — correct usage but bypassable
 #### SSH Agent
 
 1Password's built-in SSH agent serves the shared key to all terminal sessions after unlock. No per-machine key generation. No age encryption. No keychain eval (currently `bash/apps/keychain/init.bash` -- to be removed during implementation).
+
+**IdentityAgent configuration:** `ssh/config` sets `IdentityAgent ~/.1password/agent.sock` in the `Host *` block, directing all SSH connections through the 1Password agent. This is how SSH auth consolidates into 1Password -- no separate `SSH_AUTH_SOCK` management or keychain agent bootstrap needed. The signing key (`user.signingkey = ~/.ssh/id_ed25519_signing.pub` in gitconfig) identifies which vault key `op-ssh-sign` uses for commit signing.
 
 **Host key trust: TOFU.** `StrictHostKeyChecking=accept-new` for first contact on fresh machines (unchanged from previous model).
 
