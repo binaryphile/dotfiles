@@ -1,7 +1,7 @@
 [user]
   email = ted.lilley@gmail.com
   name = Ted Lilley
-  signingkey = ~/.config/git/signing-key.pub
+  signingkey = ~/.ssh/id_ed25519_signing.pub
 [gpg]
   format = ssh
 [gpg "ssh"]

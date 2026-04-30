@@ -175,7 +175,6 @@ stage1() {
     local nixProfile=/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
     [[ -r $nixProfile ]] || { echo "nix profile script not found at $nixProfile" >&2; return 1; }
     loosely source $nixProfile
-    verifyNixFlakes
   fi
 
   if [[ $groups == *hm* ]]; then
@@ -197,6 +196,7 @@ stage1() {
 
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
   task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
+  claudeBaseCopyTask
 }
 
 stage1Epilogue() {
@@ -433,7 +433,7 @@ stage2() {
   #  +-------------------------------------------------------------+
 
   section neovim
-  try task.GitClone https://github.com/binaryphile/dot_vim ~/.config/nvim master
+  try task.GitClone https://github.com/binaryphile/dot_vim ~/.config/nvim main
   try git -C ~/.config/nvim remote set-url origin git@github.com:binaryphile/dot_vim.git
   try task.GitUpdate ~/.config/nvim
   curlTask https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim ~/.local/share/nvim/site/autoload/plug.vim
@@ -662,14 +662,28 @@ chromeDevtoolsMcpRegisterTask() {
   cmd chromeDevtoolsMcpRegister
 }
 
-# claudeEraConfigTask appends CLAUDE-era.md to the base CLAUDE.md deployed by
-# home-manager. The base has stage-1-safe content (Conventions, Secrets).
+# claudeBaseCopyTask copies the base CLAUDE.md (Conventions, Secrets) to
+# ~/.claude/. Runs in stage 1 after HM switch. Stage 2's claudeEraConfigTask
+# appends era content. Not managed by HM because stage 2 mutates it.
+claudeBaseCopyTask() {
+  desc 'install base CLAUDE.md'
+  exist $HOME/.claude/CLAUDE.md
+
+  claudeBaseCopy() {
+    mkdir -p "$HOME/.claude"
+    cp "$HOME/dotfiles/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+  }
+  cmd claudeBaseCopy
+}
+
+# claudeEraConfigTask appends CLAUDE-era.md to the base CLAUDE.md installed by
+# claudeBaseCopyTask. The base has stage-1-safe content (Conventions, Secrets).
 # Era content (memory, code search, guides) requires stage 2.
 claudeEraConfigTask() {
   local base=$HOME/.claude/CLAUDE.md
   local era=$HOME/dotfiles/claude/CLAUDE-era.md
   desc 'append era config to ~/.claude/CLAUDE.md'
-  check "[[ -f $era ]]"
+  check "[[ -f $era ]] && [[ -f $base ]]"
 
   claudeEraUpToDate() {
     [[ -f $base ]] && grep -qF 'Era is your persistent memory' "$base"
@@ -877,21 +891,6 @@ writeNixConfTask() {
   local cmd_
   printf -v cmd_ 'install -m 644 -- %q %q' "$tmp" "$path"
   cmd "$cmd_"
-}
-
-# verifyNixFlakes checks that nix is runnable and flakes are enabled.
-# Called after install + profile sourcing, before home-manager (which depends
-# on flakes). Fails early with a clear message rather than letting HM fail
-# cryptically.
-verifyNixFlakes() {
-  $nix --version >/dev/null 2>&1 || {
-    echo "nix not runnable after install -- check profile sourcing" >&2
-    return 1
-  }
-  $nix config show experimental-features 2>/dev/null | grep -q flakes || {
-    echo "flakes not enabled -- check nix.conf and profile sourcing" >&2
-    return 1
-  }
 }
 
 # chownRTask recursively chowns $path with $user:$group.
@@ -1664,12 +1663,22 @@ installKey() {
 isFile() { [[ -f $1 ]]; }
 
 loosely() {
-  local IFS=$' \t\n'
-  local prevOpts_
-  prevOpts_=$(set +o)
+  local oldIfs_=$IFS
+  local hadE=0 hadU=0 hadF=0 hadPipefail=0
+  [[ $- == *e* ]] && hadE=1
+  [[ $- == *u* ]] && hadU=1
+  [[ $- == *f* ]] && hadF=1
+  shopt -qo pipefail && hadPipefail=1
+
+  IFS=$' \t\n'
   set +eufo pipefail
   "$@"
-  eval "$prevOpts_"
+
+  (( hadE )) && set -e
+  (( hadU )) && set -u
+  (( hadF )) && set -f
+  (( hadPipefail )) && set -o pipefail
+  IFS=$oldIfs_
 }
 
 ownerAndGroup() {
