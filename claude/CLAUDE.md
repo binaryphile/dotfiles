@@ -13,6 +13,12 @@ as the expanded result, not literally.
 Default to drafting ticket content for Ted to create. Create tickets directly
 (via `jira` CLI) only when explicitly asked.
 
+# Guides
+
+`~/projects/jeeves/guides/` -- read the relevant guide before speculating or
+searching the web. Covers: bash, nix, go, security analysis, use case writing,
+investigation methodology, agent orchestration, and more.
+
 # Secrets
 
 Two rules:

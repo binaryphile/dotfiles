@@ -7,6 +7,8 @@ verification-oriented change checklist.
 
 Also see `~/projects/urma/obsidian/URMA_SWOT.md` for strategic analysis.
 
+Guides: `~/projects/urma/obsidian/guides/` -- project-specific guides and references.
+
 ## Repository structure
 
 The `obsidian/` directory inside `~/projects/urma` is a **non-submodule sub-repo**
