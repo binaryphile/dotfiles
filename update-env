@@ -190,7 +190,7 @@ stage1() {
   if hasGroup $groups credential; then
     section credential
     try restoreSshKey
-    try restoreSigningKey
+    try deploySigningPub
     try restoreSecrets
     try loadSshKey
     try agentTomlTask
@@ -256,7 +256,7 @@ credentialPreflight() {
 credentialStage() {
   section credential
   try restoreSshKey
-  try restoreSigningKey
+  try deploySigningPub
   try restoreSecrets
   try loadSshKey
   section auth-preflight
@@ -1239,7 +1239,7 @@ restoreSshKeyImpl() {
 }
 
 # sshKeyRestoreFromOp -- retrieve SSH key from 1Password, install, cache.
-# Same pattern as restoreSigningKey's restore_from_op dispatch.
+# Same pattern as the former restoreSigningKey's restore_from_op dispatch.
 sshKeyRestoreFromOp() {
   local opItem=$1 localKey=$2 repoPub=$3 cacheDir=$4 cacheKey=$5
   echo "Restoring SSH key from 1Password ($opItem)..."
@@ -1347,171 +1347,53 @@ loadSshKey() {
   }
 }
 
-# signingKeyAction -- pure function mapping filesystem state to action.
-# Same pattern as sshKeyAction. Input: associative array name with state flags.
-# Output: action string to stdout. No side effects.
-signingKeyAction() {
-  local -n STATE=$1
-
-  if (( STATE[localExists] )); then
-    if (( STATE[repoHasPub] )); then
-      if [[ ${STATE[localFp]} != "${STATE[repoFp]}" ]]; then
-        echo collision; return 0
-      fi
-      echo present; return 0
-    fi
-    echo present_no_sidecar; return 0
-  fi
-
-  if (( STATE[opReady] && STATE[opHasItem] )); then
-    echo restore_from_op; return 0
-  fi
-
-  echo generate; return 0
-}
-
-# restoreSigningKey -- ensure a per-machine git commit signing key exists.
-# Separate from auth key per crypto practice (keys not reused across purposes).
-# No passphrase (used on every commit), no mount cache (trivially regenerated).
-# Restore priority: local -> 1Password -> generate.
-restoreSigningKey() {
+# deploySigningPub -- copy the signing key .pub sidecar from the repo to
+# ~/.ssh/id_ed25519_signing.pub. This is all op-ssh-sign needs to identify
+# which 1Password vault key to use for commit signing. No private key on disk.
+deploySigningPub() {
   local hostname
   hostname=$(lib.MachineHostname)
-  lib.ValidateHostname $hostname || return 1
-  local localKey=$HOME/.ssh/id_ed25519_signing
   local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
+  local dst=$HOME/.ssh/id_ed25519_signing.pub
 
-  # Classify filesystem state into decision inputs
-  local -A state=(
-    [localExists]=0 [localFp]=""
-    [repoHasPub]=0 [repoFp]=""
-    [opReady]=0 [opHasItem]=0
-  )
+  [[ -f $repoPub ]] || { echo "No signing key .pub sidecar for $hostname in repo"; return 0; }
 
-  [[ -f $localKey ]] && state[localExists]=1
-  (( state[localExists] )) && [[ -f $localKey.pub ]] && state[localFp]=$($ssh_keygen -lf "$localKey.pub" 2>/dev/null | awk '{print $2}')
-  [[ -f $repoPub ]] && state[repoHasPub]=1
-  (( state[repoHasPub] )) && state[repoFp]=$($ssh_keygen -lf "$repoPub" 2>/dev/null | awk '{print $2}')
-  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
-    state[opReady]=1
-    local opItem
-    opItem=$(opSigningKeyItem "$hostname")
-    $op item get "$opItem" --vault $OpVault >/dev/null 2>&1 && state[opHasItem]=1
-  fi
+  desc "deploy signing key .pub for $hostname"
 
-  local action
-  action=$(signingKeyAction state)
+  signingPubUpToDate() {
+    [[ -f $dst ]] && diff -q $dst $repoPub >/dev/null 2>&1
+  }
+  ok signingPubUpToDate
 
-  # Dispatch
-  case $action in
-    present )
-      chmod 600 "$localKey"
-      if (( state[opReady] && !state[opHasItem] )); then
-        echo "Signing key exists locally but not in 1Password."
-        echo "  Store as: $opItem ($OpVault vault)"
-      fi
-      ;;
-
-    present_no_sidecar )
-      chmod 600 "$localKey"
-      cp "$localKey.pub" "$repoPub" 2>/dev/null || true
-      echo "Signing key .pub sidecar added to repo. Commit and push."
-      if (( state[opReady] && !state[opHasItem] )); then
-        echo "  Also store in 1Password as: $opItem ($OpVault vault)"
-      fi
-      ;;
-
-    collision )
-      echo "ERROR: signing key fingerprint mismatch -- local (${state[localFp]}) != repo (${state[repoFp]})" >&2
-      return 1
-      ;;
-
-    restore_from_op )
-      echo "Restoring signing key from 1Password ($opItem)..."
-      $op read --out-file "$localKey" "op://$OpVault/$opItem/private key?ssh-format=openssh" || {
-        echo "ERROR: 1Password signing key retrieval failed." >&2
-        return 1
-      }
-      chmod 600 "$localKey"
-      $ssh_keygen -y -f "$localKey" >"$localKey.pub" 2>/dev/null
-      chmod 644 "$localKey.pub"
-      cp "$localKey.pub" "$repoPub" 2>/dev/null || true
-      echo "Signing key restored from 1Password."
-      echo "Register via 1Password browser extension if not already registered:"
-      echo "  https://github.com/settings/keys (Signing Key)"
-      ;;
-
-    generate )
-      echo "Generating git commit signing key for $hostname..."
-      $ssh_keygen -t ed25519 -f "$localKey" -N "" -C "ted@${hostname}-signing" || {
-        echo "ERROR: signing key generation failed." >&2
-        return 1
-      }
-      chmod 600 "$localKey"
-      chmod 644 "$localKey.pub"
-      cp "$localKey.pub" "$repoPub" 2>/dev/null || true
-      echo "Signing key generated."
-      echo
-      echo "1. Store in 1Password as: $(opSigningKeyItem $hostname) ($OpVault vault)"
-      echo
-      echo "2. Register via 1Password browser extension:"
-      echo "     https://github.com/settings/keys (Signing Key)"
-      echo
-      echo "3. Commit and push:"
-      echo "     cd ~/dotfiles && git add ssh/ && git commit && git push"
-      ;;
-  esac
+  signingPubCopy() {
+    mkdir -p $HOME/.ssh
+    cp $repoPub $dst
+    chmod 644 $dst
+  }
+  cmd signingPubCopy
 }
 
-# runSigningKeyPreflight -- controller that classifies signing key state and
-# calls the pure signingKeyPreflight function. Prints any warnings.
+# runSigningKeyPreflight -- checks that the signing .pub is deployed and
+# the key is available in the 1Password agent. Warns if not.
 runSigningKeyPreflight() {
-  local hostname
-  hostname=$(lib.MachineHostname)
-  local localKey=$HOME/.ssh/id_ed25519_signing
-  local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
-  local opItem
-    opItem=$(opSigningKeyItem "$hostname")
+  local pubFile=$HOME/.ssh/id_ed25519_signing.pub
 
-  local -A skState=(
-    [localExists]=0 [sidecarTracked]=0
-    [opReady]=0 [opHasItem]=0
-  )
-
-  [[ -f $localKey ]] && skState[localExists]=1
-  if [[ -f $repoPub ]]; then
-    git -C ~/dotfiles ls-files --error-unmatch "$repoPub" >/dev/null 2>&1 && skState[sidecarTracked]=1
-  fi
-  if command -v -- $op >/dev/null 2>&1 && $op whoami >/dev/null 2>&1; then
-    skState[opReady]=1
-    $op item get "$opItem" --vault $OpVault >/dev/null 2>&1 && skState[opHasItem]=1
+  if [[ ! -f $pubFile ]]; then
+    echo "WARNING: signing key .pub not deployed to $pubFile"
+    echo "  Commit signing will fail. Check repo sidecar and re-run update-env."
+    return
   fi
 
-  signingKeyPreflight skState "$hostname"
-}
-
-# signingKeyPreflight -- pure function that checks whether the signing key
-# registration workflow is complete. Takes a nameref to a state associative
-# array with keys: localExists, sidecarTracked, opReady, opHasItem.
-# Prints warnings to stdout. No side effects.
-signingKeyPreflight() {
-  local -n STATE=$1
-  local hostname=$2
-
-  (( STATE[localExists] )) || return 0
-
-  if (( !STATE[sidecarTracked] )); then
-    echo "WARNING: signing key .pub sidecar not committed to repo."
-    echo "  Complete the registration workflow:"
-    echo "  1. Store in 1Password as: $(opSigningKeyItem $hostname) ($OpVault vault)"
-    echo "  2. Register via 1Password browser extension:"
-    echo "       https://github.com/settings/keys (Signing Key)"
-    echo "  3. Commit: cd ~/dotfiles && git add ssh/ && git commit && git push"
+  local pubFp
+  pubFp=$($ssh_keygen -lf $pubFile 2>/dev/null | awk '{print $2}')
+  if [[ -z $pubFp ]]; then
+    echo "WARNING: signing key .pub at $pubFile is unreadable"
+    return
   fi
 
-  if (( STATE[opReady] && !STATE[opHasItem] )); then
-    echo "WARNING: signing key not in 1Password."
-    echo "  Store as: $(opSigningKeyItem $hostname) ($OpVault vault)"
+  if ! SSH_AUTH_SOCK=~/.1password/agent.sock $ssh_add -l 2>/dev/null | grep -qF $pubFp; then
+    echo "WARNING: signing key not in 1Password agent"
+    echo "  Unlock 1Password to enable commit signing."
   fi
 }
 
