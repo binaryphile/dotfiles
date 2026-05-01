@@ -111,9 +111,13 @@ platformTaskGroups() {
   echo "${groups[*]}"
 }
 
-# hasGroup tests whether a space-separated group list contains a group name.
-# Exact word match -- avoids substring false positives (e.g., *hm* matching "ohmy").
-hasGroup() { [[ " $1 " == *" $2 "* ]]; }
+# hasGroup tests whether a newline-separated group list contains a group name.
+# Exact line match -- avoids substring false positives (e.g., *hm* matching "ohmy").
+# Groups are newline-separated because ${array[*]} joins with IFS[0] ($'\n').
+hasGroup() {
+  local NL=$'\n'
+  [[ "${NL}${1}${NL}" == *"${NL}${2}${NL}"* ]]
+}
 
 # Stage 1: critical path -- working shell after completion + exec bash
 stage1() {
@@ -128,14 +132,14 @@ stage1() {
     .ssh            ~/ssh
     secrets/netrc   ~/.netrc
   END
-  local groups
-  groups=$(platformTaskGroups "$Platform")
+  local groups_
+  groups_=$(platformTaskGroups "$Platform")
 
-  if hasGroup $groups apt; then
+  if hasGroup "$groups_" apt; then
     aptUpgradeTask
   fi
 
-  if hasGroup $groups hostname; then
+  if hasGroup "$groups_" hostname; then
     crostiniHostnameSetup
     task.Ln $CrostiniDir/secrets ~/secrets
   fi
@@ -166,12 +170,12 @@ stage1() {
   #  |   +-> Converge task.bash to nix-pinned version              |
   #  +-------------------------------------------------------------+
 
-  if hasGroup $groups gpoc; then
+  if hasGroup "$groups_" gpoc; then
     section gpoc
     aptInstallGpocTask
   fi
 
-  if hasGroup $groups nix; then
+  if hasGroup "$groups_" nix; then
     section nix
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
@@ -181,13 +185,13 @@ stage1() {
     loosely source $nixProfile
   fi
 
-  if hasGroup $groups hm; then
+  if hasGroup "$groups_" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
   fi
 
-  if hasGroup $groups credential; then
+  if hasGroup "$groups_" credential; then
     section credential
     try restoreSshKey
     try deploySigningPub
@@ -268,9 +272,9 @@ credentialStage() {
 stage2() {
   # Re-run home-manager to converge (idempotent -- no-op if stage 1
   # already applied the same config).
-  local groups
-  groups=$(platformTaskGroups "$Platform")
-  if hasGroup $groups hm; then
+  local groups_
+  groups_=$(platformTaskGroups "$Platform")
+  if hasGroup "$groups_" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
