@@ -131,11 +131,11 @@ stage1() {
   local groups
   groups=$(platformTaskGroups "$Platform")
 
-  if hasGroup "$groups" apt; then
+  if hasGroup $groups apt; then
     aptUpgradeTask
   fi
 
-  if hasGroup "$groups" hostname; then
+  if hasGroup $groups hostname; then
     crostiniHostnameSetup
     task.Ln $CrostiniDir/secrets ~/secrets
   fi
@@ -166,12 +166,12 @@ stage1() {
   #  |   +-> Converge task.bash to nix-pinned version              |
   #  +-------------------------------------------------------------+
 
-  if hasGroup "$groups" gpoc; then
+  if hasGroup $groups gpoc; then
     section gpoc
     aptInstallGpocTask
   fi
 
-  if hasGroup "$groups" nix; then
+  if hasGroup $groups nix; then
     section nix
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
@@ -181,13 +181,13 @@ stage1() {
     loosely source $nixProfile
   fi
 
-  if hasGroup "$groups" hm; then
+  if hasGroup $groups hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
   fi
 
-  if hasGroup "$groups" credential; then
+  if hasGroup $groups credential; then
     section credential
     try restoreSshKey
     try restoreSigningKey
@@ -270,7 +270,7 @@ stage2() {
   # already applied the same config).
   local groups
   groups=$(platformTaskGroups "$Platform")
-  if hasGroup "$groups" hm; then
+  if hasGroup $groups hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
