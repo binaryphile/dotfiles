@@ -14,6 +14,11 @@
 # global -- designed to be shadowed by local declarations in tests via bash
 # dynamic scoping. See bash style guide # Injectable dependencies.
 #
+# Variables containing IFS characters (newlines under IFS=$'\n') are marked so
+# the reader knows to quote them. Two conventions, mutually exclusive:
+#   - Trailing underscore: oldIfs_, cmd_. Name alone doesn't signal IFS content.
+#   - *List suffix: groupList, hostList. Suffix signals multi-value (implies IFS).
+#
 # Variable declarations that are name references borrow the environment namespace, e.g.
 # "local -n ARRAY=$1".
 #
