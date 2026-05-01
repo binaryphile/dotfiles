@@ -132,14 +132,14 @@ stage1() {
     .ssh            ~/ssh
     secrets/netrc   ~/.netrc
   END
-  local groupList_
-  groupList_=$(platformTaskGroups "$Platform")
+  local groupList
+  groupList=$(platformTaskGroups "$Platform")
 
-  if hasGroup "$groupList_" apt; then
+  if hasGroup "$groupList" apt; then
     aptUpgradeTask
   fi
 
-  if hasGroup "$groupList_" hostname; then
+  if hasGroup "$groupList" hostname; then
     crostiniHostnameSetup
     task.Ln $CrostiniDir/secrets ~/secrets
   fi
@@ -170,12 +170,12 @@ stage1() {
   #  |   +-> Converge task.bash to nix-pinned version              |
   #  +-------------------------------------------------------------+
 
-  if hasGroup "$groupList_" gpoc; then
+  if hasGroup "$groupList" gpoc; then
     section gpoc
     aptInstallGpocTask
   fi
 
-  if hasGroup "$groupList_" nix; then
+  if hasGroup "$groupList" nix; then
     section nix
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
@@ -185,13 +185,13 @@ stage1() {
     loosely source $nixProfile
   fi
 
-  if hasGroup "$groupList_" hm; then
+  if hasGroup "$groupList" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
   fi
 
-  if hasGroup "$groupList_" credential; then
+  if hasGroup "$groupList" credential; then
     section credential
     try restoreSshKey
     try deploySigningPub
@@ -272,9 +272,9 @@ credentialStage() {
 stage2() {
   # Re-run home-manager to converge (idempotent -- no-op if stage 1
   # already applied the same config).
-  local groupList_
-  groupList_=$(platformTaskGroups "$Platform")
-  if hasGroup "$groupList_" hm; then
+  local groupList
+  groupList=$(platformTaskGroups "$Platform")
+  if hasGroup "$groupList" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
