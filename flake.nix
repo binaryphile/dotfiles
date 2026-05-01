@@ -49,9 +49,6 @@
     # Crostini-specific services (tinyproxy, vpn-pac) are harmless on bare Debian.
     homeConfigurations.debian = self.homeConfigurations.crostini;
 
-    # Deprecated alias -- remove after confirming no downstream consumers.
-    homeConfigurations.penguin = self.homeConfigurations.crostini;
-
     packages.${hmSystem} = {
       inherit (bashTools) taskBash mkBash tesht;
       home-manager = home-manager.packages.${hmSystem}.default;

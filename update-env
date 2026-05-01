@@ -111,6 +111,10 @@ platformTaskGroups() {
   echo "${groups[*]}"
 }
 
+# hasGroup tests whether a space-separated group list contains a group name.
+# Exact word match -- avoids substring false positives (e.g., *hm* matching "ohmy").
+hasGroup() { [[ " $1 " == *" $2 "* ]]; }
+
 # Stage 1: critical path -- working shell after completion + exec bash
 stage1() {
   #  +-------------------------------------------------------------+
@@ -127,11 +131,11 @@ stage1() {
   local groups
   groups=$(platformTaskGroups "$Platform")
 
-  if [[ $groups == *apt* ]]; then
+  if hasGroup "$groups" apt; then
     aptUpgradeTask
   fi
 
-  if [[ $groups == *hostname* ]]; then
+  if hasGroup "$groups" hostname; then
     crostiniHostnameSetup
     task.Ln $CrostiniDir/secrets ~/secrets
   fi
@@ -162,12 +166,12 @@ stage1() {
   #  |   +-> Converge task.bash to nix-pinned version              |
   #  +-------------------------------------------------------------+
 
-  if [[ $groups == *gpoc* ]]; then
+  if hasGroup "$groups" gpoc; then
     section gpoc
     aptInstallGpocTask
   fi
 
-  if [[ $groups == *nix* ]]; then
+  if hasGroup "$groups" nix; then
     section nix
     installNixTask
     chownRTask /nix "$(id -u)" "$(id -g)"
@@ -177,13 +181,13 @@ stage1() {
     loosely source $nixProfile
   fi
 
-  if [[ $groups == *hm* ]]; then
+  if hasGroup "$groups" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
   fi
 
-  if [[ $groups == *credential* ]]; then
+  if hasGroup "$groups" credential; then
     section credential
     try restoreSshKey
     try restoreSigningKey
@@ -266,7 +270,7 @@ stage2() {
   # already applied the same config).
   local groups
   groups=$(platformTaskGroups "$Platform")
-  if [[ $groups == *hm* ]]; then
+  if hasGroup "$groups" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
     convergeTaskBash
