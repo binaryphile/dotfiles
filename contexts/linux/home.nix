@@ -16,6 +16,10 @@ in
 {
   imports = [ ../linux-base.nix ../claude.nix ];
 
+  home.username = "ted";
+  home.homeDirectory = "/home/ted";
+  home.stateVersion = "24.11";
+
   home.packages = with pkgs; [
     cliphist
     asciinema

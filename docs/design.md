@@ -43,7 +43,7 @@ bash/
 contexts/
   mkScriptBin.nix               # Shared helper: build wrapped script binaries with store-path substitutions
   linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, dotfile symlinks
-  linux/home.nix                # NixOS-specific (imports linux-base.nix); gpoc, vpn-connect via flake input
+  linux/home.nix                # Linux (NixOS + standalone) (imports linux-base.nix); gpoc, vpn-connect via flake input
   crostini/home.nix             # Crostini-specific (imports linux-base.nix); vpn-connect (apt gpoc), tinyproxy + PAC for UC-8
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
@@ -254,7 +254,7 @@ The home-manager import chain:
 
 `linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `linux/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
 
-gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses gpoc installed via apt (avoiding the multi-minute Rust build from the upstream flake), NixOS uses a proper flake input from `nixos-config/flake.nix` (pure). Each platform builds a `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `linux/home.nix` respectively). On Crostini, `gpclient` is referenced at `/usr/bin/gpclient`.
+gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses gpoc installed via apt (avoiding the multi-minute Rust build from the upstream flake), NixOS and standalone linux use the `globalprotect-openconnect` flake input (pure evaluation -- provided by `nixos-config/flake.nix` on NixOS, by `dotfiles/flake.nix` on standalone). Each platform builds a `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `linux/home.nix` respectively). On Crostini, `gpclient` is referenced at `/usr/bin/gpclient`.
 
 Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config. This keeps platform config shared while allowing per-machine overrides.
 
@@ -270,7 +270,7 @@ Declared in `home.nix`. See the file for the current list. By category:
 
 **Apps (UC-2):** Firefox (via `programs.firefox`), Obsidian, signal-desktop
 
-**VPN (UC-7):** gpoc (yuezk Rust rewrite), vpn-slice, vpn-connect wrapper. On Crostini, gpoc comes from apt (avoiding the Rust build); on NixOS, via a proper flake input in `nixos-config/flake.nix` passed through `extraSpecialArgs`. Both platforms use `mkScriptBin` to wrap `scripts/vpn-connect`. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
+**VPN (UC-7):** gpoc (yuezk Rust rewrite), vpn-slice, vpn-connect wrapper. On Crostini, gpoc comes from apt (avoiding the Rust build); on NixOS and standalone linux, via the `globalprotect-openconnect` flake input passed through `extraSpecialArgs`. All linux platforms use `mkScriptBin` to wrap `scripts/vpn-connect`. Plus the Crostini-only browser-VPN-access stack: tinyproxy + darkhttpd (UC-8).
 
 **Notifications (UC-9):** notify-send wrapper that bridges desktop notifications to ntfy.sh phone push. Drops in transparently as `notify-send` for any caller.
 
@@ -448,7 +448,8 @@ Decommission (UC-4d): deauthorize device in 1Password admin. Machine can no long
 
 GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
 - **Crostini:** installed via apt by `update-env` stage 1 (`aptInstallGpocTask` downloads the `.deb` from yuezk's GitHub releases and installs with `dpkg`). The upstream flake's Rust compilation takes several minutes and has no binary cache. `crostini/home.nix` references `/usr/bin/gpclient` directly.
-- **NixOS:** proper flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation)
+- **NixOS:** flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation)
+- **Standalone linux:** same flake input `globalprotect-openconnect` in `dotfiles/flake.nix`, passed via `extraSpecialArgs` as `gpoc`
 
 Components:
 - `gpauth` -- performs SAML auth via the user's default browser, captures the cookie

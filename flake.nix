@@ -9,6 +9,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # GlobalProtect VPN client (yuezk Rust rewrite). Used by linux/home.nix
+    # for vpn-connect wrapper. Crostini uses apt-installed gpoc instead.
+    globalprotect-openconnect = {
+      url = "github:yuezk/GlobalProtect-openconnect";
+    };
+
     # Bash dev tool sources -- flake = false gives lockfile pinning without
     # requiring the repos to be flakes. nix flake update <name> bumps pins.
     task-bash-src = { url = "github:binaryphile/task.bash"; flake = false; };
@@ -16,20 +22,33 @@
     tesht-src     = { url = "github:binaryphile/tesht";     flake = false; };
   };
 
-  outputs = { self, nixpkgs, home-manager
+  outputs = { self, nixpkgs, home-manager, globalprotect-openconnect
             , task-bash-src, mk-bash-src, tesht-src, ... }:
   let
-    # Crostini home-manager configs are x86_64-linux only.
-    hmSystem = "x86_64-linux";
-    hmPkgs = import nixpkgs {
-      system = hmSystem;
+    linuxSystem = "x86_64-linux";
+    macosSystem = "aarch64-darwin";
+
+    linuxPkgs = import nixpkgs {
+      system = linuxSystem;
+      config.allowUnfree = true;
+    };
+
+    macosPkgs = import nixpkgs {
+      system = macosSystem;
       config.allowUnfree = true;
     };
 
     bashTools = import ./bash-tools.nix {
-      pkgs = hmPkgs;
+      pkgs = linuxPkgs;
       inherit task-bash-src mk-bash-src tesht-src;
     };
+
+    macosBashTools = import ./bash-tools.nix {
+      pkgs = macosPkgs;
+      inherit task-bash-src mk-bash-src tesht-src;
+    };
+
+    gpoc = globalprotect-openconnect.packages.${linuxSystem}.default;
 
     commonSpecialArgs = {
       inherit bashTools;
@@ -40,7 +59,7 @@
     forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
   in {
     homeConfigurations.crostini = home-manager.lib.homeManagerConfiguration {
-      pkgs = hmPkgs;
+      pkgs = linuxPkgs;
       modules = [ ./contexts/crostini/home.nix ];
       extraSpecialArgs = commonSpecialArgs;
     };
@@ -49,9 +68,21 @@
     # Crostini-specific services (tinyproxy, vpn-pac) are harmless on bare Debian.
     homeConfigurations.debian = self.homeConfigurations.crostini;
 
-    packages.${hmSystem} = {
+    homeConfigurations.linux = home-manager.lib.homeManagerConfiguration {
+      pkgs = linuxPkgs;
+      modules = [ ./contexts/linux/home.nix ];
+      extraSpecialArgs = commonSpecialArgs // { inherit gpoc; };
+    };
+
+    homeConfigurations.macos = home-manager.lib.homeManagerConfiguration {
+      pkgs = macosPkgs;
+      modules = [ ./contexts/macos/home.nix ];
+      extraSpecialArgs = { bashTools = macosBashTools; };
+    };
+
+    packages.${linuxSystem} = {
       inherit (bashTools) taskBash mkBash tesht;
-      home-manager = home-manager.packages.${hmSystem}.default;
+      home-manager = home-manager.packages.${linuxSystem}.default;
     };
 
     devShells = forEachSystem (system:
