@@ -101,7 +101,7 @@ test_glob() {
 
     # run the command and capture the output and result code
     local got rc
-    got=$(lib.Glob ${args[@]}) && rc=$? || rc=$?
+    got=$(lib.Glob "${args[@]}") && rc=$? || rc=$?
 
     ## assert
     # assert that we got the wanted output
