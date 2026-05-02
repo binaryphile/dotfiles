@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# sync-shellcheckrc -- push shared .shellcheckrc to personal repos.
+# Source of truth: ~/dotfiles/.shellcheckrc
+# Run after editing the source. Each repo commits independently.
+
+main() {
+  set -eufo pipefail
+  IFS=$'\n'
+
+  local src=$HOME/dotfiles/.shellcheckrc
+  [[ -f $src ]] || { echo "source not found: $src" >&2; exit 1; }
+
+  local repos=(
+    $HOME/projects/task.bash
+    $HOME/projects/fp.bash
+    $HOME/projects/mk.bash
+    $HOME/projects/tesht
+    $HOME/projects/jeeves
+    $HOME/projects/era
+    $HOME/projects/sofdevsim-2026
+    $HOME/projects/tandem-protocol
+    $HOME/projects/share
+  )
+
+  local repo
+  for repo in "${repos[@]}"; do
+    [[ -d $repo ]] || continue
+    if [[ -f $repo/.shellcheckrc ]] && diff -q $src $repo/.shellcheckrc >/dev/null 2>&1; then
+      continue
+    fi
+    cp $src $repo/.shellcheckrc
+    echo "updated: $repo"
+  done
+}
+
+main "$@"

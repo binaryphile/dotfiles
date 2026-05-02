@@ -27,6 +27,7 @@ in {
     ranger
     rsync
     scc
+    shellcheck
     signal-desktop
     silver-searcher
     stgit
