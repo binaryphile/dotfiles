@@ -1,6 +1,6 @@
 # CLAUDE.md -- dotfiles
 
-Ted's shared user environment. Works on NixOS and Crostini. See `docs/use-cases.md` and `docs/design.md` for full context.
+Ted's shared user environment. Works on NixOS, Crostini, standalone linux, and macOS. See `docs/use-cases.md` and `docs/design.md` for full context.
 
 ## Key principles
 
@@ -41,7 +41,7 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 
 ## Development tools
 
-- **`flake.nix`** -- Crostini home-manager config (`crostini`), lockfile-pinned bash tools, and multi-system dev shell. Enter dev shell with `nix develop`.
+- **`flake.nix`** -- home-manager configs (`crostini`, `debian`, `linux`, `macos`), lockfile-pinned bash tools, gpoc flake input, and multi-system dev shell. Enter dev shell with `nix develop`.
 - **`mk`** -- project command runner (uses mk.bash). Subcommands:
   - `mk test` -- run tesht, create test badge
   - `mk cover` -- run kcov coverage (Linux only), create coverage badge
