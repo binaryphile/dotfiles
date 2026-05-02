@@ -159,7 +159,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; remaining manual steps documented.
 - **Technology:** update-env (bash), 1Password, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4).
 
-**Migration note (UC-4 family):** UC-4a through UC-4d previously used age-encrypted SSH key bundles and secrets tarballs in `~/secrets/`. That model is replaced by 1Password with vault-level compartmentalization. Blast radius is bounded per machine (vault access policies control which vaults a machine can see). On a multi-project machine, per-project isolation relies on the `op-run` launcher's compliance check, an enforced workflow boundary -- the unlocked account can read any visible vault, but `op-run` verifies scope before retrieval. See design.md for the credential architecture.
+**Credential model (UC-4 family):** documented in the 1Password-stored canonical doc set.
 
 ---
 
@@ -513,11 +513,11 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. homeConfigurations: crostini, debian, linux, macos |
-| UC-4a Rotate SSH Key | Pending migration | Rewritten for 1Password; blocked on 1Password install |
-| UC-4b Manage Work Credentials | Pending migration | Rewritten for 1Password; replaces age bundle workflow |
-| UC-4c Recover from Credential Failure | Pending migration | Simplified for 1Password; old failure modes eliminated |
-| UC-4d Decommission a Machine | Pending migration | Rewritten for 1Password device deauthorization |
+| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. homeConfigurations: crostini, debian, desktop, macos |
+| UC-4a Rotate SSH Key | Implemented | 1Password vault-only rotation; not yet exercised end-to-end |
+| UC-4b Manage Work Credentials | Implemented | 1Password vault management; op-run not yet built (UC-11) |
+| UC-4c Recover from Credential Failure | Implemented | 1Password unlock + agent restart; not yet validated |
+| UC-4d Decommission a Machine | Implemented | 1Password device deauthorization; not yet exercised |
 | UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |

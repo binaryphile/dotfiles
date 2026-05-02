@@ -8,10 +8,10 @@ How the dotfiles environment moves through bootstrap, maintenance, and multi-mac
 
 A bare machine reaches productive state via `curl -fsSL .../update-env | bash -s -- -1 <hostname>`. On bare machines, update-env fetches its own dependencies (lib.bash, task.bash) from GitHub over HTTPS. For the detailed step-by-step, see [design.md Deployment](design.md#deployment-uc-4).
 
-- **Stage 1** (`update-env -1 <hostname>`, or curl-piped on bare machines) -- system setup, packages, credential restore. After this: working shell, VPN, SSH identity.
+- **Stage 1** (`update-env -1 <hostname>`, or curl-piped on bare machines) -- system setup, packages, credential setup. After this: working shell, VPN, SSH identity.
 - **Stage 2** (`update-env -2`) -- project repos, dev tool clones, neovim. After this: full development environment.
 
-`update-env` is idempotent. First run does everything; re-runs converge. Hostname is required on first Crostini run, optional thereafter. Bare `update-env` runs both stages; `-1`/`-2` flags run individual stages; `-c`/`--credential` runs only credential setup (SSH key, signing key, secrets, agent, auth preflight) for completing identity after an interrupted or non-interactive stage 1.
+`update-env` is idempotent. First run does everything; re-runs converge. Hostname is required on first Crostini run, optional thereafter. Bare `update-env` runs both stages; `-1`/`-2` flags run individual stages; `-c`/`--credential` (Crostini only) runs only credential setup (agent preflight, signing key deployment, secrets, agent config, auth preflight, signing key preflight) for completing identity after an interrupted or non-interactive stage 1.
 
 ### Maintenance
 
@@ -71,9 +71,9 @@ Per CLAUDE.md: docs first, then implementation.
 
 ### Changing credential handling
 
-1. Decrypt and review security.md for trust boundaries and constraints (encrypted -- see docs/.age-recipients)
-2. Update security.md if trust model changes, re-encrypt
-3. Update secrets-lifecycle.md procedures (encrypted), re-encrypt
+1. Review security.md for trust boundaries and constraints (1Password secure document)
+2. Update security.md in 1Password if trust model changes
+3. Update secrets-lifecycle.md in 1Password if procedures change
 4. Update use-cases.md (UC-4a through UC-4d) if workflows change
 5. Implement and test
 
@@ -94,14 +94,16 @@ Per CLAUDE.md: docs first, then implementation.
 | UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | Two-stage + credential-only (`-c`). SSH keys restored from 1Password via `op`. Signing key preflight warns on incomplete registration. |
-| UC-4a Rotate SSH Key | Partial | Manual procedure works. `op` retrieves auth and signing keys. 1Password storage after generation is manual. |
-| UC-4b Manage Secrets | Partial | Local secrets work. 1Password as backup store is manual -- no `op` automation for secrets (multiple files, no standard schema). |
-| UC-4c Recover from Credential Failure | Working | Local, cache, and 1Password recovery paths all functional. |
-| UC-4d Decommission a Machine | Partial | Repo and cache cleanup works. 1Password cleanup is manual. |
+| UC-4 Environment Deployment | Working | Two-stage + credential-only (`-c`). 1Password SSH agent for auth and signing. sshAgentPreflight gates credential phase. |
+| UC-4a Rotate SSH Key | Implemented | 1Password vault-only rotation; not yet exercised end-to-end |
+| UC-4b Manage Work Credentials | Implemented | 1Password vault management; op-run not yet built (UC-11) |
+| UC-4c Recover from Credential Failure | Implemented | 1Password unlock + agent restart; not yet validated |
+| UC-4d Decommission a Machine | Implemented | 1Password device deauthorization; not yet exercised |
+| UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
 | UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via flake input |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
+| UC-11 Use a Credentialed Tool | v1 implemented | Architecture documented in 1Password-stored canonical doc set. |

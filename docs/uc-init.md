@@ -284,7 +284,7 @@ Modifies init config: adds app modules, changes settings, updates integrations.
 - **Postconditions:**
   - **Success:** SSH operations work without passphrase prompts
   - **Failure:** 1Password unavailable; SSH operations fail until unlocked
-- **Technology:** 1Password SSH agent (`~/.1password/agent.sock`), `IdentityAgent` in ssh/config. Keychain retained as break-glass fallback (bash/apps/keychain/init.bash).
+- **Technology:** 1Password SSH agent (`~/.1password/agent.sock`), `IdentityAgent` in ssh/config.
 
 ---
 
