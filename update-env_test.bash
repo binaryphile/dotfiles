@@ -497,106 +497,111 @@ item = "testhost SSH Key"'
 }
 
 ## Q3 integration tests -- real filesystem, direct task calls.
-## Pattern: ensure target exists -> remove it -> re-run task -> verify restored.
-## Each test is self-contained: restores its own state on teardown.
+## Pattern: backup -> remove target -> re-run -> verify restored -> verify
+## idempotent (second run = no change) -> restore backup.
+## Trap guarantees teardown even on test failure.
+## Task output suppressed (>/dev/null 2>&1) to keep test output clean.
 
 test_claudeBaseCopyTask_converges() {
   local target=$HOME/.claude/CLAUDE.md
-  local backup
+  local backup=$(mktemp)
+  trap "cp $backup $target; rm -f $backup" RETURN
 
-  # ensure target exists first (may already from prior run)
-  claudeBaseCopyTask 2>/dev/null
-
-  # save and remove
-  backup=$(mktemp)
+  claudeBaseCopyTask >/dev/null 2>&1
   cp $target $backup
+
+  # convergence: remove -> re-run -> restored
   rm $target
-
-  # act
-  claudeBaseCopyTask 2>/dev/null
-
-  # assert
+  claudeBaseCopyTask >/dev/null 2>&1
   local rc=0
   [[ -f $target ]] || { echo "target not restored"; rc=1; }
   diff -q $target $HOME/dotfiles/claude/CLAUDE.md >/dev/null 2>&1 || { echo "content doesn't match source"; rc=1; }
 
-  # teardown -- restore original in case task changed content
-  cp $backup $target
-  rm $backup
+  # idempotence: second run = no change
+  local hashBefore hashAfter
+  hashBefore=$(sha256sum $target | awk '{print $1}')
+  claudeBaseCopyTask >/dev/null 2>&1
+  hashAfter=$(sha256sum $target | awk '{print $1}')
+  [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
+
   return $rc
 }
 
 test_agentTomlTask_converges() {
   local target=$HOME/.config/1Password/ssh/agent.toml
-  local backup
+  local backup=$(mktemp)
+  trap "cp $backup $target; rm -f $backup" RETURN
 
-  agentTomlTask 2>/dev/null
-
-  backup=$(mktemp)
+  agentTomlTask >/dev/null 2>&1
   cp $target $backup
+
+  # convergence
   rm $target
-
-  agentTomlTask 2>/dev/null
-
+  agentTomlTask >/dev/null 2>&1
   local rc=0
   [[ -f $target ]] || { echo "target not restored"; rc=1; }
-  grep -q 'calliope SSH Key' $target || { echo "content wrong"; rc=1; }
+  # verify content uses the actual hostname, not hardcoded
+  local hostname
+  hostname=$(lib.MachineHostname)
+  grep -q "$(opAuthKeyItem $hostname)" $target || { echo "auth key item not in content"; rc=1; }
+  grep -q "$(opSigningKeyItem $hostname)" $target || { echo "signing key item not in content"; rc=1; }
 
-  cp $backup $target
-  rm $backup
+  # idempotence
+  local hashBefore hashAfter
+  hashBefore=$(sha256sum $target | awk '{print $1}')
+  agentTomlTask >/dev/null 2>&1
+  hashAfter=$(sha256sum $target | awk '{print $1}')
+  [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
+
   return $rc
 }
 
 test_deploySigningPub_converges() {
   local target=$HOME/.ssh/id_ed25519_signing.pub
-  local backup
+  local backup=$(mktemp)
+  trap "cp $backup $target; rm -f $backup" RETURN
 
-  deploySigningPub 2>/dev/null
-
-  backup=$(mktemp)
+  deploySigningPub >/dev/null 2>&1
   cp $target $backup
+
+  # convergence
   rm $target
-
-  deploySigningPub 2>/dev/null
-
+  deploySigningPub >/dev/null 2>&1
   local rc=0
   [[ -f $target ]] || { echo "target not restored"; rc=1; }
 
-  cp $backup $target
-  rm $backup
+  # idempotence
+  local hashBefore hashAfter
+  hashBefore=$(sha256sum $target | awk '{print $1}')
+  deploySigningPub >/dev/null 2>&1
+  hashAfter=$(sha256sum $target | awk '{print $1}')
+  [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
+
   return $rc
 }
 
 test_claudeEraConfigTask_appendsOnlyOnce() {
   local target=$HOME/.claude/CLAUDE.md
+  local backup=$(mktemp)
+  trap "cp $backup $target; rm -f $backup" RETURN
 
-  # ensure base exists
-  claudeBaseCopyTask 2>/dev/null
-
-  # remove era marker so append runs
-  local backup
-  backup=$(mktemp)
+  claudeBaseCopyTask >/dev/null 2>&1
   cp $target $backup
 
-  # write base-only content (no era marker)
+  # write base-only content (strip era if present)
   cp $HOME/dotfiles/claude/CLAUDE.md $target
 
-  # act -- should append
-  claudeEraConfigTask 2>/dev/null
-
-  # assert era marker present
+  # convergence: append runs
+  claudeEraConfigTask >/dev/null 2>&1
   local rc=0
   grep -qF 'Era is your persistent memory' $target || { echo "era config not appended"; rc=1; }
 
-  # act again -- should be idempotent (ok, not changed)
+  # idempotence: second append = no change
   local sizeBefore sizeAfter
   sizeBefore=$(wc -c < $target)
-  claudeEraConfigTask 2>/dev/null
+  claudeEraConfigTask >/dev/null 2>&1
   sizeAfter=$(wc -c < $target)
   (( sizeBefore == sizeAfter )) || { echo "appended twice: $sizeBefore -> $sizeAfter"; rc=1; }
 
-  # teardown
-  cp $backup $target
-  rm $backup
   return $rc
 }
