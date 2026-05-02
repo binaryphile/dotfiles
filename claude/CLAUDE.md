@@ -22,9 +22,8 @@ investigation methodology, agent orchestration, and more.
 # Security Docs
 
 `docs/security.md`, `docs/secrets-lifecycle.md`, and `docs/threat-model.md` are
-encrypted at rest (`.age` files). They are not readable by agents. When changing
-credential handling or trust boundaries, tell Ted to decrypt and review them
-(`scripts/security-docs decrypt`).
+sensitive documents stored in 1Password. They are not readable by agents. When
+changing credential handling or trust boundaries, tell Ted to review them.
 
 # Secrets
 

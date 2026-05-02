@@ -37,7 +37,7 @@ tesht.AssertNotContains "$got" "unexpected"
 
 ## tesht.AssertFile -- file existence
 
-Used in installKey, restoreSigningKey, sshKeyGenerate tests:
+Used in file-deploying task tests:
 
 ```bash
 # current
@@ -51,7 +51,7 @@ tesht.AssertNoFile "$dir/dst.pub"
 
 ## tesht.AssertPerms -- file permission check
 
-Used in installKey tests:
+Used in file-deploying task tests:
 
 ```bash
 # current
@@ -64,7 +64,7 @@ tesht.AssertPerms "$dir/dst" 600
 
 ## tesht.AssertEmpty / tesht.AssertNotEmpty
 
-Used in signingKeyPreflight, pubFingerprint tests:
+Used in validation tests:
 
 ```bash
 # current

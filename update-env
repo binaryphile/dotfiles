@@ -593,8 +593,6 @@ export PATH=$PROJECT_ROOT/bin:$PATH
 
 # Atlassian -- Bitbucket Server (stash.digi.com)
 # Token loaded from file. MCP atlassian plugin requires env var values.
-# with-secret is preferred for one-off commands but direnv needs the value
-# for tools that read it from the environment (mcp-atlassian-with-bitbucket).
 export BITBUCKET_URL=https://stash.digi.com
 export BITBUCKET_USERNAME=tlilley
 export BITBUCKET_PERSONAL_TOKEN=$(< ~/secrets/stash.key)
@@ -1028,7 +1026,7 @@ restoreSecrets() {
     echo "WARNING: cache restore failed." >&2
   fi
 
-  echo No secrets for $hostname. Create ~/secrets/ files, then run scripts/encrypt-secrets.
+  echo No secrets for $hostname. Create ~/secrets/ files and store in 1Password.
   return 0
 }
 

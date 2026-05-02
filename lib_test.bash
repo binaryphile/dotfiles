@@ -118,8 +118,7 @@ test_lib.ValidateHostname() {
   tesht.Run ${!case@}
 }
 
-# test_lib.ValidSecretName tests the shared filename policy used by both
-# encrypt-secrets (producer) and restoreSecrets (consumer).
+# test_lib.ValidSecretName tests the shared filename policy for ~/secrets/ files.
 test_lib.ValidSecretName() {
   local -A case1=([name]='accept simple name' [input]='stash.key' [wantRc]=0)
   local -A case2=([name]='accept underscores' [input]='api_token' [wantRc]=0)
