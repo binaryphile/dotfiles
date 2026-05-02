@@ -613,14 +613,41 @@ test_claudeEraConfigTask_skipsWhenBaseMissing() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  # arrange: era source exists, base does not
   echo 'Era is your persistent memory' >$dir/era.md
-
-  # act
   local claudeEra_base=$dir/base.md
   local claudeEra_src=$dir/era.md
   claudeEraConfigTask >/dev/null 2>&1
 
-  # assert: base was not created (check guard prevents append to nonexistent file)
   [[ ! -f $dir/base.md ]] || { echo "base should not be created by era task"; return 1; }
+}
+
+test_claudeEraConfigTask_skipsWhenEraMissing() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  echo '# base only' >$dir/base.md
+  local claudeEra_base=$dir/base.md
+  local claudeEra_src=$dir/nonexistent.md
+  claudeEraConfigTask >/dev/null 2>&1
+
+  # base should be unchanged (check guard skips when era source missing)
+  [[ $(cat $dir/base.md) == '# base only' ]] || { echo "base was modified despite missing era source"; return 1; }
+}
+
+test_deploySigningPub_skipsWhenSidecarMissing() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  local signingPub_hostname=testhost
+  local signingPub_src=$dir/nonexistent.pub
+  local signingPub_dst=$dir/dst/signing.pub
+  deploySigningPub >/dev/null 2>&1
+
+  [[ ! -f $dir/dst/signing.pub ]] || { echo "dst created despite missing sidecar"; return 1; }
+}
+
+test_platformTaskGroups_unknownPlatformGetsNothing() {
+  local got
+  got=$(platformTaskGroups unknownplatform)
+  [[ -z $got ]] || { echo "unknown platform got groups: $(printf '%q' "$got")"; return 1; }
 }
