@@ -26,9 +26,6 @@ TestAndSource $Root/context/init.bash
 SplitSpace on
 Globbing on
 
-{ ShellIsLogin || (( Reload )); } && {
-  TestAndSource $Root/apps/keychain/init.bash
-}
 ShellIsInteractive && {
   command -v liquidprompt >/dev/null && {
     source "$(command -v liquidprompt)"
