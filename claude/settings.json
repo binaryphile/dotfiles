@@ -7,6 +7,9 @@
     "SessionStart": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
     "Stop": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
     "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
-    "PermissionRequest": [{"hooks": [{"type": "command", "command": "era-hook"}]}]
+    "PermissionRequest": [{"hooks": [{"type": "command", "command": "era-hook"}]}],
+    "SubagentStart": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
+    "SubagentStop": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}]
   }
 }
