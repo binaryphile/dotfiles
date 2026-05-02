@@ -192,7 +192,6 @@ desc "Install personal apps"
 task :install_personal_apps do
   install_apps(%W[
     encfs
-    keychain
     ledger
     mosh
     sshfs

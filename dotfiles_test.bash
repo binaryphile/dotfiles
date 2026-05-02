@@ -62,7 +62,7 @@ test_ascii_only() {
 
   local violations
   # LC_ALL=C: grep treats bytes > 0x7F as non-[:print:]. Portable to BSD grep.
-  # -I: skip binary files (.age, .pub if ever tracked). Works on GNU and BSD grep.
+  # -I: skip binary files. Works on GNU and BSD grep.
   violations=$(export LC_ALL=C; git ls-files -z \
     | xargs -0 grep -rlI '[^[:print:][:space:]]' -- 2>/dev/null \
     | grep -Ev "^(${allow_pattern})$" || true)
