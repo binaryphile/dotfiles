@@ -54,8 +54,18 @@ main() {
   export GIT_CONFIG_COUNT=1
   export GIT_CONFIG_KEY_0=rebase.autoStash
   export GIT_CONFIG_VALUE_0=true
-  Platform=$($platform)
+  Platform=$(${platform:-detectPlatform})
   readonly Platform
+
+  if [[ ! -d ~/dotfiles/contexts/$Platform ]]; then
+    local groupList
+    groupList=$(platformTaskGroups "$Platform")
+    if hasGroup "$groupList" hm; then
+      echo "fatal: detected platform '$Platform' but contexts/$Platform does not exist" >&2
+      echo "Check detectPlatform or create the context directory." >&2
+      exit 1
+    fi
+  fi
 
   case $Stage in
     1          ) stage1; stage1Epilogue;;
@@ -1236,7 +1246,7 @@ detectPlatform() {
     echo nixos; return
   fi
   ! [[ -e /etc/debian_version ]] || { echo debian; return; }
-  echo linux
+  echo desktop
 }
 
 

@@ -656,6 +656,24 @@ test_platformTaskGroups_unknownPlatformGetsNothing() {
   [[ -z $got ]] || { echo "unknown platform got groups: $(printf '%q' "$got")"; return 1; }
 }
 
+## detectPlatform -- Q1: pure detection, domain-significant
+
+test_detectPlatform_returnsKnownPlatform() {
+  local got
+  got=$(detectPlatform)
+  case $got in
+    macos|crostini|desktop|debian|nixos) ;;
+    # host-specific NixOS platform (e.g., calumny) is also valid
+    *) [[ -d ~/dotfiles/contexts/$got ]] || { echo "unknown platform: $got"; return 1; };;
+  esac
+}
+
+test_detectPlatform_neverReturnsLinux() {
+  local got
+  got=$(detectPlatform)
+  [[ $got != linux ]] || { echo "detectPlatform returned 'linux' -- should be 'desktop'"; return 1; }
+}
+
 ## shellcheckrcTask -- Q3 integration: neutral path + symlink deployment
 
 test_shellcheckrcTask_converges() {
