@@ -164,6 +164,9 @@ stage1() {
     ~/dotfiles/bash/init.bash                     ~/.bashrc
     ~/dotfiles/bash/init.bash                     ~/.profile
   END
+  desc  'set git hooksPath to .githooks'
+  ok    "[[ $(git -C ~/dotfiles config core.hooksPath) == .githooks ]]"
+  cmd   "git -C ~/dotfiles config core.hooksPath .githooks"
   #  +-------------------------------------------------------------+
   #  | PHASE 3a: Package Management (gpoc, nix)                    |
   #  |   +-> [crostini] Install gpoc .deb from GitHub releases     |
