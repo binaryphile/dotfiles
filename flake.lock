@@ -64,11 +64,11 @@
     "task-bash-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1776654352,
-        "narHash": "sha256-jZHop7Oj5xNlQY9fqPxsr4D86pnZCCenG+GxKHHd0Oo=",
+        "lastModified": 1777565808,
+        "narHash": "sha256-j5lZFJd4Hkc7nqJvXOEOk/dZU/C+kjSxM1qxpUgdQHU=",
         "owner": "binaryphile",
         "repo": "task.bash",
-        "rev": "1b3d9b613988be55816568f4f36da5c3c552a5d8",
+        "rev": "d1e7175898acc8951fd9e8f1a8f72d158ce5c985",
         "type": "github"
       },
       "original": {

@@ -1682,8 +1682,8 @@ OpVault=Private
 # Fix in task.bash: use explicit -m flag as a separate arg.
 
 # Pinned to the same rev as bash-tools.nix taskBash. Update both together.
-TaskBashBootstrapRev=1b3d9b613988be55816568f4f36da5c3c552a5d8
-TaskBashBootstrapSha256=568aa437d7ed635a8374e36135b224cf41f6c8f1062552a32eab8f39f095893f
+TaskBashBootstrapRev=d1e7175898acc8951fd9e8f1a8f72d158ce5c985
+TaskBashBootstrapSha256=0957ddf3136a7a32e344d91357c0df595772167d788e5e1b1fe69714f68494b1
 
 if [[ -n ${TASK_BASH_LIB:-} ]]; then
   [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB >&2; exit 1; }
