@@ -12,7 +12,7 @@ Guides: `~/projects/urma/obsidian/guides/` -- project-specific guides and refere
 ## Repository structure
 
 The `obsidian/` directory inside `~/projects/urma` is a **non-submodule sub-repo**
-— its own git repository nested inside urma, gitignored by the parent. It contains
+-- its own git repository nested inside urma, gitignored by the parent. It contains
 project documentation, research, guides, and domain knowledge. Changes to obsidian
 are committed in the obsidian repo, not in the urma repo. Set up via `mk-urma`.
 

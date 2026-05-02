@@ -71,7 +71,7 @@ test_glob() {
     [wants]="(file1.txt)"
   )
 
-  local -A case3=(
+  local -A case4=(
     [name]='match multiple patterns'
 
     [args]='(*.txt *.log)'
@@ -101,7 +101,7 @@ test_glob() {
 
     # run the command and capture the output and result code
     local got rc
-    got=$(glob "${args[@]}") && rc=$? || rc=$?
+    got=$(lib.Glob "${args[@]}") && rc=$? || rc=$?
 
     ## assert
     # assert that we got the wanted output
