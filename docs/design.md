@@ -444,6 +444,14 @@ Decommission (UC-4d): deauthorize device in 1Password admin. Machine can no long
 | SSH agent config | 1Password desktop app settings (manual) |
 | Credential items | 1Password vault (managed by Ted) |
 
+#### Settings.json Credential Guard
+
+`claude/settings.json` is tracked in dotfiles and deployed via `home.file`. It contains hooks, permissions, and MCP server config. MCP servers support inline `env` fields that could contain credentials -- a credential committed here would be in git history permanently.
+
+**Pre-commit hook** (`.githooks/pre-commit`): blocks any commit where `claude/settings.json` contains `env` fields within `mcpServers` entries. `core.hooksPath` set to `.githooks` automatically by `update-env` (dotfiles phase).
+
+**Convention:** MCP servers requiring credentials use `op-run` as their command (`"type": "stdio", "command": "op-run", "args": ["mcp-name"]`), never inline env vars. `op-run` retrieves credentials from 1Password at runtime.
+
 ### VPN (UC-7)
 
 GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
