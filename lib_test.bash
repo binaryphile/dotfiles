@@ -43,7 +43,7 @@ test_glob() {
 
     local dir
     tesht.MktempDir dir || return 128
-    cd "$dir"
+    cd "$dir" || return 128
 
     eval "$(tesht.Inherit $casename)"
 
@@ -55,7 +55,8 @@ test_glob() {
     got=$(lib.Glob "${args[@]}") && rc=$? || rc=$?
 
     ## assert
-    local want=$(stream "${wants[@]}")
+    local want
+    want=$(stream "${wants[@]}")
     tesht.AssertGot "$got" "$want"
   }
 

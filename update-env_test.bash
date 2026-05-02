@@ -38,7 +38,8 @@ test_each() {
     }
 
     # assert that we got the wanted output
-    local want=$(stream "${wants[@]}")
+    local want
+    want=$(stream "${wants[@]}")
     tesht.AssertGot "$got" "$want"
   }
 
@@ -105,7 +106,8 @@ test_glob() {
 
     ## assert
     # assert that we got the wanted output
-    local want=$(stream "${wants[@]}")
+    local want
+    want=$(stream "${wants[@]}")
     tesht.AssertGot "$got" "$want"
   }
 
@@ -163,7 +165,8 @@ test_keepIf() {
     }
 
     # assert that we got the wanted output
-    local want=$(stream "${wants[@]}")
+    local want
+    want=$(stream "${wants[@]}")
     tesht.AssertGot "$got" "$want"
   }
 
@@ -215,7 +218,8 @@ test_map() {
     }
 
     # assert that we got the wanted output
-    local want=$(stream "${wants[@]}")
+    local want
+    want=$(stream "${wants[@]}")
     tesht.AssertGot "$got" "$want"
   }
 
@@ -650,4 +654,59 @@ test_platformTaskGroups_unknownPlatformGetsNothing() {
   local got
   got=$(platformTaskGroups unknownplatform)
   [[ -z $got ]] || { echo "unknown platform got groups: $(printf '%q' "$got")"; return 1; }
+}
+
+## shellcheckrcTask -- Q3 integration: neutral path + symlink deployment
+
+test_shellcheckrcTask_converges() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: source shellcheckrc and one work project
+  mkdir -p $dir/dotfiles $dir/.config $dir/projects/urma
+  echo 'disable=SC2086' >$dir/dotfiles/.shellcheckrc
+
+  # act: inject paths and run
+  local shellcheckrc_src=$dir/dotfiles/.shellcheckrc
+  local shellcheckrc_neutral=$dir/.config/shellcheck/shellcheckrc
+  local HOME=$dir
+  shellcheckrcTask >/dev/null 2>&1
+
+  # assert: neutral path deployed with correct content
+  local rc=0
+  [[ -f $dir/.config/shellcheck/shellcheckrc ]] || { echo "neutral path not created"; rc=1; }
+  diff -q $dir/dotfiles/.shellcheckrc $dir/.config/shellcheck/shellcheckrc >/dev/null 2>&1 || { echo "neutral content mismatch"; rc=1; }
+
+  # assert: work project has symlink to neutral path
+  [[ -L $dir/projects/urma/.shellcheckrc ]] || { echo "symlink not created"; rc=1; }
+  local target
+  target=$(readlink $dir/projects/urma/.shellcheckrc)
+  [[ $target == $dir/.config/shellcheck/shellcheckrc ]] || { echo "symlink target wrong: $target"; rc=1; }
+
+  # assert: idempotent
+  local hashBefore hashAfter
+  hashBefore=$(sha256sum $dir/.config/shellcheck/shellcheckrc | awk '{print $1}')
+  shellcheckrcTask >/dev/null 2>&1
+  hashAfter=$(sha256sum $dir/.config/shellcheck/shellcheckrc | awk '{print $1}')
+  [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
+
+  return $rc
+}
+
+test_shellcheckrcTask_skipsUncreatedProjects() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: source exists but no project dirs
+  mkdir -p $dir/dotfiles
+  echo 'disable=SC2086' >$dir/dotfiles/.shellcheckrc
+
+  local shellcheckrc_src=$dir/dotfiles/.shellcheckrc
+  local shellcheckrc_neutral=$dir/.config/shellcheck/shellcheckrc
+  local HOME=$dir
+  shellcheckrcTask >/dev/null 2>&1
+
+  # assert: neutral path created but no project symlinks
+  [[ -f $dir/.config/shellcheck/shellcheckrc ]] || { echo "neutral path not created"; return 1; }
+  [[ ! -e $dir/projects ]] || { echo "projects dir should not exist"; return 1; }
 }

@@ -49,14 +49,11 @@ contexts/
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
 tmux.conf                       # Context-dependent symlink
 ssh/config, ssh/authorized_keys  # Tracked; HM-managed client config (symlinked via linux-base.nix)
-ssh/*.age, ssh/*.pub             # DEPRECATED: per-machine age-encrypted keys (replaced by 1Password SSH agent)
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
-scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, lib.bash, load-sparkline, encrypt-secrets [deprecated], with-secret [deprecated])
-secrets/                        # DEPRECATED: per-machine age-encrypted secret bundles (replaced by 1Password vaults)
+scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, lib.bash, load-sparkline)
 docs/                           # use-cases.md, design.md, environment-lifecycle.md, vpn.md, uc-init.md, scaffold.md
-                                # Encrypted (age): security.md.age, secrets-lifecycle.md.age, threat-model.md.age
-                                # Decrypt: age -d -i <(op read "op://Private/dotfiles age encryption identity/notes") docs/<file>.age > docs/<file>
+                                # Sensitive docs (security.md, secrets-lifecycle.md, threat-model.md) stored as 1Password secure documents
 ```
 
 ## Component Design
@@ -76,10 +73,8 @@ Two stages:
 
 1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Nix installed via the [Determinate Nix installer](https://github.com/DeterminateSystems/nix-installer) -- a pinned release binary downloaded from GitHub, SHA-256 verified before execution. No `curl | sh`. Platform/arch auto-detected (`uname -s`/`uname -m`); supported: x86_64-linux, aarch64-linux, aarch64-darwin (x86_64-darwin dropped by Determinate in v3.13.0). On Linux, installed with `install linux --init none` (explicit planner, no systemd service); on macOS, `install` with default planner (launchd), then `/nix` ownership transferred to the current user via `chownRTask` -- effectively single-user mode, matching the old Lix pattern. After install, `writeNixConfTask` writes a declarative `/etc/nix/nix.conf` (Crostini/standalone only; NixOS manages its own). Content: `experimental-features = nix-command flakes`, `auto-optimise-store = true`, `max-jobs = auto`. Trusts only `cache.nixos.org` -- no third-party caches (see [Security Model](#security-model)). Overwrites whatever the installer left behind (Lix left `cache.lix.systems`; Determinate may add its own settings). Runs under `runas root` via task.bash -- the content is expanded from `nixConfContent` into a temp file in the current shell, then `install`ed to `/etc/nix/nix.conf` under sudo. This avoids passing shell functions across the sudo boundary (bare function names in `cmd` are not visible in the `sudo bash -c` subprocess). Path is injectable for testing. Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`. Installs `age` (used by `scripts/encrypt-secrets` for local secrets backup -- not for repo storage; see [Security Model](#security-model)).
-4. Credential restore (Crostini only, requires hostname): `restoreSshKey` restores auth key from local or mount cache; if neither exists, retrieves from 1Password (see [Security Model](#security-model)). `deploySigningPub` copies the signing key `.pub` sidecar from the repo to `~/.ssh/id_ed25519_signing.pub` -- this is all `op-ssh-sign` needs to identify the 1Password vault key for commit signing (no private key on disk). `restoreSecrets` restores secrets from local or mount cache; if neither exists, prints instructions for manual creation (no automated 1Password retrieval for secrets). `loadSshKey` loads auth key into agent via keychain with `SSH_ASKPASS_REQUIRE=never` (the nix openssh derivation has a compiled-in askpass path that doesn't exist; without this override, `ssh-add` inside keychain's nested `$()` falls back to the broken askpass instead of prompting on `/dev/tty`). `agentTomlTask` writes `~/.config/1Password/ssh/agent.toml` to restrict the 1Password agent to the current machine's keys. `authPreflight` checks that the key is loaded in the agent, then tests SSH auth to each provider -- distinguishes "key not in agent" from "key not registered" from "unreachable." After this step, `git push`, SSH clones, and signed commits all work. Skipped if no hostname is set (re-run with hostname to fix).
-
-**Credential migration note:** Signing is fully on 1Password (no on-disk private key). Auth key still uses the Crostini model (per-machine key, keychain, local/cache restore). Step 6 describes the target NixOS model (shared key via 1Password SSH agent). Remaining migration: consolidate auth key into 1Password agent, remove keychain dependency. See [Credential Architecture](#credential-architecture-uc-4-uc-4a-e-uc-11) for the target state.
+3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Nix installed via the [Determinate Nix installer](https://github.com/DeterminateSystems/nix-installer) -- a pinned release binary downloaded from GitHub, SHA-256 verified before execution. No `curl | sh`. Platform/arch auto-detected (`uname -s`/`uname -m`); supported: x86_64-linux, aarch64-linux, aarch64-darwin (x86_64-darwin dropped by Determinate in v3.13.0). On Linux, installed with `install linux --init none` (explicit planner, no systemd service); on macOS, `install` with default planner (launchd), then `/nix` ownership transferred to the current user via `chownRTask` -- effectively single-user mode, matching the old Lix pattern. After install, `writeNixConfTask` writes a declarative `/etc/nix/nix.conf` (Crostini/standalone only; NixOS manages its own). Content: `experimental-features = nix-command flakes`, `auto-optimise-store = true`, `max-jobs = auto`. Trusts only `cache.nixos.org` -- no third-party caches (see [Security Model](#security-model)). Overwrites whatever the installer left behind (Lix left `cache.lix.systems`; Determinate may add its own settings). Runs under `runas root` via task.bash -- the content is expanded from `nixConfContent` into a temp file in the current shell, then `install`ed to `/etc/nix/nix.conf` under sudo. This avoids passing shell functions across the sudo boundary (bare function names in `cmd` are not visible in the `sudo bash -c` subprocess). Path is injectable for testing. Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`.
+4. Credential setup (Crostini only, requires hostname): `sshAgentPreflight` verifies the 1Password SSH agent is reachable -- checks the agent socket exists and that the agent responds with keys (fails with instructions to start 1Password and unlock). `deploySigningPub` copies the signing key `.pub` sidecar from the repo to `~/.ssh/id_ed25519_signing.pub` -- this is all `op-ssh-sign` needs to identify the 1Password vault key for commit signing (no private key on disk). `restoreSecrets` restores secrets from local or mount cache; if neither exists, prints instructions for manual creation (no automated 1Password retrieval for secrets). `agentTomlTask` writes `~/.config/1Password/ssh/agent.toml` to restrict the 1Password agent to the current machine's keys. `authPreflight` checks that the key is loaded in the agent, then tests SSH auth to each provider -- distinguishes "key not in agent" from "key not registered" from "unreachable." `runSigningKeyPreflight` verifies the signing `.pub` is deployed and its fingerprint appears in the 1Password agent's key list. After this step, `git push`, SSH clones, and signed commits all work. Headless/remote sessions without 1Password require SSH agent forwarding.
 
 **Stage 2** (projects, dev tool repos):
 
@@ -90,7 +85,7 @@ Two stages:
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
 10. Neovim plugins, daily notes
 
-Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages. `-c`/`--credential` (Crostini only) runs only the credential section (SSH key, signing key, secrets, agent load, auth preflight) without re-running system setup or package installation -- useful when stage 1 completed phases 1-3 but credentials need interactive completion (e.g., interrupted bootstrap, key generation deferred from non-interactive run). Requires prior completion of phases 1-3 (nix, home-manager, hostname). `-h`/`--help` prints usage. Hostname positional argument accepted only with `-1` (`update-env -1 calderon`); rejected otherwise.
+Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages. `-c`/`--credential` (Crostini only) runs only the credential section (agent preflight, signing key deployment, secrets, agent config, auth preflight, signing key preflight) without re-running system setup or package installation -- useful when stage 1 completed phases 1-3 but credentials need completion (e.g., interrupted bootstrap, 1Password not yet configured). Requires prior completion of phases 1-3 (nix, home-manager, hostname). `-h`/`--help` prints usage. Hostname positional argument accepted only with `-1` (`update-env -1 calderon`); rejected otherwise.
 
 **Deployment terminology:**
 
@@ -131,7 +126,7 @@ Home-manager files use `mkOutOfStoreSymlink` where edit-in-place semantics are n
 
 Files requiring runtime mutation (e.g., CLAUDE.md, which stage 2 appends to) must not be managed by HM's store-copy mechanism -- they are owned by update-env instead (see `claudeBaseCopyTask`).
 
-**Post-install messages** -- `sshKeyEpilogue` prints 1Password storage instructions (item name convention: `<hostname> SSH Key`) and registry URLs when a key is generated. Registration is done via the 1Password browser extension -- open the registry URL, use 1Password to fill the public key directly from the vault item. No manual copy-paste of key material. The signing key flow similarly prints the 1Password item name (`<hostname> signing SSH Key`) on generate, plus reminders when the key exists locally but not in 1Password. `postInstallMessages` prints Crostini-specific setup (PAC URL and ChromeOS proxy instructions) inline. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
+**Post-install messages** -- `postInstallMessages` prints Crostini-specific setup (PAC URL and ChromeOS proxy instructions) inline. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
 
 All project repos -- including private repos like jeeves -- are cloned by update-env. Private repos use `try` so failures are non-fatal. All `*CloneAndLinkTask` functions default the branch to `main`.
 
@@ -156,7 +151,7 @@ Init flow:
 2. Source `lib/initutil.bash` (shell detection, Alias/reveal, `SplitSpace`/`Globbing`)
 3. Login or reload -> source `hm-session-vars.sh` directly (if/elif fallback for portability)
 4. Source `context/init.bash` (platform-specific, if present)
-5. Hooks: explicit order -- keychain (login), liquidprompt (interactive), direnv (interactive)
+5. Hooks: explicit order -- liquidprompt (interactive), direnv (interactive)
 6. Source `settings/base.bash`, `settings/cmds.bash`
 7. Commands: auto-discover `apps/*/cmds.bash` (interactive, order-independent)
 8. Interactive -> source `settings/interactive.bash`
@@ -169,7 +164,6 @@ App modules are directories under `bash/apps/<app>/` with:
 Current app modules:
 - `direnv` -- PROMPT_COMMAND hook (appends after liquidprompt)
 - `git` -- 44 shell aliases + workflow functions (europe, wolf, venice, etc.)
-- `keychain` -- SSH agent via keychain eval (id_ed25519, login hook). Uses `SSH_ASKPASS_REQUIRE=never` to prevent nix openssh's broken compiled-in askpass fallback.
 - `mnencode` -- randword function
 - `pandoc` -- shannon (markdown reformatter) function
 - `stg` -- 30+ stgit aliases + workflow functions
@@ -194,7 +188,6 @@ Principle 6 governs where new configuration belongs. The boundary has shifted ov
 **Bash owns** (shell-evaluated, session-dependent):
 - Shell mode detection and sourcing order (`init.bash`)
 - PROMPT_COMMAND hooks (liquidprompt, direnv, eternal history)
-- Eval-based integrations that start processes (`keychain`)
 - The `Alias`/`reveal` mechanism (wraps every alias with transparency)
 - Interactive aliases and workflow functions (`cmds.bash`)
 - IFS/globbing safety and namespace cleanup
@@ -219,7 +212,7 @@ A tool may need several of these. For example, direnv uses nix for the package (
 - A broken command script should not destabilize hook initialization
 - Adding a new tool should require at most one decision (nix, hook, or commands) and one file
 
-**Hooks** (order-sensitive, rare) are sourced explicitly in `init.bash` in a defined order. Currently: liquidprompt -> direnv -> keychain. Order matters because direnv's PROMPT_COMMAND hook must append after liquidprompt's. Adding a hook means adding a line to `init.bash` -- explicit, visible, no discovery mechanism needed.
+**Hooks** (order-sensitive, rare) are sourced explicitly in `init.bash` in a defined order. Currently: liquidprompt -> direnv. Order matters because direnv's PROMPT_COMMAND hook must append after liquidprompt's. Adding a hook means adding a line to `init.bash` -- explicit, visible, no discovery mechanism needed.
 
 **Commands** (order-independent, common) are auto-discovered from `bash/apps/*/cmds.bash`. Currently: git, stg, mnencode, pandoc. Order doesn't matter -- aliases and functions are independent. Adding commands means dropping a `cmds.bash` file in a new directory.
 
@@ -262,7 +255,7 @@ Machine-specific contexts (e.g., `calumny`) symlink most files to their platform
 
 Declared in `home.nix`. See the file for the current list. By category:
 
-**Dev tools (UC-1):** git, neovim, tmux (overlaid with panel in `linux-base.nix`; plain on macOS), stgit, gh, claude-code, jira-cli-go, scc, pandoc, diff-so-fancy, silver-searcher (ag), highlight, asciinema, asciinema-agg
+**Dev tools (UC-1):** git, neovim, tmux (overlaid with panel in `linux-base.nix`; plain on macOS), stgit, gh, claude-code, jira-cli-go, scc, shellcheck, pandoc, diff-so-fancy, silver-searcher (ag), highlight, asciinema, asciinema-agg
 
 **System/CLI (UC-3):** bottom, htop, ncdu, jq, tree, rsync, coreutils, dig, zip, mnemonicode
 
@@ -452,6 +445,16 @@ Automatically loads project-specific environments when entering a directory with
 
 Managed via `programs.direnv` with `nix-direnv.enable = true` for cached `use flake` support. HM bash integration is disabled (`enableBashIntegration = false`) because the custom init uses its own PROMPT_COMMAND hook in `bash/apps/direnv/init.bash`. The custom hook appends (not prepends) to PROMPT_COMMAND so it runs after liquidprompt, which is declared as a dependency in `bash/apps/direnv/deps`.
 
+### shellcheck (UC-1)
+
+Static analysis for bash scripts. Nix-packaged in `shared.nix` (all platforms).
+
+**Configuration:** `~/dotfiles/.shellcheckrc` is the source of truth. Disables warnings safe under the project-wide `IFS=$'\n'; set -o noglob` conventions (style guide s5) and tesht test patterns.
+
+**Deployment -- personal repos:** `sync-shellcheckrc` (`~/.local/bin/`) copies the source to each personal repo (task.bash, fp.bash, mk.bash, tesht, jeeves, era, sofdevsim-2026, tandem-protocol, share). Each repo commits the file independently. Run manually after editing the source.
+
+**Deployment -- work repos:** `shellcheckrcTask` in update-env deploys the file to `~/.config/shellcheck/shellcheckrc` (neutral path) and creates symlinks in each work project root (urma, pepin, cloud-services, dal). Symlinks are gitignored. shellcheck walks up directories, so subdirectories (e.g., `urma/obsidian/`) inherit the config.
+
 ### DNS Diagnostics (UC-1)
 
 `dig` (from bind dnsutils) for hostname resolution troubleshooting, especially useful when debugging VPN split tunnel routing.
@@ -508,9 +511,7 @@ If nix changes break `home-manager switch`, the previous generation's packages a
 
 ### Performance
 
-Shell startup: ~500ms. Dominant contributor: keychain eval (~250ms, 50%). Non-interactive login without keychain/liquidprompt: ~57ms. Liquidprompt: ~1ms.
-
-The startup budget is acceptable for interactive terminal use. If it becomes a concern, keychain could move to a lazy/deferred pattern (start agent on first SSH use rather than every login). This is an optional optimization, not a current priority.
+Shell startup: previously ~500ms interactive login, dominated by keychain eval (~250ms). Keychain has been removed; interactive login startup has not been re-measured. Non-interactive login: ~57ms. Liquidprompt: ~1ms.
 
 The `Alias`/reveal wrapper adds no measurable overhead to command invocation.
 
@@ -519,7 +520,7 @@ The `Alias`/reveal wrapper adds no measurable overhead to command invocation.
 The `tesht` test suite serves as the living specification of the configured environment. Tests define what aliases, functions, env vars, and shell settings must exist. Changes to the configuration start with a test assertion (red), then implementation (green).
 
 Three test layers:
-- **Unit tests** (pure output-based): `nixConfContent`, `sshKeyAction`, `platformTaskGroups`, `each`/`keepIf`/`map`/`stream` -- pure functions tested by input/output, no I/O
+- **Unit tests** (pure output-based): `nixConfContent`, `platformTaskGroups`, `each`/`keepIf`/`map`/`stream` -- pure functions tested by input/output, no I/O
 - **Integration tests** (controller, mocked inter-system boundaries): `writeNixConfTask` (mocks sudo at the process boundary to verify cmd string survives `bash -c` under `runas root`), `installNix` (mocks curl/sha256sum)
 - **Runtime tests** (interactive login shell): aliases exist, functions exist, vi mode on, umask correct, PROMPT_COMMAND ordering -- require home-manager applied
 

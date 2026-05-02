@@ -1,4 +1,4 @@
-# Handoff: Keychain/Age Removal — Doc Updates Remaining
+# Handoff: Keychain/Age Removal -- Doc Updates Remaining
 
 ## What happened
 
@@ -20,17 +20,17 @@ The docs still reference the removed infrastructure. Each doc needs updating to 
 ### Task 1: docs/design.md
 
 Search for and remove/update these references:
-- `keychain` — architecture description, hook ordering, startup performance notes
-- `loadSshKey`, `restoreSshKey`, `restoreSshKeyImpl`, `sshKeyAction` — function descriptions
-- `sshKeyEpilogue`, `SshKeyStatus` — epilogue flow
-- `installKey`, `pubFingerprint`, `sshKeygenTask` — helper descriptions
-- `age`, `.age`, `encrypt-secrets`, `with-secret`, `security-docs` — age encryption workflow
-- `ssh/*.age`, `secrets/` — structure listing (remove DEPRECATED lines)
-- Migration notes referencing keychain removal — replace with "Migration complete"
-- Deployment flow step 4 — update to: sshAgentPreflight -> deploySigningPub -> restoreSecrets -> agentTomlTask -> authPreflight -> runSigningKeyPreflight
+- `keychain` -- architecture description, hook ordering, startup performance notes
+- `loadSshKey`, `restoreSshKey`, `restoreSshKeyImpl`, `sshKeyAction` -- function descriptions
+- `sshKeyEpilogue`, `SshKeyStatus` -- epilogue flow
+- `installKey`, `pubFingerprint`, `sshKeygenTask` -- helper descriptions
+- `age`, `.age`, `encrypt-secrets`, `with-secret`, `security-docs` -- age encryption workflow
+- `ssh/*.age`, `secrets/` -- structure listing (remove DEPRECATED lines)
+- Migration notes referencing keychain removal -- replace with "Migration complete"
+- Deployment flow step 4 -- update to: sshAgentPreflight -> deploySigningPub -> restoreSecrets -> agentTomlTask -> authPreflight -> runSigningKeyPreflight
 - Document unsupported environments: headless/remote without 1Password needs agent forwarding
-- `SSH_AGENT_PID` — remove from any descriptions
-- Startup performance section (~line 658) — remove keychain timing, update budget
+- `SSH_AGENT_PID` -- remove from any descriptions
+- Startup performance section (~line 658) -- remove keychain timing, update budget
 
 Approximate references: ~20. Run `grep -n 'keychain\|loadSshKey\|restoreSshKey\|sshKeyAction\|sshKeyEpilogue\|SshKeyStatus\|installKey\|pubFingerprint\|sshKeygenTask\|encrypt-secrets\|with-secret\|security-docs\|\.age\b\|ssh-agent\|SSH_AGENT_PID' docs/design.md` to find them all.
 
@@ -44,16 +44,16 @@ Remove/update:
 - `loadSshKey`, `with-secret`, `encrypt-secrets` references
 - `SSH_AGENT_PID`, `ssh-agent` references
 - Age encryption threat model
-- Update ssh-agent socket entry (~line 457) — only 1Password agent, no keychain
-- PATH-dependent command analysis — remove keychain from the list
+- Update ssh-agent socket entry (~line 457) -- only 1Password agent, no keychain
+- PATH-dependent command analysis -- remove keychain from the list
 
 Run `grep -n 'keychain\|ssh-agent\|SSH_AGENT_PID\|loadSshKey\|with-secret\|encrypt-secrets\|\.age\b' docs/security.md`.
 
 ### Task 3: docs/uc-init.md, docs/use-cases.md, docs/environment-lifecycle.md
 
-- uc-init.md line ~287: remove "Keychain retained as break-glass fallback" — replace with 1Password SSH agent as sole auth path
+- uc-init.md line ~287: remove "Keychain retained as break-glass fallback" -- replace with 1Password SSH agent as sole auth path
 - use-cases.md UC-4: remove key restore step, note sshAgentPreflight. Update UC-4a (rotation is vault-only). Update migration note to reflect completion.
-- environment-lifecycle.md line ~74: remove "Decrypt and review security.md" — security.md is now in 1Password, not age-encrypted in repo
+- environment-lifecycle.md line ~74: remove "Decrypt and review security.md" -- security.md is now in 1Password, not age-encrypted in repo
 
 ### Task 4: claude/CLAUDE.md, TESHT_WISHLIST.md, lib_test.bash, update-env comments
 
