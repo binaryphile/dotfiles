@@ -1,4 +1,4 @@
-{ config, pkgs, dotfiles, gpoc, ... }:
+{ config, lib, pkgs, dotfiles, gpoc, ... }:
 
 let
   mkScriptBin = import ../mkScriptBin.nix { inherit pkgs; };
@@ -16,9 +16,9 @@ in
 {
   imports = [ ../linux-base.nix ../claude.nix ];
 
-  home.username = "ted";
-  home.homeDirectory = "/home/ted";
-  home.stateVersion = "24.11";
+  home.username = lib.mkDefault "ted";
+  home.homeDirectory = lib.mkDefault "/home/ted";
+  home.stateVersion = lib.mkDefault "24.11";
 
   home.packages = with pkgs; [
     cliphist
