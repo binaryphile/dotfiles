@@ -159,7 +159,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; remaining manual steps documented.
 - **Technology:** update-env (bash), 1Password, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4).
 
-**Migration note (UC-4 family):** UC-4a through UC-4d previously used age-encrypted SSH key bundles and secrets tarballs in `~/secrets/`. That model is replaced by 1Password with vault-level compartmentalization. Blast radius is bounded per machine (vault access policies control which vaults a machine can see). On a multi-project machine, per-project isolation relies on the `op-run` launcher's compliance check, an enforced workflow boundary — the unlocked account can read any visible vault, but `op-run` verifies scope before retrieval. See design.md for the credential architecture.
+**Migration note (UC-4 family):** UC-4a through UC-4d previously used age-encrypted SSH key bundles and secrets tarballs in `~/secrets/`. That model is replaced by 1Password with vault-level compartmentalization. Blast radius is bounded per machine (vault access policies control which vaults a machine can see). On a multi-project machine, per-project isolation relies on the `op-run` launcher's compliance check, an enforced workflow boundary -- the unlocked account can read any visible vault, but `op-run` verifies scope before retrieval. See design.md for the credential architecture.
 
 ---
 

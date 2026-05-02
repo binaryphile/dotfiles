@@ -380,14 +380,14 @@ Credentials never touch disk. The `exec` ensures credentials exist only in the c
 
 #### Launcher Enforcement (`op-run`)
 
-The steps above describe a discipline mechanism — correct usage but bypassable by any same-user process. To raise the bar above pure convention without requiring OS sandboxing, credentialed tools are invoked through a single launcher (`op-run`) that becomes the only supported credential path.
+The steps above describe a discipline mechanism -- correct usage but bypassable by any same-user process. To raise the bar above pure convention without requiring OS sandboxing, credentialed tools are invoked through a single launcher (`op-run`) that becomes the only supported credential path.
 
 **Properties:**
 1. **Single supported entry point.** All credentialed tool invocations route through `op-run <tool> [args...]`. Project configs (`.mcp.json`) and shell aliases point to `op-run`, not to tools directly.
 2. **Policy is in the launcher, not the tool.** `op-run` performs project identification, two-level allowlist verification, `.env` pre-flight, and credential retrieval. The tool receives env vars and runs. No tool-level credential config needed.
 3. **No reusable direct credential path.** Managed configs do not contain raw `op://` references or DesktopAuth invocations that a user or tool could copy-paste to bypass `op-run`.
-4. **Tamper-evident.** The launcher's expected hash is checked into dotfiles. Shell init or host apply verifies the installed launcher matches the expected hash. Tampering is detectable (though not preventable by a same-user attacker — this is still soft enforcement, but with evidence).
-5. **Fail-closed for managed tools.** No project declaration → no launch. No allowlist → no launch. Hash mismatch → no launch.
+4. **Tamper-evident.** The launcher's expected hash is checked into dotfiles. Shell init or host apply verifies the installed launcher matches the expected hash. Tampering is detectable (though not preventable by a same-user attacker -- this is still soft enforcement, but with evidence).
+5. **Fail-closed for managed tools.** No project declaration -> no launch. No allowlist -> no launch. Hash mismatch -> no launch.
 6. **Audit logging.** Local append-only log of: timestamp, project, tool, credential set accessed. Not a security control against malicious same-user attackers, but catches accidental misuse, drift, and provides operational review history.
 
 **What `op-run` adds over bare per-project scripts:**
@@ -405,7 +405,7 @@ The steps above describe a discipline mechanism — correct usage but bypassable
 
 **Effective local trust boundary:** An unlocked 1Password session is the effective local trust boundary. Once unlocked, any same-user process can reach the DesktopAuth socket. All enforcement above the socket level (`op-run`, compliance check, audit logging) is workflow enforcement, not security isolation. The unlock gate is the last hard boundary.
 
-**Classification:** Enforced workflow boundary — stronger than convention, weaker than OS isolation. See threat model for the full enforcement boundary table.
+**Classification:** Enforced workflow boundary -- stronger than convention, weaker than OS isolation. See threat model for the full enforcement boundary table.
 
 #### SSH Agent
 
