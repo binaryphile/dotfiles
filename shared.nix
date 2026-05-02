@@ -4,7 +4,6 @@ let
   effectiveBashTools = if bashTools != null then bashTools else import ./bash-tools.nix { inherit pkgs; };
 in {
   home.packages = with pkgs; [
-    age
     bottom
     claude-code
     coreutils
@@ -18,7 +17,6 @@ in {
     jira-cli-go
     _1password-cli
     jq
-    keychain
     liquidprompt
     mnemonicode
     ncdu
@@ -40,6 +38,7 @@ in {
   home.sessionVariables = {
     EDITOR = "nvim";
     PAGER = "less";
+    SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
     CFGDIR = "$HOME/.config";
     SECRETS = "$HOME/secrets";
     XDG_CONFIG_HOME = "$HOME/.config";
