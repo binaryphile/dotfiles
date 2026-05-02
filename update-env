@@ -110,8 +110,8 @@ platformTaskGroups() {
   local groups=()
   case $platform in crostini|debian )   groups+=(apt);; esac
   case $platform in crostini )          groups+=(hostname gpoc);; esac
-  case $platform in crostini|debian|linux|macos ) groups+=(nix);; esac
-  case $platform in crostini|debian )   groups+=(hm);; esac
+  case $platform in crostini|debian|desktop|macos ) groups+=(nix);; esac
+  case $platform in crostini|debian|desktop|macos ) groups+=(hm);; esac
   case $platform in crostini )          groups+=(credential);; esac
   echo "${groups[*]}"
 }
