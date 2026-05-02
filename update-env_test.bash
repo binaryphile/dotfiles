@@ -87,7 +87,7 @@ test_glob() {
     ## arrange
 
     # temporary directory
-    local dir=$(tesht.MktempDir) || return 128  # fatal if can't make dir
+    local dir; tesht.MktempDir dir || return 128  # fatal if can't make dir
     trap "rm -rf $dir" EXIT                     # always clean up
     cd $dir
 
@@ -338,14 +338,14 @@ test_platformTaskGroups() {
     [wantGroupList]=$'apt\nnix\nhm'
   )
   local -A case3=(
-    [name]='desktop gets nix only'
+    [name]='desktop gets nix hm'
     [platform]=desktop
-    [wantGroupList]=nix
+    [wantGroupList]=$'nix\nhm'
   )
   local -A case4=(
-    [name]='macos gets nix only'
+    [name]='macos gets nix hm'
     [platform]=macos
-    [wantGroupList]=nix
+    [wantGroupList]=$'nix\nhm'
   )
   local -A case5=(
     [name]='nixos gets nothing'
@@ -496,112 +496,131 @@ item = "testhost SSH Key"'
   }
 }
 
-## Q3 integration tests -- real filesystem, direct task calls.
-## Pattern: backup -> remove target -> re-run -> verify restored -> verify
-## idempotent (second run = no change) -> restore backup.
-## Trap guarantees teardown even on test failure.
-## Task output suppressed (>/dev/null 2>&1) to keep test output clean.
+## Q3 integration tests -- real filesystem in tmp, direct task calls.
+## Each test creates isolated temp dirs, injects paths via lowercase globals,
+## and cleans up via trap. No interaction with live $HOME config.
 
 test_claudeBaseCopyTask_converges() {
-  local target=$HOME/.claude/CLAUDE.md
-  local backup=$(mktemp)
-  trap "cp $backup $target; rm -f $backup" RETURN
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
 
-  claudeBaseCopyTask >/dev/null 2>&1
-  cp $target $backup
+  # arrange: source file in tmp
+  mkdir -p $dir/src $dir/dst
+  echo '# test base content' >$dir/src/CLAUDE.md
 
-  # convergence: remove -> re-run -> restored
-  rm $target
+  # act: inject paths and run
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
   claudeBaseCopyTask >/dev/null 2>&1
+
+  # assert: convergence
   local rc=0
-  [[ -f $target ]] || { echo "target not restored"; rc=1; }
-  diff -q $target $HOME/dotfiles/claude/CLAUDE.md >/dev/null 2>&1 || { echo "content doesn't match source"; rc=1; }
+  [[ -f $dir/dst/CLAUDE.md ]] || { echo "target not created"; rc=1; }
+  diff -q $dir/src/CLAUDE.md $dir/dst/CLAUDE.md >/dev/null 2>&1 || { echo "content mismatch"; rc=1; }
 
-  # idempotence: second run = no change
+  # assert: idempotence
   local hashBefore hashAfter
-  hashBefore=$(sha256sum $target | awk '{print $1}')
+  hashBefore=$(sha256sum $dir/dst/CLAUDE.md | awk '{print $1}')
   claudeBaseCopyTask >/dev/null 2>&1
-  hashAfter=$(sha256sum $target | awk '{print $1}')
+  hashAfter=$(sha256sum $dir/dst/CLAUDE.md | awk '{print $1}')
   [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
 
   return $rc
 }
 
 test_agentTomlTask_converges() {
-  local target=$HOME/.config/1Password/ssh/agent.toml
-  local backup=$(mktemp)
-  trap "cp $backup $target; rm -f $backup" RETURN
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
 
+  # act: inject paths
+  local agentToml_hostname=testhost
+  local agentToml_path=$dir/agent.toml
   agentTomlTask >/dev/null 2>&1
-  cp $target $backup
 
-  # convergence
-  rm $target
-  agentTomlTask >/dev/null 2>&1
+  # assert: convergence
   local rc=0
-  [[ -f $target ]] || { echo "target not restored"; rc=1; }
-  # verify content uses the actual hostname, not hardcoded
-  local hostname
-  hostname=$(lib.MachineHostname)
-  grep -q "$(opAuthKeyItem $hostname)" $target || { echo "auth key item not in content"; rc=1; }
-  grep -q "$(opSigningKeyItem $hostname)" $target || { echo "signing key item not in content"; rc=1; }
+  [[ -f $dir/agent.toml ]] || { echo "target not created"; rc=1; }
+  grep -q "$(opAuthKeyItem testhost)" $dir/agent.toml || { echo "auth key missing"; rc=1; }
+  grep -q "$(opSigningKeyItem testhost)" $dir/agent.toml || { echo "signing key missing"; rc=1; }
 
-  # idempotence
+  # assert: idempotence
   local hashBefore hashAfter
-  hashBefore=$(sha256sum $target | awk '{print $1}')
+  hashBefore=$(sha256sum $dir/agent.toml | awk '{print $1}')
   agentTomlTask >/dev/null 2>&1
-  hashAfter=$(sha256sum $target | awk '{print $1}')
+  hashAfter=$(sha256sum $dir/agent.toml | awk '{print $1}')
   [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
 
   return $rc
 }
 
 test_deploySigningPub_converges() {
-  local target=$HOME/.ssh/id_ed25519_signing.pub
-  local backup=$(mktemp)
-  trap "cp $backup $target; rm -f $backup" RETURN
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
 
-  deploySigningPub >/dev/null 2>&1
-  cp $target $backup
+  # arrange: fake .pub sidecar in tmp
+  mkdir -p $dir/src $dir/dst
+  echo 'ssh-ed25519 AAAA test@testhost' >$dir/src/id_ed25519_signing_testhost.pub
 
-  # convergence
-  rm $target
+  # act: inject paths
+  local signingPub_hostname=testhost
+  local signingPub_src=$dir/src/id_ed25519_signing_testhost.pub
+  local signingPub_dst=$dir/dst/id_ed25519_signing.pub
   deploySigningPub >/dev/null 2>&1
+
+  # assert: convergence
   local rc=0
-  [[ -f $target ]] || { echo "target not restored"; rc=1; }
+  [[ -f $dir/dst/id_ed25519_signing.pub ]] || { echo "target not created"; rc=1; }
+  diff -q $dir/src/id_ed25519_signing_testhost.pub $dir/dst/id_ed25519_signing.pub >/dev/null 2>&1 || { echo "content mismatch"; rc=1; }
 
-  # idempotence
+  # assert: idempotence
   local hashBefore hashAfter
-  hashBefore=$(sha256sum $target | awk '{print $1}')
+  hashBefore=$(sha256sum $dir/dst/id_ed25519_signing.pub | awk '{print $1}')
   deploySigningPub >/dev/null 2>&1
-  hashAfter=$(sha256sum $target | awk '{print $1}')
+  hashAfter=$(sha256sum $dir/dst/id_ed25519_signing.pub | awk '{print $1}')
   [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
 
   return $rc
 }
 
-test_claudeEraConfigTask_appendsOnlyOnce() {
-  local target=$HOME/.claude/CLAUDE.md
-  local backup=$(mktemp)
-  trap "cp $backup $target; rm -f $backup" RETURN
+test_claudeEraConfigTask_converges() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
 
-  claudeBaseCopyTask >/dev/null 2>&1
-  cp $target $backup
+  # arrange: base and era source files
+  echo '# base content' >$dir/base.md
+  echo 'Era is your persistent memory' >$dir/era.md
 
-  # write base-only content (strip era if present)
-  cp $HOME/dotfiles/claude/CLAUDE.md $target
-
-  # convergence: append runs
+  # act: inject paths, run append
+  local claudeEra_base=$dir/base.md
+  local claudeEra_src=$dir/era.md
   claudeEraConfigTask >/dev/null 2>&1
+
+  # assert: convergence (era appended)
   local rc=0
-  grep -qF 'Era is your persistent memory' $target || { echo "era config not appended"; rc=1; }
+  grep -qF 'Era is your persistent memory' $dir/base.md || { echo "era not appended"; rc=1; }
 
-  # idempotence: second append = no change
+  # assert: idempotence (second run = no change)
   local sizeBefore sizeAfter
-  sizeBefore=$(wc -c < $target)
+  sizeBefore=$(wc -c < $dir/base.md)
   claudeEraConfigTask >/dev/null 2>&1
-  sizeAfter=$(wc -c < $target)
+  sizeAfter=$(wc -c < $dir/base.md)
   (( sizeBefore == sizeAfter )) || { echo "appended twice: $sizeBefore -> $sizeAfter"; rc=1; }
 
   return $rc
+}
+
+test_claudeEraConfigTask_skipsWhenBaseMissing() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: era source exists, base does not
+  echo 'Era is your persistent memory' >$dir/era.md
+
+  # act
+  local claudeEra_base=$dir/base.md
+  local claudeEra_src=$dir/era.md
+  claudeEraConfigTask >/dev/null 2>&1
+
+  # assert: base was not created (check guard prevents append to nonexistent file)
+  [[ ! -f $dir/base.md ]] || { echo "base should not be created by era task"; return 1; }
 }

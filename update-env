@@ -683,9 +683,8 @@ chromeDevtoolsMcpRegisterTask() {
 # keys the 1Password SSH agent offers to the current machine. Without this,
 # the agent offers ALL vault keys to every server (use-authority expansion).
 agentTomlTask() {
-  local hostname
-  hostname=$(lib.MachineHostname)
-  local path=$HOME/.config/1Password/ssh/agent.toml
+  local hostname=${agentToml_hostname:-$(lib.MachineHostname)}
+  local path=${agentToml_path:-$HOME/.config/1Password/ssh/agent.toml}
   desc "write 1Password agent.toml for $hostname"
 
   agentTomlUpToDate() {
@@ -717,12 +716,14 @@ EOF
 # ~/.claude/. Runs in stage 1 after HM switch. Stage 2's claudeEraConfigTask
 # appends era content. Not managed by HM because stage 2 mutates it.
 claudeBaseCopyTask() {
+  local src=${claudeBase_src:-$HOME/dotfiles/claude/CLAUDE.md}
+  local dst=${claudeBase_dst:-$HOME/.claude/CLAUDE.md}
   desc 'install base CLAUDE.md'
-  exist $HOME/.claude/CLAUDE.md
+  exist $dst
 
   claudeBaseCopy() {
-    mkdir -p "$HOME/.claude"
-    cp "$HOME/dotfiles/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+    mkdir -p $(dirname $dst)
+    cp $src $dst
   }
   cmd claudeBaseCopy
 }
@@ -731,8 +732,8 @@ claudeBaseCopyTask() {
 # claudeBaseCopyTask. The base has stage-1-safe content (Conventions, Secrets).
 # Era content (memory, code search, guides) requires stage 2.
 claudeEraConfigTask() {
-  local base=$HOME/.claude/CLAUDE.md
-  local era=$HOME/dotfiles/claude/CLAUDE-era.md
+  local base=${claudeEra_base:-$HOME/.claude/CLAUDE.md}
+  local era=${claudeEra_src:-$HOME/dotfiles/claude/CLAUDE-era.md}
   desc 'append era config to ~/.claude/CLAUDE.md'
   check "[[ -f $era ]] && [[ -f $base ]]"
 
@@ -1363,10 +1364,9 @@ loadSshKey() {
 # ~/.ssh/id_ed25519_signing.pub. This is all op-ssh-sign needs to identify
 # which 1Password vault key to use for commit signing. No private key on disk.
 deploySigningPub() {
-  local hostname
-  hostname=$(lib.MachineHostname)
-  local repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
-  local dst=$HOME/.ssh/id_ed25519_signing.pub
+  local hostname=${signingPub_hostname:-$(lib.MachineHostname)}
+  local repoPub=${signingPub_src:-$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub}
+  local dst=${signingPub_dst:-$HOME/.ssh/id_ed25519_signing.pub}
 
   [[ -f $repoPub ]] || { echo "No signing key .pub sidecar for $hostname in repo"; return 0; }
 
@@ -1378,7 +1378,7 @@ deploySigningPub() {
   ok signingPubUpToDate
 
   signingPubCopy() {
-    mkdir -p $HOME/.ssh
+    mkdir -p $(dirname $dst)
     cp $repoPub $dst
     chmod 644 $dst
   }
