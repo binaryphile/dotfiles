@@ -7,7 +7,7 @@ Root=$PWD
 test_nix_parse() {
   local -A case1=([name]='shared'   [file]="$Root/shared.nix")
   local -A case2=([name]='crostini' [file]="$Root/contexts/crostini/home.nix")
-  local -A case3=([name]='linux'    [file]="$Root/contexts/linux/home.nix")
+  local -A case3=([name]='desktop'  [file]="$Root/contexts/desktop/home.nix")
   local -A case4=([name]='macos'    [file]="$Root/contexts/macos/home.nix")
 
   subtest() {

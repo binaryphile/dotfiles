@@ -68,9 +68,9 @@
     # Crostini-specific services (tinyproxy, vpn-pac) are harmless on bare Debian.
     homeConfigurations.debian = self.homeConfigurations.crostini;
 
-    homeConfigurations.linux = home-manager.lib.homeManagerConfiguration {
+    homeConfigurations.desktop = home-manager.lib.homeManagerConfiguration {
       pkgs = linuxPkgs;
-      modules = [ ./contexts/linux/home.nix ];
+      modules = [ ./contexts/desktop/home.nix ];
       extraSpecialArgs = commonSpecialArgs // { inherit gpoc; };
     };
 
