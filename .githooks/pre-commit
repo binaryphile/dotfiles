@@ -11,7 +11,7 @@
 CheckSettingsJson() {
     git diff --cached --name-only | grep -q 'claude/settings.json' || return 0
 
-    if jq -e '.mcpServers | to_entries[] | select(.value.env != null)' claude/settings.json >/dev/null 2>&1; then
+    if jq -e '(.mcpServers // {}) | to_entries[] | select(.value.env != null)' claude/settings.json >/dev/null 2>&1; then
         echo "BLOCKED: claude/settings.json contains env vars in mcpServers."
         echo "MCP servers requiring credentials must use op-run."
         echo "See docs/design.md for the op-run pattern."

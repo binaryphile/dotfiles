@@ -36,8 +36,8 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 - **Shared packages are in `shared.nix`** -- no need to sync across contexts manually. Platform-specific packages go in individual context files.
 - **Validate nix changes** with `nix-instantiate --parse` before committing. Use `home-manager build` for deeper validation (evaluates options and builds derivations).
 - **Run `tesht`** before committing -- tests are configuration validation: they describe the intended shell environment and should fail when config drifts. Fix the config to satisfy the assertions; do not rewrite tests to match accidental behavior.
-- **Calendar config and notify-send-bridge** live in `contexts/linux-base.nix`, imported by both `contexts/linux/home.nix` and `contexts/crostini/home.nix`. macos imports `shared.nix` directly and skips this layer.
-- **NixOS note:** `~/nixos-config/flake.nix` imports `contexts/linux/home.nix` via a local path flake input pointing to `~/dotfiles`. Changes take effect on `sudo nixos-rebuild switch` without pushing first. System-level config belongs in nixos-config, not here. **Important:** after changing dotfiles, run `nix flake update dotfiles` in `~/nixos-config` before `nixos-rebuild switch` -- the flake lock caches a hash of the dotfiles directory and won't see changes until updated.
+- **Calendar config and notify-send-bridge** live in `contexts/linux-base.nix`, imported by both `contexts/desktop/home.nix` and `contexts/crostini/home.nix`. macos imports `shared.nix` directly and skips this layer.
+- **NixOS note:** `~/nixos-config/flake.nix` imports `contexts/desktop/home.nix` via a local path flake input pointing to `~/dotfiles`. Changes take effect on `sudo nixos-rebuild switch` without pushing first. System-level config belongs in nixos-config, not here. **Important:** after changing dotfiles, run `nix flake update dotfiles` in `~/nixos-config` before `nixos-rebuild switch` -- the flake lock caches a hash of the dotfiles directory and won't see changes until updated.
 
 ## Development tools
 
