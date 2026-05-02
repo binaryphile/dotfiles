@@ -2,7 +2,7 @@
 
 ## Context
 
-This repo is a fleet configuration management system for Ted's user environment. It targets a heterogeneous fleet -- NixOS workstations and disposable Crostini VMs on commodity Chromebooks. System-level config and Sway live in nixos-config; this repo owns everything from the user session down. The repo is private on GitHub. Branch protection on `main` requires signed commits and disallows force-push.
+This repo is a fleet configuration management system for Ted's user environment. It targets a heterogeneous fleet -- NixOS workstations, disposable Crostini VMs on commodity Chromebooks, standalone linux systems, and macOS. System-level config and Sway live in nixos-config; this repo owns everything from the user session down. The repo is private on GitHub. Branch protection on `main` requires signed commits and disallows force-push.
 
 Ted moves between machines freely. Any machine is replaceable. Goal: run one command, be productive on any host.
 
@@ -137,7 +137,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Goal:** Working development environment on a new or rebuilt machine
 - **Scope:** User environment (all hosts)
 - **Level:** User goal
-- **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, or new NixOS host
+- **Trigger:** New Chromebook, powerwashed Crostini, rebuilt container, new NixOS host, standalone linux, or macOS machine
 - **Preconditions:** Network connected. Machine enrolled with work credential account (UC-4e).
 - **Stakeholders:**
   - Ted -- minimal manual steps; same tools and identity on every machine
@@ -286,7 +286,8 @@ Operational procedures documented in the 1Password-stored canonical doc set.
   - 4a. Validation fails -> Claude fixes and re-validates; resume at step 4
   - 5a. Apply fails -> Claude diagnoses; resume at step 3
   - 6a. Change misbehaves -> Claude investigates; resume at step 3
-- **Minimal Guarantee:** Previous environment intact; broken change not committed
+  - 7a. Pre-commit hook blocks commit (credential in settings.json) -> Claude removes inline credentials, uses op-run pattern; resume at step 7
+- **Minimal Guarantee:** Previous environment intact; broken change not committed; credentials never committed to git
 - **Success Guarantee:** Change applied, working, committed, docs updated
 
 ---
@@ -348,7 +349,7 @@ Operational procedures documented in the 1Password-stored canonical doc set.
   - 5a. Reconnect loop hammers a dead gateway -> Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
 - **Success Guarantee:** VPN tunnel up with split-tunnel routing for corporate subnets, internal hostnames resolved, normal traffic stays on LAN
-- **Technology:** globalprotect-openconnect (gpoc), vpn-slice, vpn-connect wrapper. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
+- **Technology:** globalprotect-openconnect (gpoc), vpn-slice, vpn-connect wrapper. gpoc sourced per platform: apt on Crostini, flake input on NixOS (via nixos-config) and standalone linux (via dotfiles). See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
 
 ---
 
@@ -512,7 +513,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-1 Software Development | Working | |
 | UC-2 Application Access | Working | Firefox policies, signal-desktop, Obsidian |
 | UC-3 File Management | Working | |
-| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. NixOS, Crostini, Debian, macOS |
+| UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. homeConfigurations: crostini, debian, linux, macos |
 | UC-4a Rotate SSH Key | Pending migration | Rewritten for 1Password; blocked on 1Password install |
 | UC-4b Manage Work Credentials | Pending migration | Rewritten for 1Password; replaces age bundle workflow |
 | UC-4c Recover from Credential Failure | Pending migration | Simplified for 1Password; old failure modes eliminated |
@@ -520,7 +521,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
-| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via getFlake, NixOS via flake input; SAML callback validated end-to-end on Crostini |
+| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via nixos-config flake input, standalone linux via dotfiles flake input; SAML callback validated end-to-end on Crostini |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
