@@ -101,7 +101,7 @@ test_glob() {
 
     # run the command and capture the output and result code
     local got rc
-    got=$(lib.Glob "${args[@]}") && rc=$? || rc=$?
+    got=$(lib.Glob ${args[@]}) && rc=$? || rc=$?
 
     ## assert
     # assert that we got the wanted output
@@ -264,7 +264,8 @@ test_stream() {
   tesht.Run "${!case@}"
 }
 
-## hasGroup -- Q1: pure predicate, domain-significant (gates deployment phases)
+## hasGroup + platformTaskGroups -- Q1: domain-significant (gates deployment phases)
+## Tests cover the real data flow: platformTaskGroups output -> hasGroup input
 
 test_hasGroup() {
   local -A case1=(
@@ -322,49 +323,98 @@ test_hasGroup() {
 }
 
 ## platformTaskGroups -- Q1: pure decision function, domain-significant
+## Output is newline-separated (IFS=$'\n' + ${array[*]}). Tests verify
+## exact newline structure, not normalized spaces.
 
 test_platformTaskGroups() {
   local -A case1=(
     [name]='crostini gets all groups'
     [platform]=crostini
-    [wantGroups]='apt hostname gpoc nix hm credential'
+    [wantGroupList]=$'apt\nhostname\ngpoc\nnix\nhm\ncredential'
   )
   local -A case2=(
     [name]='debian gets apt nix hm'
     [platform]=debian
-    [wantGroups]='apt nix hm'
+    [wantGroupList]=$'apt\nnix\nhm'
   )
   local -A case3=(
     [name]='linux gets nix only'
     [platform]=linux
-    [wantGroups]=nix
+    [wantGroupList]=nix
   )
   local -A case4=(
     [name]='macos gets nix only'
     [platform]=macos
-    [wantGroups]=nix
+    [wantGroupList]=nix
   )
   local -A case5=(
     [name]='nixos gets nothing'
     [platform]=nixos
-    [wantGroups]=''
+    [wantGroupList]=''
   )
 
   subtest() {
     local casename=$1
     eval "$(tesht.Inherit "$casename")"
-    local got_
-    got_=$(platformTaskGroups $platform)
-    # normalize newlines to spaces for comparison
-    got_=$(echo "$got_" | tr '\n' ' ')
-    got_=${got_% }
-    [[ $got_ == "$wantGroups" ]] || { echo "got='$got_', want='$wantGroups'"; return 1; }
+    local gotGroupList
+    gotGroupList=$(platformTaskGroups $platform)
+    [[ $gotGroupList == "$wantGroupList" ]] || {
+      echo "got=$(printf '%q' "$gotGroupList")"
+      echo "want=$(printf '%q' "$wantGroupList")"
+      return 1
+    }
   }
 
   tesht.Run ${!case@}
 }
 
-## loosely -- Q1: shell option preservation, domain-significant (broken = no error handling)
+## Real data flow: platformTaskGroups -> hasGroup
+## This is the actual production path. Verifies newline-separated output
+## from platformTaskGroups works correctly with hasGroup when quoted.
+
+test_hasGroupWithPlatformTaskGroups() {
+  local -A case1=(
+    [name]='crostini has hm'
+    [platform]=crostini
+    [group]=hm
+    [wantRc]=0
+  )
+  local -A case2=(
+    [name]='crostini has credential'
+    [platform]=crostini
+    [group]=credential
+    [wantRc]=0
+  )
+  local -A case3=(
+    [name]='debian does not have credential'
+    [platform]=debian
+    [group]=credential
+    [wantRc]=1
+  )
+  local -A case4=(
+    [name]='nixos has nothing'
+    [platform]=nixos
+    [group]=nix
+    [wantRc]=1
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+    local groupList
+    groupList=$(platformTaskGroups $platform)
+    local rc
+    hasGroup "$groupList" $group && rc=0 || rc=$?
+    (( rc == wantRc )) || { echo "rc=$rc, want $wantRc"; return 1; }
+  }
+
+  tesht.Run ${!case@}
+}
+
+## loosely -- state management, domain-critical (broken = no error handling)
+## Tests verify flag restoration survives the exact failure mode that
+## occurred: $(set +o) in a subshell loses errexit. Also tests nested
+## calls and failure inside the loosely block.
 
 test_loosely_preservesFlags() {
   local -A case1=( [name]='preserves errexit'  [flag]=e )
@@ -388,10 +438,41 @@ test_loosely_preservesPipefail() {
   shopt -qo pipefail || { echo "pipefail lost"; return 1; }
 }
 
-test_loosely_preservesIfs() {
+test_loosely_restoresIfs() {
   local before_=$IFS
   loosely true
   [[ $IFS == "$before_" ]] || { echo "IFS changed"; return 1; }
+}
+
+test_loosely_nestedCalls() {
+  set -eufo pipefail
+  loosely loosely true
+  [[ $- == *e* ]] || { echo "errexit lost after nested loosely"; return 1; }
+  [[ $- == *f* ]] || { echo "noglob lost after nested loosely"; return 1; }
+  shopt -qo pipefail || { echo "pipefail lost after nested loosely"; return 1; }
+}
+
+test_loosely_failureInsidePreservesFlags() {
+  set -eufo pipefail
+  loosely false  # command fails, but loosely should still restore
+  [[ $- == *e* ]] || { echo "errexit lost after failed command"; return 1; }
+  shopt -qo pipefail || { echo "pipefail lost after failed command"; return 1; }
+}
+
+# Regression guard: the original bug was $(set +o) capturing errexit as OFF
+# inside a command substitution subshell. This test verifies that after
+# calling loosely, a subsequent failing command actually triggers errexit.
+test_loosely_errexitActuallyWorks() {
+  local rc
+  rc=$(bash -c '
+    source ./update-env 2>/dev/null
+    set -eufo pipefail
+    loosely true
+    false
+    echo "SHOULD NOT REACH"
+  ' 2>&1) && rc=0 || rc=$?
+  [[ $rc -ne 0 ]] || { echo "errexit did not trigger after loosely: output=$rc"; return 1; }
+  [[ $rc != *"SHOULD NOT REACH"* ]] || { echo "script continued past false"; return 1; }
 }
 
 ## agentTomlContent -- Q1: pure output, security-significant (controls agent key exposure)
