@@ -338,8 +338,8 @@ test_platformTaskGroups() {
     [wantGroupList]=$'apt\nnix\nhm'
   )
   local -A case3=(
-    [name]='linux gets nix only'
-    [platform]=linux
+    [name]='desktop gets nix only'
+    [platform]=desktop
     [wantGroupList]=nix
   )
   local -A case4=(
