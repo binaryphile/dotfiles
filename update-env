@@ -181,6 +181,7 @@ stage1() {
 
   task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
   task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
+  task.Ln ~/dotfiles/scripts/sync-shellcheckrc ~/.local/bin/sync-shellcheckrc
   claudeBaseCopyTask
 }
 
@@ -358,6 +359,7 @@ stage2() {
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeMemoryRedirectsTask
+  shellcheckrcTask
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
@@ -752,6 +754,32 @@ claudeMemoryRedirectsTask() {
     END
   }
   cmd claudeRedirectsInstall
+}
+
+# Deploy shared .shellcheckrc to a neutral config path and symlink work project
+# roots to it. Personal repos get committed copies via sync-shellcheckrc.
+shellcheckrcTask() {
+  local src=${shellcheckrc_src:-$HOME/dotfiles/.shellcheckrc}
+  local neutral=${shellcheckrc_neutral:-$HOME/.config/shellcheck/shellcheckrc}
+  desc 'deploy .shellcheckrc to neutral path + work project symlinks'
+  check "[[ -f $src ]]"
+
+  shellcheckrcDeploy() {
+    mkdir -p $(dirname $neutral)
+    cp $src $neutral
+
+    local dir
+    for dir in \
+      $HOME/projects/urma \
+      $HOME/projects/pepin \
+      $HOME/projects/cloud-services \
+      $HOME/projects/dal
+    do
+      [[ -d $dir ]] || continue
+      ln -sf $neutral $dir/.shellcheckrc
+    done
+  }
+  cmd shellcheckrcDeploy
 }
 
 writeMcpJsonTask() {

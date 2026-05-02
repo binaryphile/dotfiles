@@ -75,7 +75,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 6d. Need to create PR or manage repo -> use gh CLI; resume at step 7
 - **Minimal Guarantee:** Existing environment unchanged; failed tool installs don't break working config
 - **Success Guarantee:** Ted can clone, edit, build, test, and push on any host
-- **Technology:** neovim, Claude Code, direnv, Nix devShells, git, stgit, gh, tmux, jira-cli-go, dig, scc, pandoc
+- **Technology:** neovim, Claude Code, direnv, Nix devShells, git, stgit, gh, tmux, jira-cli-go, dig, scc, pandoc, shellcheck
 
 ---
 
