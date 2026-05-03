@@ -1,8 +1,5 @@
 {
   "skipDangerousModePermissionPrompt": true,
-  "mcpServers": {
-    "era": {"type": "http", "url": "http://127.0.0.1:9310/mcp"}
-  },
   "hooks": {
     "SessionStart": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
     "Stop": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],

@@ -366,9 +366,9 @@ stage2() {
     ~/projects/era/scripts/task-audit             ~/.local/bin/task-audit
     ~/projects/era/scripts/validate-attestation   ~/.local/bin/validate-attestation
   END
-  try task.Install 644 ~/projects/era/era-mcp.service ~/.config/systemd/user/era-mcp.service
+  try eraMcpCleanupTask
+  try task.Install 644 ~/projects/era/era-serve.service ~/.config/systemd/user/era-serve.service
   try eraSystemdEnableTask
-  eraMcpRegisterTask
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeTandemConfigTask
@@ -625,25 +625,28 @@ eraBuildTask() {
   cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && ./mk build"'
 }
 
-eraSystemdEnableTask() {
-  desc  'enable era-mcp systemd service'
-  ok    'systemctl --user is-enabled era-mcp &>/dev/null'
-  cmd   'systemctl --user enable --now era-mcp'
-}
+eraMcpCleanupTask() {
+  desc  'remove legacy era-mcp service and MCP registration'
+  ok    '! systemctl --user cat era-mcp &>/dev/null && ! { [[ -f ~/.claude.json ]] && jq -e ".mcpServers.era" ~/.claude.json &>/dev/null; }'
 
-eraMcpRegisterTask() {
-  desc  'register era MCP in claude.json'
-  ok    '[[ -f ~/.claude.json ]] && jq -e ".mcpServers.era" ~/.claude.json &>/dev/null'
-
-  eraMcpRegister() {
-    local src_=${1:-'{}'}
-    [[ -f ~/.claude.json ]] && src_=$(cat ~/.claude.json)
-    printf '%s' "$src_" |
-      jq '.mcpServers.era = {type: "http", url: "http://127.0.0.1:9310/mcp"}' > ~/.claude.json.tmp &&
-      mv ~/.claude.json.tmp ~/.claude.json
+  eraMcpCleanup() {
+    systemctl --user disable --now era-mcp 2>/dev/null || true
+    rm -f ~/.config/systemd/user/era-mcp.service
+    systemctl --user daemon-reload
+    if [[ -f ~/.claude.json ]] && jq -e '.mcpServers.era' ~/.claude.json &>/dev/null; then
+      jq 'del(.mcpServers.era)' ~/.claude.json > ~/.claude.json.tmp &&
+        mv ~/.claude.json.tmp ~/.claude.json
+    fi
   }
-  cmd eraMcpRegister
+  cmd eraMcpCleanup
 }
+
+eraSystemdEnableTask() {
+  desc  'enable era-serve systemd service'
+  ok    'systemctl --user is-enabled era-serve &>/dev/null'
+  cmd   'systemctl --user enable --now era-serve'
+}
+
 
 chromeDevtoolsMcpRegisterTask() {
   desc  'register chrome-devtools MCP in claude.json'
