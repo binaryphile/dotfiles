@@ -16,6 +16,7 @@ main() {
     $HOME/projects/mk.bash
     $HOME/projects/tesht
     $HOME/projects/jeeves
+    $HOME/projects/shellcheck
     $HOME/projects/era
     $HOME/projects/sofdevsim-2026
     $HOME/projects/tandem-protocol
