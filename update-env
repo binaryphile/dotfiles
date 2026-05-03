@@ -321,6 +321,9 @@ stage2() {
   #  |       Default branch: main. Cloned and symlinked.           |
   #  +-------------------------------------------------------------+
 
+  section shellcheck
+  try githubCloneAndLinkTask shellcheck master
+
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try scaffoldTask ~/projects/jeeves
@@ -753,6 +756,7 @@ claudeMemoryRedirectsTask() {
       task.bash
       tesht
       jeeves
+      shellcheck
       sofdevsim-2026
       binaryphile.github.io
       tandem-protocol
