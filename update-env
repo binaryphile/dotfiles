@@ -371,6 +371,7 @@ stage2() {
   eraMcpRegisterTask
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
+  claudeTandemConfigTask
   claudeMemoryRedirectsTask
   shellcheckrcTask
 
@@ -727,6 +728,25 @@ claudeEraConfigTask() {
     cat "$era" >>"$base"
   }
   cmd claudeEraAppend
+}
+
+# claudeTandemConfigTask appends the Tandem Protocol reference to CLAUDE.md
+# when tandem-protocol is cloned. Conditional on ~/tandem-protocol/README.md.
+claudeTandemConfigTask() {
+  local base=${claudeTandem_base:-$HOME/.claude/CLAUDE.md}
+  local src=${claudeTandem_src:-$HOME/tandem-protocol/README.md}
+  desc 'append tandem-protocol to ~/.claude/CLAUDE.md'
+  check "[[ -f $src ]] && [[ -f $base ]]"
+
+  claudeTandemUpToDate() {
+    [[ -f $base ]] && grep -qF '@~/tandem-protocol/README.md' "$base"
+  }
+  ok claudeTandemUpToDate
+
+  claudeTandemAppend() {
+    printf '\n# Tandem Protocol\n@~/tandem-protocol/README.md\n' >>"$base"
+  }
+  cmd claudeTandemAppend
 }
 
 # claudeMemoryRedirectsTask installs per-project MEMORY.md files that point
