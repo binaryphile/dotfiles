@@ -166,7 +166,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 ### UC-4a: Rotate SSH Keys
 
 - **Primary Actor:** Ted
-- **Goal:** Replace the shared SSH key across all machines and registries
+- **Goal:** Replace the shared SSH auth key across all machines and registries (signing key rotation is a separate operation -- update `dotfiles/ssh/id_ed25519_signing.pub` and redeploy)
 - **Scope:** Work credential account + Git registry settings
 - **Level:** Subfunction (supports UC-4)
 - **Trigger:** Suspected compromise, scheduled rotation, or key algorithm upgrade

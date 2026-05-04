@@ -84,6 +84,7 @@ in
     ".config/liquidpromptrc".source = linkDotfile "liquidprompt/liquidpromptrc";
     ".ssh/config".source = linkDotfile "ssh/config";
     ".ssh/authorized_keys".source = linkDotfile "ssh/authorized_keys";
+    ".ssh/id_ed25519_signing.pub".source = linkDotfile "ssh/id_ed25519_signing.pub";
     ".config/ranger/rc.conf".source = linkDotfile "ranger/rc.conf";
     ".config/ranger/rifle.conf".source = linkDotfile "ranger/rifle.conf";
     ".config/ranger/scope.sh".source = linkDotfile "ranger/scope.sh";

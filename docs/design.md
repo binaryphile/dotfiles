@@ -135,7 +135,7 @@ Files requiring runtime mutation (e.g., CLAUDE.md, which stage 2 appends to) mus
 
 **Post-install messages** -- `postInstallMessages` prints Crostini-specific setup (PAC URL and ChromeOS proxy instructions) inline. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
 
-All project repos -- including private repos like jeeves -- are cloned by update-env. Private repos use `try` so failures are non-fatal. All `*CloneAndLinkTask` functions default the branch to `main`.
+All project repos -- including private repos like jeeves -- are cloned by update-env. Private repos use `try` so failures are non-fatal. `*CloneAndLinkTask` functions default to `main`, with per-repo overrides: `urma`, `pepin`, and `cloud-services` (Stash repos) use `develop`; `accelerated-linux` (dal/acl) uses `master`.
 
 On NixOS, `~/nixos-config/flake.nix` imports `home.nix` via flake input. Dotfile symlinks still deployed by `update-env`.
 

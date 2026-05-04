@@ -821,15 +821,32 @@ stashCloneAndLinkTask() {
   local repo=$1 dir=${2:-$1} project=${3:-idigi} branch=${4:-main}
 
   desc   "clone repo stash.digi.com/$project/$repo to ~/projects/$dir"
-  exist  $HOME/projects/$dir
+  exist  $HOME/projects/$dir/.git
   check  'ping -c 1 -W 2 stash.digi.com'
 
   stashClone() {
-    GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" ~/projects/"$dir"
+    local dest=~/projects/"$dir"
+    if [[ -d $dest && ! -d $dest/.git ]]; then
+      # Directory exists (scaffold/obsidian) but no git repo.
+      # Stash contents via atomic rename, clone fresh, overlay preserved files back.
+      # On any failure, restore original state via atomic rename.
+      local stash
+      stash=$(mktemp -d "${dest}.XXXXXX")
+      rmdir "$stash"
+      mv "$dest" "$stash"
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest" || {
+        rm -rf "$dest"
+        mv "$stash" "$dest"
+        return 1
+      }
+      cp -a "$stash/." "$dest/"
+      rm -rf "$stash"
+    else
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest"
+    fi
   }
   cmd stashClone
 
-  git -C ~/projects/"$dir" rev-parse --git-dir >/dev/null 2>&1 || { echo "[skip]    not a git repo: ~/projects/$dir"; return 0; }
   try task.GitUpdate ~/projects/$dir
 }
 
@@ -1054,13 +1071,12 @@ sshAgentPreflight() {
 # ~/.ssh/id_ed25519_signing.pub. This is all op-ssh-sign needs to identify
 # which 1Password vault key to use for commit signing. No private key on disk.
 deploySigningPub() {
-  local hostname=${signingPub_hostname:-$(lib.MachineHostname)}
-  local repoPub=${signingPub_src:-$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub}
+  local repoPub=${signingPub_src:-$HOME/dotfiles/ssh/id_ed25519_signing.pub}
   local dst=${signingPub_dst:-$HOME/.ssh/id_ed25519_signing.pub}
 
-  [[ -f $repoPub ]] || { echo "No signing key .pub sidecar for $hostname in repo"; return 0; }
+  [[ -f $repoPub ]] || { echo "No signing key .pub sidecar in repo"; return 0; }
 
-  desc "deploy signing key .pub for $hostname"
+  desc "deploy signing key .pub"
 
   signingPubUpToDate() {
     [[ -f $dst ]] && diff -q $dst $repoPub >/dev/null 2>&1
@@ -1307,7 +1323,7 @@ NL=$'\n'
 # 1Password item naming convention. Single source of truth.
 # See docs/secrets-lifecycle.md "1Password Naming Convention".
 opAuthKeyItem() { echo "$1 SSH Key"; }
-opSigningKeyItem() { echo "$1 signing SSH Key"; }
+opSigningKeyItem() { echo "calliope signing SSH Key"; }
 OpVault=Private
 
 ## boilerplate
