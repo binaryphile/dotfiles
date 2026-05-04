@@ -256,7 +256,7 @@ The home-manager import chain:
 
 gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses gpoc installed via apt (avoiding the multi-minute Rust build from the upstream flake), NixOS and standalone linux use the `globalprotect-openconnect` flake input (pure evaluation -- provided by `nixos-config/flake.nix` on NixOS, by `dotfiles/flake.nix` on standalone). Each platform builds a `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `desktop/home.nix` respectively). On Crostini, `gpclient` is referenced at `/usr/bin/gpclient`.
 
-Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config. This keeps platform config shared while allowing per-machine overrides.
+Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config. This keeps platform config shared while allowing per-machine overrides. `detectPlatform` checks for `contexts/$HOSTNAME` before falling back to the platform alias -- when two NixOS hosts diverge (e.g., GPU config, laptop vs desktop), create `contexts/<hostname>/` and the alias is bypassed automatically.
 
 ### Packages (UC-1, UC-2, UC-3)
 

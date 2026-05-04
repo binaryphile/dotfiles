@@ -829,7 +829,7 @@ stashCloneAndLinkTask() {
   }
   cmd stashClone
 
-  git -C ~/projects/"$dir" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  git -C ~/projects/"$dir" rev-parse --git-dir >/dev/null 2>&1 || { echo "[skip]    not a git repo: ~/projects/$dir"; return 0; }
   try task.GitUpdate ~/projects/$dir
 }
 
@@ -1290,8 +1290,15 @@ map() {
 
 ## globals
 
+# Injectable dependencies -- lowercase globals, defaulting to real commands.
+# Tests override via bash dynamic scoping (local curl=mock in test function).
+# Not readonly: the test seam requires mutability.
 curl=${curl:-curl}
-sha256sum=${sha256sum:-sha256sum}
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum=${sha256sum:-sha256sum}
+else
+  sha256sum=${sha256sum:-"shasum -a 256"}
+fi
 ssh=${ssh:-ssh}
 ssh_add=${ssh_add:-ssh-add}
 ssh_keygen=${ssh_keygen:-ssh-keygen}
@@ -1312,8 +1319,8 @@ OpVault=Private
 # Fix in task.bash: use explicit -m flag as a separate arg.
 
 # Pinned to the same rev as bash-tools.nix taskBash. Update both together.
-TaskBashBootstrapRev=30669975b005e5669367314f343bf741b2e469d4
-TaskBashBootstrapSha256=b76b515fecdd06fb86f22180889d2882732c958bb31593fe12706470108a8b9b
+TaskBashBootstrapRev=655e7e6e60a7c3156b723f3a4167bc9b0e9c432e
+TaskBashBootstrapSha256=d02127de04c26f2cd57140aa741d5b28575595ae5cf188b27f0575c1f3d36af1
 
 if [[ -n ${TASK_BASH_LIB:-} ]]; then
   [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB >&2; exit 1; }

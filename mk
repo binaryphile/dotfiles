@@ -7,7 +7,8 @@ Usage:
 
   $Prog [OPTIONS] [--] COMMAND
 
-  bump-task-bash  update task.bash pin (flake lock + bootstrap rev/hash)
+  bump-task-bash  update task.bash pin (flake lock + bootstrap rev/hash + bash-tools.nix)
+                  After: commit dotfiles, then 'cd ~/nixos-config && mk update-dotfiles'
 
   Options:
 
