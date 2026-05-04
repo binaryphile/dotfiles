@@ -411,7 +411,7 @@ stage2() {
   try scaffoldTask ~/projects/cloud-services
 
   section dal
-  try stashCloneAndLinkTask accelerated-linux dal acl
+  try stashCloneAndLinkTask accelerated-linux dal acl master
   try scaffoldTask ~/projects/dal
   try gitExcludeTask ~/projects/dal /obsidian
 
