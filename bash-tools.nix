@@ -13,8 +13,8 @@
 { pkgs
 , task-bash-src ? pkgs.fetchFromGitHub {
     owner = "binaryphile"; repo = "task.bash";
-    rev = "fa9bd4a56662652598aa44a0532646fecfa09730";
-    hash = "sha256-Y2nS1NBbkdEwCOtQ7qB7Jhnh2cqbP84ipoKjL6jOQ7A=";
+    rev = "30669975b005e5669367314f343bf741b2e469d4";
+    hash = "sha256-kRd4u2j7nzc3e6934dDotMSCwep5veqC2uBPL4IHRA8=";
   }
 , mk-bash-src ? pkgs.fetchFromGitHub {
     owner = "binaryphile"; repo = "mk.bash";

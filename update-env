@@ -702,8 +702,8 @@ claudeBaseCopyTask() {
 
   claudeBaseCopy() {
     mkdir -p $(dirname $dst)
-    rm -f $dst
-    cp $src $dst
+    local tmp
+    tmp=$(mktemp) && cp $src "$tmp" && mv -f "$tmp" $dst
   }
   cmd claudeBaseCopy
 }
@@ -829,7 +829,7 @@ stashCloneAndLinkTask() {
   }
   cmd stashClone
 
-  [[ -d ~/projects/$dir/.git ]] || return 0
+  git -C ~/projects/"$dir" rev-parse --git-dir >/dev/null 2>&1 || return 0
   try task.GitUpdate ~/projects/$dir
 }
 
@@ -1312,8 +1312,8 @@ OpVault=Private
 # Fix in task.bash: use explicit -m flag as a separate arg.
 
 # Pinned to the same rev as bash-tools.nix taskBash. Update both together.
-TaskBashBootstrapRev=fa9bd4a56662652598aa44a0532646fecfa09730
-TaskBashBootstrapSha256=325d0d8cc0984c6664e9f0fe5575f4abc32d2f1ce7c72cf3c7d7a7c23bcd36e4
+TaskBashBootstrapRev=30669975b005e5669367314f343bf741b2e469d4
+TaskBashBootstrapSha256=b76b515fecdd06fb86f22180889d2882732c958bb31593fe12706470108a8b9b
 
 if [[ -n ${TASK_BASH_LIB:-} ]]; then
   [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB >&2; exit 1; }
