@@ -99,7 +99,7 @@ Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual 
 - **Phase** -- legacy label in `update-env` box comments (PHASE 1-7). Numbering does not map 1:1 to steps. Docs use "step" for the canonical sequence.
 - **Section** -- progress marker emitted by `section <name>` calls in `update-env`; typically sub-step granularity (e.g. one `section` per repo clone within a step).
 
-All public repo clones use HTTPS for the initial `task.GitClone` (before SSH keys exist), then migrate to SSH for both fetch and push on every run. Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git pull --rebase --autostash` so repos with uncommitted local changes are updated without losing work.
+All public repo clones use HTTPS for the initial `task.GitClone` (before SSH keys exist), then migrate to SSH for both fetch and push on every run. Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git pull --rebase --autostash` so repos with uncommitted local changes are updated without losing work. `task.GitUpdate` also skips repos with unpushed commits to prevent `pull --rebase` from silently dropping local work. `stashCloneAndLinkTask` guards `GitUpdate` with `[[ -d .git ]] || return 0` so non-git directories (e.g., a repo that failed to clone because VPN was down) are silently skipped instead of erroring.
 
 Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> desktop (fallback). `platform` is injectable via the standard DI pattern (lowercase function variable, defaults to `detectPlatform` via `${platform:-detectPlatform}`, overridable by `local` in tests). At startup, `main` validates that `contexts/$Platform` exists for any platform with the `hm` group -- fatal if missing, since both the context symlink and home-manager switch depend on it. `platformTaskGroups` is a pure decision function mapping platform to the set of task groups both stages should run (apt, hostname, gpoc, nix, hm, credential). All platforms with home-manager flake configs (crostini, debian, desktop, macos) get the `hm` group. `contexts/debian` is a symlink to `crostini`, matching the flake alias. Tested purely without mocking stage internals. For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
 
@@ -247,12 +247,12 @@ Each platform context can override `home.nix`, `gitconfig`, `tmux.conf`, and oth
 
 The home-manager import chain:
 - `contexts/macos/home.nix` -> `shared.nix`
-- `contexts/linux/home.nix` -> `linux-base.nix` -> `shared.nix`
+- `contexts/desktop/home.nix` -> `linux-base.nix` -> `shared.nix`
 - `contexts/crostini/home.nix` -> `linux-base.nix` -> `shared.nix`
 
-`linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `linux/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
+`linux-base.nix` exists because Linux and Crostini share substantial config that doesn't apply to macOS: notify-send-bridge (depends on libnotify), calendar/khal-notify systemd units, and the dotfile symlink set. Before this layer was extracted, both `desktop/home.nix` and `crostini/home.nix` had ~80 lines of duplicated config that drifted over time.
 
-gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses gpoc installed via apt (avoiding the multi-minute Rust build from the upstream flake), NixOS and standalone linux use the `globalprotect-openconnect` flake input (pure evaluation -- provided by `nixos-config/flake.nix` on NixOS, by `dotfiles/flake.nix` on standalone). Each platform builds a `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `linux/home.nix` respectively). On Crostini, `gpclient` is referenced at `/usr/bin/gpclient`.
+gpoc/vpn-connect don't live in `linux-base.nix` because the gpoc source differs per platform: Crostini uses gpoc installed via apt (avoiding the multi-minute Rust build from the upstream flake), NixOS and standalone linux use the `globalprotect-openconnect` flake input (pure evaluation -- provided by `nixos-config/flake.nix` on NixOS, by `dotfiles/flake.nix` on standalone). Each platform builds a `vpn-connect` wrapper via `mkScriptBin` in its own context (`crostini/home.nix` and `desktop/home.nix` respectively). On Crostini, `gpclient` is referenced at `/usr/bin/gpclient`.
 
 Machine-specific contexts (e.g., `calumny`) symlink most files to their platform context (e.g., `../nixos/home.nix`) and add machine-specific config. This keeps platform config shared while allowing per-machine overrides.
 
@@ -478,7 +478,7 @@ Work calendar synced from OWA via published ICS URL. Three components:
 
 **khal-notify** (`scripts/khal-notify`) runs every 5 minutes via systemd timer, checks for events starting in 60, 30, 10, or 5 minutes and sends desktop notifications via `notify-send`. Phone push happens transparently because the `notify-send` binary on PATH is the wrapper from UC-9 -- khal-notify itself has no ntfy code. The 5-minute notification uses critical urgency. A statefile (`~/.local/state/khal-notify/sent`) prevents duplicate notifications, cleaned daily.
 
-Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `services.vdirsyncer`) plus the custom khal-notify systemd unit live in `contexts/linux-base.nix`, imported by both `contexts/linux/home.nix` and `contexts/crostini/home.nix`. The khal-notify ExecStart uses `${config.home.homeDirectory}/dotfiles/scripts/khal-notify`, which works identically on both standalone home-manager (Crostini) and the NixOS home-manager module (linux). The systemd unit's `DBUS_SESSION_BUS_ADDRESS` uses systemd's `%U` specifier for the user UID instead of hardcoding `1000`.
+Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `services.vdirsyncer`) plus the custom khal-notify systemd unit live in `contexts/linux-base.nix`, imported by both `contexts/desktop/home.nix` and `contexts/crostini/home.nix`. The khal-notify ExecStart uses `${config.home.homeDirectory}/dotfiles/scripts/khal-notify`, which works identically on both standalone home-manager (Crostini) and the NixOS home-manager module (linux). The systemd unit's `DBUS_SESSION_BUS_ADDRESS` uses systemd's `%U` specifier for the user UID instead of hardcoding `1000`.
 
 ### Relationship to nixos-config
 
