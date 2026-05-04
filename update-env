@@ -829,7 +829,7 @@ stashCloneAndLinkTask() {
   }
   cmd stashClone
 
-  try task.GitUpdate ~/projects/$dir
+  [[ -d ~/projects/$dir/.git ]] && try task.GitUpdate ~/projects/$dir
 }
 
 gitExcludeTask() {
