@@ -387,7 +387,7 @@ stage2() {
   #  +-------------------------------------------------------------+
 
   section urma
-  try stashCloneAndLinkTask urma-next urma
+  try stashCloneAndLinkTask urma-next urma idigi develop
   ProjectDirW=~/projects/urma
   source ~/dotfiles/scripts/scaffold
   try scaffold.MkdirTask ~/projects/urma/bin
@@ -403,11 +403,11 @@ stage2() {
   try writeMcpJsonTask ~/projects/urma
 
   section pepin
-  try stashCloneAndLinkTask pepin
+  try stashCloneAndLinkTask pepin pepin idigi develop
   try scaffoldTask ~/projects/pepin
 
   section cloud-services
-  try stashCloneAndLinkTask cloud-services
+  try stashCloneAndLinkTask cloud-services cloud-services idigi develop
   try scaffoldTask ~/projects/cloud-services
 
   section dal
