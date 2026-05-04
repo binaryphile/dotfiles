@@ -33,7 +33,12 @@ cmd.bump-task-bash() {
   sed -i "s/^TaskBashBootstrapRev=.*/TaskBashBootstrapRev=$rev/" update-env
   sed -i "s/^TaskBashBootstrapSha256=.*/TaskBashBootstrapSha256=$hash/" update-env
 
-  echo "Updated bootstrap pin to $rev"
+  local sriHash
+  sriHash=$(nix hash to-sri --type sha256 "$(nix-prefetch-url --unpack "https://github.com/binaryphile/task.bash/archive/$rev.tar.gz" 2>/dev/null)" 2>/dev/null)
+  [[ -n $sriHash ]] || mk.Fatal 'could not compute SRI hash for bash-tools.nix'
+  sed -i "/owner = \"binaryphile\"; repo = \"task.bash\";/{n;s|rev = \".*\"|rev = \"$rev\"|;n;s|hash = \".*\"|hash = \"$sriHash\"|}" bash-tools.nix
+
+  echo "Updated all task.bash pins to $rev"
 }
 
 ## boilerplate
