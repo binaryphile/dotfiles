@@ -45,7 +45,9 @@ contexts/
   mkScriptBin.nix               # Shared helper: build wrapped script binaries with store-path substitutions
   linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, dotfile symlinks
   desktop/home.nix              # NixOS desktop (imports linux-base.nix); gpoc, vpn-connect via flake input
+  nixos -> desktop              # Platform alias (detectPlatform returns "nixos" on NixOS hosts)
   crostini/home.nix             # Crostini-specific (imports linux-base.nix); vpn-connect (apt gpoc), tinyproxy + PAC for UC-8
+  debian -> crostini            # Platform alias (detectPlatform returns "debian" on standalone Debian)
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
 tmux.conf                       # Context-dependent symlink
