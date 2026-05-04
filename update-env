@@ -698,10 +698,11 @@ claudeBaseCopyTask() {
   local src=${claudeBase_src:-$HOME/dotfiles/claude/CLAUDE.md}
   local dst=${claudeBase_dst:-$HOME/.claude/CLAUDE.md}
   desc 'install base CLAUDE.md'
-  exist $dst
+  ok "[[ -f '$dst' ]] && ! [[ -L '$dst' ]]"
 
   claudeBaseCopy() {
     mkdir -p $(dirname $dst)
+    rm -f $dst
     cp $src $dst
   }
   cmd claudeBaseCopy
@@ -1288,6 +1289,11 @@ map() {
 
 ## globals
 
+curl=${curl:-curl}
+sha256sum=${sha256sum:-sha256sum}
+ssh=${ssh:-ssh}
+ssh_add=${ssh_add:-ssh-add}
+ssh_keygen=${ssh_keygen:-ssh-keygen}
 NL=$'\n'
 
 # 1Password item naming convention. Single source of truth.
