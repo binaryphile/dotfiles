@@ -34,6 +34,7 @@ home.nix                        # Symlink to active context's home.nix
 flake.nix, flake.lock           # Crostini HM configs, lockfile-pinned bash tools, multi-system dev shell (tesht, mk, kcov, wl-clipboard)
 bash-tools.nix                  # Bash dev tool derivations (flake sources or fetchFromGitHub fallback)
 update-env                      # Idempotent deployment script (installs nix, bootstraps shell)
+mk                              # Project mk script (bump-task-bash)
 claude/                         # Claude Code config: settings.json + CLAUDE.md (base + guides, stage 1) + CLAUDE-era.md (era, stage 2)
 bash/
   init.bash                     # Entry point -> .bashrc, .bash_profile, .profile
@@ -43,7 +44,7 @@ bash/
 contexts/
   mkScriptBin.nix               # Shared helper: build wrapped script binaries with store-path substitutions
   linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, dotfile symlinks
-  linux/home.nix                # Linux (NixOS + standalone) (imports linux-base.nix); gpoc, vpn-connect via flake input
+  desktop/home.nix              # NixOS desktop (imports linux-base.nix); gpoc, vpn-connect via flake input
   crostini/home.nix             # Crostini-specific (imports linux-base.nix); vpn-connect (apt gpoc), tinyproxy + PAC for UC-8
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
@@ -62,10 +63,14 @@ docs/                           # use-cases.md, design.md, environment-lifecycle
 
 `update-env` takes a bare machine to fully configured. Bootstrap entry point: `curl -fsSL https://raw.githubusercontent.com/binaryphile/dotfiles/main/update-env | bash -s -- -1 <hostname>`. Lives in `~/dotfiles/update-env`, deployed to `~/.local/bin/`.
 
+**Injectable dependencies:** update-env uses the standard DI pattern for external commands: `curl=${curl:-curl}`, `sha256sum=${sha256sum:-sha256sum}`, `ssh=${ssh:-ssh}`, `ssh_add=${ssh_add:-ssh-add}`, `ssh_keygen=${ssh_keygen:-ssh-keygen}`. Defaults resolve to the bare command name; tests can override via bash dynamic scoping.
+
 **Bootstrap dependencies:** update-env requires lib.bash and task.bash before any task runs. Each has its own bootstrap path:
 
 - **lib.bash** is sourced from the local repo (`scripts/lib.bash`) when update-env runs from disk. During curl-pipe bootstrap (`curl ... | bash`), `resolveSourceDir` fails and lib.bash is fetched from GitHub branch tip with no verification -- same trust anchor as the outer curl-pipe.
 - **task.bash** is sourced from the nix store via `TASK_BASH_LIB` when set (after home-manager switch). When `TASK_BASH_LIB` is unset, task.bash is fetched from a pinned GitHub commit and SHA-256 verified before sourcing. This is not limited to bare-machine first run -- it fires on any run where `TASK_BASH_LIB` is absent: after losing the nix profile, or on platforms without home-manager flake configs. The expected hash lives in `update-env` itself (same-repo trust root -- see [Security Model](#security-model) for trust analysis). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store, replacing the bootstrap copy for the remainder of the run.
+
+**Bumping task.bash:** Three pins must be updated together: flake.lock (nix store copy), `TaskBashBootstrapRev` and `TaskBashBootstrapSha256` in update-env (bootstrap copy). `./mk bump-task-bash` automates this -- updates the flake lock, reads the new rev, fetches and hashes the file, and patches update-env.
 
 Two stages:
 
@@ -124,7 +129,7 @@ Config files deployed by update-env or home-manager are read-only at the destina
 
 Home-manager files use `mkOutOfStoreSymlink` where edit-in-place semantics are needed during active development (e.g., bash modules being iterated on). Otherwise, files are deployed as copies or store-path symlinks that prevent direct mutation. The `home.file` blocks with `force: true` (Claude settings, gpgui desktop entry) are cases where a program may overwrite the file and HM restores it on switch.
 
-Files requiring runtime mutation (e.g., CLAUDE.md, which stage 2 appends to) must not be managed by HM's store-copy mechanism -- they are owned by update-env instead (see `claudeBaseCopyTask`).
+Files requiring runtime mutation (e.g., CLAUDE.md, which stage 2 appends to) must not be managed by HM's store-copy mechanism -- they are owned by update-env instead (see `claudeBaseCopyTask`). `claudeBaseCopyTask` uses an `ok` test that rejects symlinks (`[[ -f ]] && ! [[ -L ]]`), so if home-manager has re-created a store symlink at `~/.claude/CLAUDE.md`, the task replaces it with a writable copy.
 
 **Post-install messages** -- `postInstallMessages` prints Crostini-specific setup (PAC URL and ChromeOS proxy instructions) inline. Platform-gated by `case $(platform) in crostini ) ... ;; esac` so other hosts don't see Crostini-specific reminders.
 
