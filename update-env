@@ -292,14 +292,17 @@ stage2() {
   try githubCloneAndLinkTask task.bash
   try scaffoldTask ~/projects/task.bash
   try task.Ln ~/projects/task.bash/task.bash ~/.local/bin/task.bash
+  try obsidianSnippetsTask ~/projects/task.bash/.obsidian/snippets
 
   section fp.bash
   try githubCloneAndLinkTask fp.bash
   try task.Ln ~/projects/fp.bash/fp.bash ~/.local/bin/fp.bash
+  try obsidianSnippetsTask ~/projects/fp.bash/.obsidian/snippets
 
   section mk.bash
   try githubCloneAndLinkTask mk.bash
   try scaffoldTask ~/projects/mk.bash
+  try obsidianSnippetsTask ~/projects/mk.bash/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/mk.bash/bin/node
   try task.Ln nix-wrapper ~/projects/mk.bash/bin/npx
   try task.Ln ~/projects/mk.bash/mk.bash ~/.local/bin/mk.bash
@@ -310,6 +313,7 @@ stage2() {
   try githubCloneAndLinkTask tesht
   try scaffoldTask ~/projects/tesht
   try task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
+  try obsidianSnippetsTask ~/projects/tesht/.obsidian/snippets
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5 (projects): Additional Tools & Projects             |
@@ -334,6 +338,7 @@ stage2() {
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try scaffoldTask ~/projects/jeeves
+  try obsidianSnippetsTask ~/projects/jeeves/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/jeeves/bin/go
   try task.Ln nix-wrapper ~/projects/jeeves/bin/node
   try task.Ln nix-wrapper ~/projects/jeeves/bin/npx
@@ -341,6 +346,7 @@ stage2() {
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
   try scaffoldTask ~/projects/sofdevsim-2026
+  try obsidianSnippetsTask ~/projects/sofdevsim-2026/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/go
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/node
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/npx
@@ -348,6 +354,7 @@ stage2() {
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
   try scaffoldTask ~/projects/binaryphile.github.io
+  try obsidianSnippetsTask ~/projects/binaryphile.github.io/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/ruby
   try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/bundler
   try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/node
@@ -356,6 +363,7 @@ stage2() {
   section tandem-protocol
   try codebergCloneAndLinkTask tandem-protocol
   try scaffoldTask ~/projects/tandem-protocol
+  try obsidianSnippetsTask ~/projects/tandem-protocol/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
   lib.Glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
@@ -365,6 +373,7 @@ stage2() {
   section era
   try codebergCloneAndLinkTask era
   try eraScaffoldTask
+  try obsidianSnippetsTask ~/projects/era/.obsidian/snippets
   try eraBuildTask
   each task.Ln <<'  END'
     ~/projects/era/bin/era           ~/.local/bin/era
@@ -406,6 +415,7 @@ stage2() {
   try task.Ln nix-wrapper ~/projects/urma/bin/uvx
   try urmaFlakeTask
   try gitExcludeTask ~/projects/urma /obsidian
+  try obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
   try gitExcludeTask ~/projects/urma /flake.nix
   try gitExcludeTask ~/projects/urma /flake.lock
   try writeMcpJsonTask ~/projects/urma
@@ -413,15 +423,20 @@ stage2() {
   section pepin
   try stashCloneAndLinkTask pepin pepin idigi develop
   try scaffoldTask ~/projects/pepin
+  try gitExcludeTask ~/projects/pepin /obsidian
+  try obsidianSnippetsTask ~/projects/pepin/obsidian/.obsidian/snippets
 
   section cloud-services
   try stashCloneAndLinkTask cloud-services cloud-services idigi develop
   try scaffoldTask ~/projects/cloud-services
+  try gitExcludeTask ~/projects/cloud-services /obsidian
+  try obsidianSnippetsTask ~/projects/cloud-services/obsidian/.obsidian/snippets
 
   section dal
   try stashCloneAndLinkTask accelerated-linux dal acl master
   try scaffoldTask ~/projects/dal
   try gitExcludeTask ~/projects/dal /obsidian
+  try obsidianSnippetsTask ~/projects/dal/obsidian/.obsidian/snippets
 
   section urma-obsidian
   try stashCloneAndLinkTask urma-obsidian urma/obsidian ~tlilley
@@ -453,6 +468,7 @@ stage2() {
 
   section obsidian
   try bitbucketCloneAndLinkTask tlilley-daily-notes
+  try obsidianSnippetsTask ~/projects/tlilley-daily-notes/.obsidian/snippets
 
   #  +-------------------------------------------------------------+
   #  | PHASE 7: SSH Key Generation (section unique_credential)     |
@@ -536,6 +552,33 @@ scaffoldTask() {
   scaffold.GitExcludeBinTask
   scaffold.EnvrcTask
   scaffold.DirenvAllowTask
+}
+
+# obsidianSnippetsTask deploys shared CSS snippets from dotfiles/obsidian/snippets/
+# to the given .obsidian/snippets/ directory. The parent .obsidian dir need not
+# exist yet -- mkdir -p creates it. Idempotent: skips files already matching.
+obsidianSnippetsTask() {
+  local snippetsDir=$1
+  local srcDir=$HOME/dotfiles/obsidian/snippets
+
+  desc "deploy obsidian snippets to $snippetsDir"
+
+  obsidianSnippetsUpToDate() {
+    local f
+    for f in "$srcDir"/*.css; do
+      [[ -f "$snippetsDir/$(basename "$f")" ]] && diff -q "$f" "$snippetsDir/$(basename "$f")" >/dev/null 2>&1 || return 1
+    done
+  }
+  ok obsidianSnippetsUpToDate
+
+  obsidianSnippetsInstall() {
+    mkdir -p "$snippetsDir"
+    local f
+    for f in "$srcDir"/*.css; do
+      cp "$f" "$snippetsDir/$(basename "$f")"
+    done
+  }
+  cmd obsidianSnippetsInstall
 }
 
 urmaFlakeTask() {

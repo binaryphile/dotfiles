@@ -1,0 +1,12 @@
+.mermaid-source-view, .mermaid svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+@media print {
+  .mermaid svg {
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
