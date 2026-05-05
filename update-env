@@ -324,6 +324,10 @@ stage2() {
   section shellcheck
   try githubCloneAndLinkTask shellcheck master
 
+  section shellcheck-convention-plugin
+  try githubCloneAndLinkTask shellcheck-convention-plugin
+  try scaffoldTask ~/projects/shellcheck-convention-plugin
+
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try scaffoldTask ~/projects/jeeves
