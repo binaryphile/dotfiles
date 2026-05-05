@@ -88,9 +88,10 @@ Two stages:
 5. Re-run home-manager with full config (VPN packages).
 6. Credential setup: Ted unlocks work credential account (1Password). `authPreflight` tests SSH auth to each registry via 1Password SSH agent. No secrets restored to disk -- credentials accessed at runtime via `op-run` (UC-11).
 7. Platform-specific setup (crostini only)
-8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era)
+8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era, shellcheck-convention-plugin)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
-10. Neovim plugins, daily notes
+10. Hardlink all `flake.lock` files to a single canonical copy (`~/projects/era/flake.lock`). Ensures all projects share the same nixpkgs revision. Any project's `nix flake update` updates them all. Idempotency check: verifies all inodes match the canonical.
+11. Neovim plugins, daily notes
 
 Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages. `-c`/`--credential` (Crostini only) runs only the credential section (agent preflight, signing key deployment, secrets, agent config, auth preflight, signing key preflight) without re-running system setup or package installation -- useful when stage 1 completed phases 1-3 but credentials need completion (e.g., interrupted bootstrap, 1Password not yet configured). Requires prior completion of phases 1-3 (nix, home-manager, hostname). `-h`/`--help` prints usage. Hostname positional argument accepted only with `-1` (`update-env -1 calderon`); rejected otherwise.
 
