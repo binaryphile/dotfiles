@@ -313,12 +313,15 @@ stage2() {
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5 (projects): Additional Tools & Projects             |
+  #  |   +-> shellcheck        - ShellCheck fork (dynamic plugins) |
+  #  |   +-> shellcheck-convention-plugin - SC9001-SC9004 plugin   |
   #  |   +-> jeeves            - project guides (bitbucket)        |
   #  |   +-> sofdevsim-2026    - software dev simulation           |
   #  |   +-> blog              - binaryphile.github.io             |
   #  |   +-> tandem-protocol   - Claude slash commands (codeberg)  |
   #  |   +-> era               - semantic memory MCP (codeberg)    |
   #  |       Default branch: main. Cloned and symlinked.           |
+  #  |   +-> flake-locks       - hardlink all flake.lock files     |
   #  +-------------------------------------------------------------+
 
   section shellcheck

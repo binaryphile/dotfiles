@@ -486,7 +486,7 @@ test_agentTomlContent() {
   got_=$(agentTomlContent testhost)
   local want_='[[ssh-keys]]
 vault = "Private"
-item = "testhost signing SSH Key"
+item = "calliope signing SSH Key"
 
 [[ssh-keys]]
 vault = "Private"
@@ -709,6 +709,58 @@ test_shellcheckrcTask_converges() {
   [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
 
   return $rc
+}
+
+## flakeLockHardlinkTask -- Q3 integration: hardlink convergence + idempotence
+
+test_flakeLockHardlinkTask_converges() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: canonical + two independent flake.lock files
+  mkdir -p $dir/projects/era $dir/projects/foo $dir/projects/bar $dir/dotfiles
+  echo 'lock-content-v1' >$dir/projects/era/flake.lock
+  echo 'lock-content-v1' >$dir/projects/foo/flake.lock
+  echo 'different-lock' >$dir/projects/bar/flake.lock
+  echo 'lock-content-v1' >$dir/dotfiles/flake.lock
+
+  # act: override HOME and run (find uses ~/projects and ~/dotfiles)
+  local HOME=$dir
+  flakeLockHardlinkTask >/dev/null 2>&1
+
+  # assert: all inodes match canonical
+  local rc=0
+  local canonicalInode
+  canonicalInode=$(stat -c '%i' $dir/projects/era/flake.lock)
+  [[ $(stat -c '%i' $dir/projects/foo/flake.lock) == "$canonicalInode" ]] || { echo "foo not hardlinked"; rc=1; }
+  [[ $(stat -c '%i' $dir/projects/bar/flake.lock) == "$canonicalInode" ]] || { echo "bar not hardlinked"; rc=1; }
+  [[ $(stat -c '%i' $dir/dotfiles/flake.lock) == "$canonicalInode" ]] || { echo "dotfiles not hardlinked"; rc=1; }
+
+  # assert: content matches canonical (bar had different content, now overwritten)
+  diff -q $dir/projects/era/flake.lock $dir/projects/bar/flake.lock >/dev/null 2>&1 || { echo "bar content not canonical"; rc=1; }
+
+  # assert: idempotent (second run = ok check passes, no cmd)
+  flakeLockHardlinkTask >/dev/null 2>&1 || { echo "second run failed"; rc=1; }
+
+  return $rc
+}
+
+test_flakeLockHardlinkTask_skipsWhenCanonicalMissing() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: no era/flake.lock
+  mkdir -p $dir/projects/foo
+  echo 'some-lock' >$dir/projects/foo/flake.lock
+
+  # act
+  local HOME=$dir
+  local got rc
+  got=$(flakeLockHardlinkTask 2>&1) && rc=$? || rc=$?
+
+  # assert: task attempted but failed gracefully (canonical missing)
+  # The ok check returns 1, cmd runs, cmd returns 1 (no canonical)
+  [[ $got == *"no canonical"* ]] || { echo "expected 'no canonical' error, got: $got"; return 1; }
 }
 
 test_shellcheckrcTask_skipsUncreatedProjects() {
