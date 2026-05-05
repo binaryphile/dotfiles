@@ -7,6 +7,8 @@ Usage:
 
   $Prog [OPTIONS] [--] COMMAND
 
+  bump-nixpkgs    update era nixpkgs pin (era/flake.lock)
+                  After: run 'update-env -2' to propagate to all flakes
   bump-task-bash  update task.bash pin (flake lock + bootstrap rev/hash + bash-tools.nix)
                   After: commit dotfiles, then 'cd ~/nixos-config && mk update-dotfiles'
 
@@ -18,6 +20,16 @@ Usage:
 END
 
 ## commands
+
+cmd.bump-nixpkgs() {
+  mk.Cue nix flake update --flake ~/projects/era nixpkgs
+
+  local rev
+  rev=$(jq -r '.nodes.nixpkgs.locked.rev' ~/projects/era/flake.lock)
+  [[ -n $rev && $rev != null ]] || mk.Fatal 'could not read rev from era/flake.lock'
+
+  echo "Updated era nixpkgs to $rev. Run 'update-env -2' to propagate to all flakes."
+}
 
 cmd.bump-task-bash() {
   mk.Cue nix flake update task-bash-src
