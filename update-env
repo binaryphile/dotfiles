@@ -429,6 +429,9 @@ stage2() {
   section share
   try stashCloneAndLinkTask share share ~tlilley
 
+  section flake-locks
+  try flakeLockHardlinkTask
+
   #  +-------------------------------------------------------------+
   #  | PHASE 6: Applications & VPN                                 |
   #  |   +-> [crostini/linux] GlobalProtect VPN client             |
@@ -820,6 +823,37 @@ shellcheckrcTask() {
     done
   }
   cmd shellcheckrcDeploy
+}
+
+# Hardlink all flake.lock files to a single canonical copy.
+# Ensures all projects share the same nixpkgs revision.
+# Any project's `nix flake update` updates them all.
+flakeLockHardlinkTask() {
+  desc 'hardlink all flake.lock files'
+
+  flakeLocksAligned() {
+    local canonical=~/projects/era/flake.lock
+    [[ -f $canonical ]] || return 1
+    local canonicalInode
+    canonicalInode=$(stat -c '%i' "$canonical")
+    local f
+    while IFS= read -r f; do
+      [[ $f == "$canonical" ]] && continue
+      [[ $(stat -c '%i' "$f") == "$canonicalInode" ]] || return 1
+    done < <(find ~/projects ~/dotfiles -name flake.lock -type f 2>/dev/null)
+  }
+  ok flakeLocksAligned
+
+  flakeLocksHardlink() {
+    local canonical=~/projects/era/flake.lock
+    [[ -f $canonical ]] || { echo "no canonical flake.lock at $canonical" >&2; return 1; }
+    local f
+    while IFS= read -r f; do
+      [[ $f == "$canonical" ]] && continue
+      ln -f "$canonical" "$f"
+    done < <(find ~/projects ~/dotfiles -name flake.lock -type f 2>/dev/null)
+  }
+  cmd flakeLocksHardlink
 }
 
 writeMcpJsonTask() {
