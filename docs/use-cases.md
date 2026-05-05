@@ -149,7 +149,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   3. Ted unlocks work credential account
   4. System validates SSH auth to each registry
   5. System clones project repos and reports remaining manual steps
-  6. System hardlinks all flake.lock files to a single canonical copy (shared nixpkgs revision)
+  6. System pins all flake.lock files to the same nixpkgs revision (prevents store bloat from divergent pins)
 - **Extensions:**
   - 2a. *NixOS host:* System skips package manager install (already managed by NixOS). Resume step 3.
   - 3a. *Work credential account not enrolled:* Enrollment required (UC-4e). Fail (credential goals not met).

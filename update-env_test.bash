@@ -711,56 +711,67 @@ test_shellcheckrcTask_converges() {
   return $rc
 }
 
-## flakeLockHardlinkTask -- Q3 integration: hardlink convergence + idempotence
+## flakeLockPinTask -- Q3 integration: nixpkgs rev pinning across flakes
+## The cmd calls `nix flake lock` (requires nix + network), so we test the
+## ok-check logic only. Invoke flakeLockPinTask to define inner functions,
+## then test flakeLocksPinned directly.
 
-test_flakeLockHardlinkTask_converges() {
+test_flakeLockPinTask_detectsMismatch() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  # arrange: canonical + two independent flake.lock files
-  mkdir -p $dir/projects/era $dir/projects/foo $dir/projects/bar $dir/dotfiles
-  echo 'lock-content-v1' >$dir/projects/era/flake.lock
-  echo 'lock-content-v1' >$dir/projects/foo/flake.lock
-  echo 'different-lock' >$dir/projects/bar/flake.lock
-  echo 'lock-content-v1' >$dir/dotfiles/flake.lock
+  # arrange: canonical with one rev, project with a different rev
+  mkdir -p $dir/projects/era $dir/projects/foo
+  cat >$dir/projects/era/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+  cat >$dir/projects/foo/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"bbbb"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+  echo '{}' >$dir/projects/foo/flake.nix
 
-  # act: override HOME and run (find uses ~/projects and ~/dotfiles)
+  # act: run task to define inner functions, then test ok-check
   local HOME=$dir
-  flakeLockHardlinkTask >/dev/null 2>&1
-
-  # assert: all inodes match canonical
-  local rc=0
-  local canonicalInode
-  canonicalInode=$(stat -c '%i' $dir/projects/era/flake.lock)
-  [[ $(stat -c '%i' $dir/projects/foo/flake.lock) == "$canonicalInode" ]] || { echo "foo not hardlinked"; rc=1; }
-  [[ $(stat -c '%i' $dir/projects/bar/flake.lock) == "$canonicalInode" ]] || { echo "bar not hardlinked"; rc=1; }
-  [[ $(stat -c '%i' $dir/dotfiles/flake.lock) == "$canonicalInode" ]] || { echo "dotfiles not hardlinked"; rc=1; }
-
-  # assert: content matches canonical (bar had different content, now overwritten)
-  diff -q $dir/projects/era/flake.lock $dir/projects/bar/flake.lock >/dev/null 2>&1 || { echo "bar content not canonical"; rc=1; }
-
-  # assert: idempotent (second run = ok check passes, no cmd)
-  flakeLockHardlinkTask >/dev/null 2>&1 || { echo "second run failed"; rc=1; }
-
-  return $rc
+  flakeLockPinTask >/dev/null 2>&1  # will attempt cmd (nix not available = fails gracefully)
+  flakeLocksPinned && { echo "should have detected mismatch"; return 1; }
+  return 0
 }
 
-test_flakeLockHardlinkTask_skipsWhenCanonicalMissing() {
+test_flakeLockPinTask_passesWhenAligned() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  # arrange: no era/flake.lock
-  mkdir -p $dir/projects/foo
-  echo 'some-lock' >$dir/projects/foo/flake.lock
+  # arrange: same rev everywhere
+  mkdir -p $dir/projects/era $dir/projects/foo
+  cat >$dir/projects/era/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+  cat >$dir/projects/foo/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+  echo '{}' >$dir/projects/foo/flake.nix
 
   # act
   local HOME=$dir
-  local got rc
-  got=$(flakeLockHardlinkTask 2>&1) && rc=$? || rc=$?
+  flakeLockPinTask >/dev/null 2>&1
+  flakeLocksPinned || { echo "should have passed"; return 1; }
+  return 0
+}
 
-  # assert: task attempted but failed gracefully (canonical missing)
-  # The ok check returns 1, cmd runs, cmd returns 1 (no canonical)
-  [[ $got == *"no canonical"* ]] || { echo "expected 'no canonical' error, got: $got"; return 1; }
+test_flakeLockPinTask_skipsWhenCanonicalMissing() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/projects/foo
+  echo '{}' >$dir/projects/foo/flake.nix
+  cat >$dir/projects/foo/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+
+  local HOME=$dir
+  flakeLockPinTask >/dev/null 2>&1
+  flakeLocksPinned && { echo "should fail when canonical missing"; return 1; }
+  return 0
 }
 
 test_shellcheckrcTask_skipsUncreatedProjects() {

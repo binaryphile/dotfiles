@@ -321,7 +321,7 @@ stage2() {
   #  |   +-> tandem-protocol   - Claude slash commands (codeberg)  |
   #  |   +-> era               - semantic memory MCP (codeberg)    |
   #  |       Default branch: main. Cloned and symlinked.           |
-  #  |   +-> flake-locks       - hardlink all flake.lock files     |
+  #  |   +-> flake-locks       - pin all locks to same nixpkgs rev |
   #  +-------------------------------------------------------------+
 
   section shellcheck
@@ -433,7 +433,7 @@ stage2() {
   try stashCloneAndLinkTask share share ~tlilley
 
   section flake-locks
-  try flakeLockHardlinkTask
+  try flakeLockPinTask
 
   #  +-------------------------------------------------------------+
   #  | PHASE 6: Applications & VPN                                 |
@@ -828,35 +828,43 @@ shellcheckrcTask() {
   cmd shellcheckrcDeploy
 }
 
-# Hardlink all flake.lock files to a single canonical copy.
-# Ensures all projects share the same nixpkgs revision.
-# Any project's `nix flake update` updates them all.
-flakeLockHardlinkTask() {
-  desc 'hardlink all flake.lock files'
+# Projects with non-standard flake inputs that can't share the canonical lock.
+# Pin all flake.lock files to the same nixpkgs revision.
+# Uses nix flake lock --override-input to update each lock file's nixpkgs
+# input to the canonical rev (from ~/projects/era/flake.lock).
+# Nix deduplicates store paths automatically when revs match.
+flakeLockPinTask() {
+  desc 'pin all flake.lock nixpkgs to canonical rev'
 
-  flakeLocksAligned() {
+  flakeLocksPinned() {
     local canonical=~/projects/era/flake.lock
     [[ -f $canonical ]] || return 1
-    local canonicalInode
-    canonicalInode=$(stat -c '%i' "$canonical")
-    local f
+    local canonicalRev
+    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$canonical")
+    [[ -n $canonicalRev && $canonicalRev != null ]] || return 1
+    local f rev
     while IFS= read -r f; do
-      [[ $f == "$canonical" ]] && continue
-      [[ $(stat -c '%i' "$f") == "$canonicalInode" ]] || return 1
-    done < <(find ~/projects ~/dotfiles -name flake.lock -type f 2>/dev/null)
+      [[ -f $f/flake.lock ]] || continue
+      rev=$(jq -r '.nodes.nixpkgs.locked.rev // empty' "$f/flake.lock" 2>/dev/null)
+      [[ $rev == "$canonicalRev" ]] || return 1
+    done < <(find ~/projects ~/dotfiles -name flake.nix -exec dirname {} \; 2>/dev/null)
   }
-  ok flakeLocksAligned
+  ok flakeLocksPinned
 
-  flakeLocksHardlink() {
+  flakeLocksPin() {
     local canonical=~/projects/era/flake.lock
     [[ -f $canonical ]] || { echo "no canonical flake.lock at $canonical" >&2; return 1; }
+    local canonicalRev
+    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$canonical")
+    [[ -n $canonicalRev && $canonicalRev != null ]] || { echo "cannot extract nixpkgs rev from canonical" >&2; return 1; }
     local f
     while IFS= read -r f; do
-      [[ $f == "$canonical" ]] && continue
-      ln -f "$canonical" "$f"
-    done < <(find ~/projects ~/dotfiles -name flake.lock -type f 2>/dev/null)
+      [[ -f $f/flake.nix ]] || continue
+      [[ -f $f/flake.lock ]] || continue
+      nix flake lock --override-input nixpkgs "github:NixOS/nixpkgs/$canonicalRev" "$f" 2>/dev/null || true
+    done < <(find ~/projects ~/dotfiles -name flake.nix -exec dirname {} \; 2>/dev/null)
   }
-  cmd flakeLocksHardlink
+  cmd flakeLocksPin
 }
 
 writeMcpJsonTask() {

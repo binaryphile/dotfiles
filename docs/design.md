@@ -90,7 +90,7 @@ Two stages:
 7. Platform-specific setup (crostini only)
 8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era, shellcheck-convention-plugin)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
-10. Hardlink all `flake.lock` files to a single canonical copy (`~/projects/era/flake.lock`). Ensures all projects share the same nixpkgs revision. Any project's `nix flake update` updates them all. Idempotency check: verifies all inodes match the canonical.
+10. Pin all `flake.lock` files to the same nixpkgs revision. Extracts the canonical rev from `~/projects/era/flake.lock`, then runs `nix flake lock --override-input nixpkgs github:NixOS/nixpkgs/REV` on each project. Nix deduplicates store paths automatically when revs match. Idempotency check: extracts nixpkgs rev from each lock via jq, compares to canonical.
 11. Neovim plugins, daily notes
 
 Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages. `-c`/`--credential` (Crostini only) runs only the credential section (agent preflight, signing key deployment, secrets, agent config, auth preflight, signing key preflight) without re-running system setup or package installation -- useful when stage 1 completed phases 1-3 but credentials need completion (e.g., interrupted bootstrap, 1Password not yet configured). Requires prior completion of phases 1-3 (nix, home-manager, hostname). `-h`/`--help` prints usage. Hostname positional argument accepted only with `-1` (`update-env -1 calderon`); rejected otherwise.
