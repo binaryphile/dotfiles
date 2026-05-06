@@ -4,119 +4,113 @@
 # Usage: scaffold <project-dir> [packages...]
 # Default packages: bash coreutils git
 #
-# Can also be sourced as a library.  Set ProjectDirW before calling task functions.
+# Can also be sourced to call individual task functions.
+# Set ProjectDir before calling them.
 
 # Naming Policy:
 #
-# All function and variable names are camelCased.
-#
-# Private function names begin with lowercase letters.
-# Public function names begin with uppercase letters.
-# Function names are prefixed with "scaffold." (always lowercase) so they are namespaced.
-#
-# Local variable names begin with lowercase letters, e.g. localVariable.
-#
-# Global variable names begin with uppercase letters, e.g. GlobalVariable.
-# Since this is a library, global variable names are also namespaced by suffixing them with
-# the randomly-generated letter W, e.g. GlobalVariableW.
-# Global variables are not public.  Library consumers should not be aware of them.
-# If users need to interact with them, create accessor functions for the purpose.
-#
-# Variable declarations that are name references borrow the environment namespace, e.g.
-# "local -n ARRAY=$1".
+# This is a standalone script — no namespace prefix on functions, no suffix on globals.
+# Public function names use PascalCase. Private function names use camelCase.
+# Local variable names begin with lowercase, e.g. localVariable.
+# Global variable names begin with uppercase, e.g. GlobalVariable.
+# Name references borrow the environment namespace, e.g. local -n ARRAY=$1.
 
 main() {
   set -euo pipefail
 
   [[ $# -ge 1 ]] || { echo "usage: scaffold <project-dir> [packages...]" >&2; exit 1; }
 
-  ProjectDirW=$1
+  ProjectDir=$1
   shift
 
   if [[ $# -eq 0 ]]; then
-    PackagesW=(bash coreutils git)
+    Packages=(bash coreutils git)
   else
-    PackagesW=("$@")
+    Packages=("$@")
   fi
 
   section scaffold
-  scaffold.MkdirTask "$ProjectDirW/bin"
-  scaffold.NixWrapperTask
-  scaffold.GitExcludeBinTask
-  task.Ln nix-wrapper "$ProjectDirW/bin/claude"
-  scaffold.EnvrcTask
-  scaffold.DirenvAllowTask
-  scaffold.FlakeNixTask
+  MkdirTask "$ProjectDir/bin"
+  NixWrapperTask
+  GitExcludeBinTask
+  task.Ln nix-wrapper "$ProjectDir/bin/claude"
+  EnvrcTask
+  DirenvAllowTask
+  FlakeNixTask
 
   task.Summarize
 }
 
 ## task definitions
 
-scaffold.MkdirTask() {
+MkdirTask() {
   local dir=$1
   desc  "create $dir"
   exist "$dir"
   cmd   "mkdir -p '$dir'"
 }
 
-scaffold.NixWrapperTask() {
-  local path=$ProjectDirW/bin/nix-wrapper
+NixWrapperTask() {
+  local path=$ProjectDir/bin/nix-wrapper
   desc 'install bin/nix-wrapper'
 
-  scaffold.nixWrapperUpToDate() { [[ -f $path ]] && diff -q "$path" <(scaffold.NixWrapperContent) >/dev/null 2>&1; }
-  ok scaffold.nixWrapperUpToDate
+  # If the file is git-tracked, it's managed by the repo — skip scaffolding.
+  nixWrapperUpToDate() {
+    git -C "$ProjectDir" ls-files --error-unmatch bin/nix-wrapper &>/dev/null ||
+      { [[ -f $path ]] && diff -q "$path" <(NixWrapperContent) >/dev/null 2>&1; }
+  }
+  ok nixWrapperUpToDate
 
-  scaffold.installNixWrapper() {
-    scaffold.NixWrapperContent > "$path"
+  installNixWrapper() {
+    NixWrapperContent > "$path"
     chmod +x "$path"
   }
-  cmd scaffold.installNixWrapper
+  cmd installNixWrapper
 }
 
-scaffold.EnvrcTask() {
-  local path=$ProjectDirW/.envrc
+EnvrcTask() {
+  local path=$ProjectDir/.envrc
   desc 'install .envrc'
 
-  scaffold.envrcUpToDate() { [[ -f $path ]] && diff -q "$path" <(scaffold.EnvrcContent) >/dev/null 2>&1; }
-  ok scaffold.envrcUpToDate
+  envrcUpToDate() { [[ -f $path ]] && diff -q "$path" <(EnvrcContent) >/dev/null 2>&1; }
+  ok envrcUpToDate
 
-  scaffold.installEnvrc() { scaffold.EnvrcContent > "$path"; }
-  cmd scaffold.installEnvrc
+  installEnvrc() { EnvrcContent > "$path"; }
+  cmd installEnvrc
 }
 
-scaffold.GitExcludeBinTask() {
-  local excludeFile=$ProjectDirW/.git/info/exclude
-  desc "git exclude /bin in $ProjectDirW"
-  check "[[ -d '$ProjectDirW/.git' ]]"
-  ok "git -C '$ProjectDirW' ls-files --error-unmatch bin/ &>/dev/null || grep -qxF /bin '$excludeFile' 2>/dev/null"
+GitExcludeBinTask() {
+  local excludeFile=$ProjectDir/.git/info/exclude
+  desc "git exclude /bin in $ProjectDir"
+  check "[[ -d '$ProjectDir/.git' ]]"
+  ok "git -C '$ProjectDir' ls-files --error-unmatch bin/ &>/dev/null || grep -qxF /bin '$excludeFile' 2>/dev/null"
 
   cmd "echo /bin >> '$excludeFile'"
 }
 
-scaffold.DirenvAllowTask() {
-  local path=$ProjectDirW/.envrc
-  desc "direnv allow $ProjectDirW"
-  check "diff -q '$path' <(scaffold.EnvrcContent) >/dev/null 2>&1"
+DirenvAllowTask() {
+  local path=$ProjectDir/.envrc
+  desc "direnv allow $ProjectDir"
+  check "diff -q '$path' <(EnvrcContent) >/dev/null 2>&1"
   ok "grep -rq '$path' ~/.local/share/direnv/allow/ 2>/dev/null"
 
-  cmd "direnv allow '$ProjectDirW'"
+  cmd "direnv allow '$ProjectDir'"
 }
 
-scaffold.FlakeNixTask() {
-  local path=$ProjectDirW/flake.nix
+FlakeNixTask() {
+  local path=$ProjectDir/flake.nix
   desc 'install flake.nix'
 
-  scaffold.flakeUpToDate() { [[ -f $path ]] && diff -q "$path" <(scaffold.FlakeNixContent) >/dev/null 2>&1; }
-  ok scaffold.flakeUpToDate
+  flakeUpToDate() { [[ -f $path ]] && diff -q "$path" <(FlakeNixContent) >/dev/null 2>&1; }
+  ok flakeUpToDate
 
-  scaffold.installFlake() { scaffold.FlakeNixContent > "$path"; }
-  cmd scaffold.installFlake
+  installFlake() { FlakeNixContent > "$path"; }
+  cmd installFlake
 }
 
 ## content generators
 
-scaffold.NixWrapperContent() {
+NixWrapperContent() {
   cat << 'EOF'
 #!/usr/bin/env bash
 # Generic wrapper for running commands inside nix develop.
@@ -159,17 +153,17 @@ main "$@"
 EOF
 }
 
-scaffold.EnvrcContent() {
+EnvrcContent() {
   cat << 'EOF'
 export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
 EOF
 }
 
-scaffold.FlakeNixContent() {
+FlakeNixContent() {
   local pkgList=""
   local pkg
-  for pkg in "${PackagesW[@]}"; do
+  for pkg in "${Packages[@]}"; do
     pkgList+=$'\n'"            $pkg"
   done
 
@@ -204,5 +198,5 @@ FLAKE
 declare -F task.Ln >/dev/null ||
   source "${TASK_BASH_LIB:?task.bash not installed -- run home-manager switch}"
 
-return 2>/dev/null    # stop if sourced, for use as library
+return 2>/dev/null
 main "$@"

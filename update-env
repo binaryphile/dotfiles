@@ -405,11 +405,11 @@ stage2() {
 
   section urma
   try stashCloneAndLinkTask urma-next urma idigi develop
-  ProjectDirW=~/projects/urma
+  ProjectDir=~/projects/urma
   source ~/dotfiles/scripts/scaffold
-  try scaffold.MkdirTask ~/projects/urma/bin
-  try scaffold.NixWrapperTask
-  try scaffold.GitExcludeBinTask
+  try MkdirTask ~/projects/urma/bin
+  try NixWrapperTask
+  try GitExcludeBinTask
   try urmaEnvrcTask
   try urmaDirenvAllowTask
   try task.Ln nix-wrapper ~/projects/urma/bin/uvx
@@ -545,13 +545,13 @@ codebergCloneAndLinkTask() {
 
 scaffoldTask() {
   local dir=$1
-  ProjectDirW=$dir
+  ProjectDir=$dir
   source ~/dotfiles/scripts/scaffold
-  scaffold.MkdirTask $dir/bin
-  scaffold.NixWrapperTask
-  scaffold.GitExcludeBinTask
-  scaffold.EnvrcTask
-  scaffold.DirenvAllowTask
+  MkdirTask $dir/bin
+  NixWrapperTask
+  GitExcludeBinTask
+  EnvrcTask
+  DirenvAllowTask
 }
 
 # obsidianSnippetsTask deploys shared CSS snippets from dotfiles/obsidian/snippets/
