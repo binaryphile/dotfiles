@@ -34,7 +34,7 @@ home.nix                        # Symlink to active context's home.nix
 flake.nix, flake.lock           # Crostini HM configs, lockfile-pinned bash tools, multi-system dev shell (tesht, mk, kcov, wl-clipboard)
 bash-tools.nix                  # Bash dev tool derivations (flake sources or fetchFromGitHub fallback)
 update-env                      # Idempotent deployment script (installs nix, bootstraps shell)
-mk                              # Project mk script (bump-task-bash)
+mk                              # Project mk script (bump-nixpkgs, bump-task-bash)
 claude/                         # Claude Code config: settings.json + CLAUDE.md (base + guides, stage 1) + CLAUDE-era.md (era, stage 2)
 bash/
   init.bash                     # Entry point -> .bashrc, .bash_profile, .profile
@@ -72,6 +72,8 @@ docs/                           # use-cases.md, design.md, environment-lifecycle
 - **lib.bash** is sourced from the local repo (`scripts/lib.bash`) when update-env runs from disk. During curl-pipe bootstrap (`curl ... | bash`), `resolveSourceDir` fails and lib.bash is fetched from GitHub branch tip with no verification -- same trust anchor as the outer curl-pipe.
 - **task.bash** is sourced from the nix store via `TASK_BASH_LIB` when set (after home-manager switch). When `TASK_BASH_LIB` is unset, task.bash is fetched from a pinned GitHub commit and SHA-256 verified before sourcing. This is not limited to bare-machine first run -- it fires on any run where `TASK_BASH_LIB` is absent: after losing the nix profile, or on platforms without home-manager flake configs. The expected hash lives in `update-env` itself (same-repo trust root -- see [Security Model](#security-model) for trust analysis). After home-manager switch, `convergeTaskBash` re-sources task.bash from the nix store, replacing the bootstrap copy for the remainder of the run.
 
+**Bumping nixpkgs:** `./mk bump-nixpkgs` updates `~/projects/era/flake.lock` to the latest nixpkgs commit. After running it, `update-env -2` propagates the new rev to all managed project flake.lock files (see step 10 below).
+
 **Bumping task.bash:** Three pins must be updated together: flake.lock (nix store copy), `TaskBashBootstrapRev` and `TaskBashBootstrapSha256` in update-env (bootstrap copy). `./mk bump-task-bash` automates this -- updates the flake lock, reads the new rev, fetches and hashes the file, and patches update-env.
 
 Two stages:
@@ -90,7 +92,7 @@ Two stages:
 7. Platform-specific setup (crostini only)
 8. Clone and link remaining dev tools (jeeves, sofdevsim-2026, blog, tandem-protocol, era, shellcheck-convention-plugin)
 9. Work projects (VPN-dependent, graceful failure via `try` + `ConnectTimeout`)
-10. Pin all `flake.lock` files to the same nixpkgs revision. Extracts the canonical rev from `~/projects/era/flake.lock`, then runs `nix flake lock --override-input nixpkgs github:NixOS/nixpkgs/REV` on each project. Nix deduplicates store paths automatically when revs match. Idempotency check: extracts nixpkgs rev from each lock via jq, compares to canonical.
+10. Pin all `flake.lock` files to the same nixpkgs revision. The canonical rev lives in `~/projects/era/flake.lock`. `flakeManagedDirs` selects candidate dirs by finding all `flake.nix` files under `~/projects` and `~/dotfiles` (excluding `.git/`, `node_modules/`, `vendor/`), then filtering to those where `git ls-files --error-unmatch flake.nix` succeeds -- the same check nix itself uses to decide if a flake is usable. This naturally excludes repos whose `flake.nix` is git-excluded (e.g., urma: local-only, must not reach origin). For each managed dir, `flakeLocksPin` copies the canonical nixpkgs `locked` node from era's lock file directly into the target lock file via jq. Note: `nix flake lock --override-input` was evaluated but implies `--no-write-lock-file` and never writes anything; direct jq manipulation is used instead. Nix deduplicates store paths automatically when revs match. Idempotency check: extracts nixpkgs rev from each managed lock via jq, compares to canonical.
 11. Neovim plugins, daily notes
 
 Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual stages. `-c`/`--credential` (Crostini only) runs only the credential section (agent preflight, signing key deployment, secrets, agent config, auth preflight, signing key preflight) without re-running system setup or package installation -- useful when stage 1 completed phases 1-3 but credentials need completion (e.g., interrupted bootstrap, 1Password not yet configured). Requires prior completion of phases 1-3 (nix, home-manager, hostname). `-h`/`--help` prints usage. Hostname positional argument accepted only with `-1` (`update-env -1 calderon`); rejected otherwise.

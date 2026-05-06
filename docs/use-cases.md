@@ -38,6 +38,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 | Ted | Get phone push notifications from desktop tools | UC-9 | User goal |
 | Ted | See ambient system/service health in tmux status bar | UC-10 | User goal |
 | Ted | Use a tool that requires work credentials | UC-11 | Subfunction |
+| Ted | Update all development environments to a newer package revision | UC-12 | User goal |
 
 ---
 
@@ -149,10 +150,10 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   3. Ted unlocks work credential account
   4. System validates SSH auth to each registry
   5. System clones project repos and reports remaining manual steps
-  6. System pins all flake.lock files to the same nixpkgs revision (prevents store bloat from divergent pins)
+  6. System converges all development environments to a common package revision
 - **Extensions:**
   - 2a. *NixOS host:* System skips package manager install (already managed by NixOS). Resume step 3.
-  - 3a. *Work credential account not enrolled:* Enrollment required (UC-4e). Fail (credential goals not met).
+  - 3a. *Work credential account not enrolled:* Machine has not completed UC-4e. Fail (credential goals not met).
   - 3b. *Credential account unavailable:* Credential setup skipped; HTTPS clones still work; credential-dependent repos skipped. Fail (credential goals not met).
   - 4a. *Provider auth fails:* Reports per provider; private repos skipped. Fail (partial deployment).
   - 5a. *VPN-dependent repo unreachable:* Skips that repo. Resume at next repo.
@@ -468,42 +469,37 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 ### UC-11: Use a Credentialed Tool
 
 - **Primary Actor:** Ted
-- **Goal:** Tools that need work credentials start successfully with scope-verified access
-- **Scope:** Per-project tool configuration
-- **Level:** Subfunction (supports UC-1)
-- **Secondary Actors:** Work credential account (1Password desktop app)
+- **Goal:** Tools that need work credentials start successfully
 - **Trigger:** Ted starts a tool that requires credentials (e.g., Claude Code with MCP servers)
-- **Preconditions:** Work credential account unlocked (nixos-config UC-1d or equivalent); credential items exist in the project's vault
+- **Postcondition:** Tool running with declared credentials in its process environment
+
+Architecture, threat model, and operational procedures documented in the 1Password-stored canonical doc set (security.md, threat-model.md, secrets-lifecycle.md).
+
+---
+
+### UC-12: Update Development Package Revision
+
+- **Primary Actor:** Ted
+- **Goal:** All development environments updated to a newer package revision
+- **Scope:** Dotfiles environment (all hosts)
+- **Level:** User goal
+- **Trigger:** Ted decides to update to a newer package baseline (security fixes, new tools, drift correction)
+- **Preconditions:** UC-4 completed; era project cloned and canonical lock file present
 - **Stakeholders:**
-  - Ted -- tools connect to services after one unlock; no per-tool credential entry
-  - Ted (security-conscious) -- tool accesses only the credentials it was declared to need; vault visibility bounded per machine; credentials never on disk
+  - Ted -- newer packages available on all machines with a single operation
+  - Ted (security-conscious) -- all environments share the same revision; no machine silently lags behind
 - **Main Success Scenario:**
-  1. Ted starts a tool that needs credentials
-  2. System verifies visible vaults match this machine's declared allowlist
-  3. System verifies the project's required vault is accessible
-  4. System retrieves credentials from the project vault
-  5. Tool starts and operates with credentials
+  1. Ted updates the canonical package revision
+  2. System records the new revision in the canonical lock file
+  3. Ted propagates the update across all machines
+  4. System updates all development environment lock files to the new revision
 - **Extensions:**
-  - 2a. *Credential account not running:*
-    Clear error. Fail.
-  - 2b. *Credential account locked:*
-    Ted prompted to unlock. Resume step 2. If dismissed: fail.
-  - 2c. *Visible vaults do not match machine allowlist:*
-    Clear error naming the extra or missing vaults. Fail (scope violation).
-  - 2d. *No machine allowlist declared:*
-    Fail (no allowlist = no access).
-  - 3a. *Project's required vault not accessible:*
-    Clear error naming the missing vault. Fail.
-  - 3b. *No project vault requirement declared:*
-    Fail (no declaration = no access).
-  - 4a. *Credential not found in vault:*
-    Clear error naming the missing credential. Fail.
-  - 5a. *Tool fails to start:*
-    Credentials not leaked. Fail.
-- **Minimal Guarantee:** No credentials on disk. Scope violations block credential access entirely -- never fail open.
-- **Success Guarantee:** Tool running with declared credentials; scope verified; credentials not on disk.
-- **Special Requirement:** No failure path may leave credentials on disk or in the parent shell environment.
-- **Technology:** 1Password Python SDK, `op-run` launcher. Two-level allowlist: machine allowlist (union of all project vaults this machine needs, in dotfiles/machine config) and project allowlist (vaults this project needs, in the project repo). See [design.md: Credential Architecture](design.md#credential-architecture-uc-4-uc-4a-e-uc-11).
+  - 1a. *Canonical lock file absent:* Era project not cloned. Fail.
+  - 4a. *A development environment's lock file is not git-tracked:* System skips that environment. Resume at next environment.
+  - 4b. *Propagation fails on one environment:* System reports the failure. Fail.
+- **Minimal Guarantee:** Canonical lock file updated; no environment partially updated.
+- **Success Guarantee:** All managed development environments share the new package revision.
+- **Technology:** `./mk bump-nixpkgs` (updates era/flake.lock), `update-env -2` (propagates to all managed flake.lock files). See [design.md Deployment step 10](design.md#deployment-uc-4).
 
 ---
 
@@ -527,3 +523,4 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
 | UC-11 Use a Credentialed Tool | Not started | Blocked on nixos-config UC-1d + vault policy setup |
+| UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2; urma excluded (git-excluded flake.nix) |
