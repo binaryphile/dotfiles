@@ -66,7 +66,7 @@ in {
 
   programs.firefox = {
     enable = true;
-    configPath = ".mozilla/firefox";  # silence stateVersion < 26.05 warning; keep legacy path
+    configPath = ".config/mozilla/firefox";
     policies = {
       EncryptedMediaExtensions = {
         Enabled = false;
