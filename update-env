@@ -377,13 +377,14 @@ stage2() {
   try eraBuildTask
   each task.Ln <<'  END'
     ~/projects/era/bin/era           ~/.local/bin/era
+    ~/projects/era/bin/era-serve     ~/.local/bin/era-serve
     ~/projects/era/bin/era-hook      ~/.local/bin/era-hook
-    ~/projects/era/scripts/evtctl                ~/.local/bin/evtctl
-    ~/projects/era/scripts/task-audit             ~/.local/bin/task-audit
-    ~/projects/era/scripts/validate-attestation   ~/.local/bin/validate-attestation
+    ~/projects/era/bin/evtctl                ~/.local/bin/evtctl
+    ~/projects/era/bin/task-audit             ~/.local/bin/task-audit
+    ~/projects/era/bin/validate-attestation   ~/.local/bin/validate-attestation
   END
   try eraMcpCleanupTask
-  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era-serve.service
+  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era.service
   try eraSystemdEnableTask
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
@@ -695,9 +696,9 @@ eraMcpCleanupTask() {
 }
 
 eraSystemdEnableTask() {
-  desc  'enable era-serve systemd service'
-  ok    'systemctl --user is-enabled era-serve &>/dev/null'
-  cmd   'systemctl --user enable --now era-serve'
+  desc  'enable era systemd service'
+  ok    'systemctl --user is-enabled era &>/dev/null'
+  cmd   'systemctl --user enable --now era'
 }
 
 
@@ -973,7 +974,7 @@ stashCloneAndLinkTask() {
       stash=$(mktemp -d "${dest}.XXXXXX")
       rmdir "$stash"
       mv "$dest" "$stash"
-      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest" || {
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest" || {
         rm -rf "$dest"
         mv "$stash" "$dest"
         return 1
@@ -981,7 +982,7 @@ stashCloneAndLinkTask() {
       cp -a "$stash/." "$dest/"
       rm -rf "$stash"
     else
-      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest"
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest"
     fi
   }
   cmd stashClone
