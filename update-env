@@ -787,20 +787,20 @@ claudeEraConfigTask() {
 }
 
 # claudeTandemConfigTask appends the Tandem Protocol reference to CLAUDE.md
-# when tandem-protocol is cloned. Conditional on ~/tandem-protocol/README.md.
+# when tandem-protocol is cloned. Conditional on ~/projects/tandem-protocol/README.md.
 claudeTandemConfigTask() {
   local base=${claudeTandem_base:-$HOME/.claude/CLAUDE.md}
-  local src=${claudeTandem_src:-$HOME/tandem-protocol/README.md}
+  local src=${claudeTandem_src:-$HOME/projects/tandem-protocol/README.md}
   desc 'append tandem-protocol to ~/.claude/CLAUDE.md'
   check "[[ -f $src ]] && [[ -f $base ]]"
 
   claudeTandemUpToDate() {
-    [[ -f $base ]] && grep -qF '@~/tandem-protocol/README.md' "$base"
+    [[ -f $base ]] && grep -qF '@~/projects/tandem-protocol/README.md' "$base"
   }
   ok claudeTandemUpToDate
 
   claudeTandemAppend() {
-    printf '\n# Tandem Protocol\n@~/tandem-protocol/README.md\n' >>"$base"
+    printf '\n# Tandem Protocol\n@~/projects/tandem-protocol/README.md\n' >>"$base"
   }
   cmd claudeTandemAppend
 }
