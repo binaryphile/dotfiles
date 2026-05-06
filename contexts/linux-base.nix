@@ -75,9 +75,9 @@ in
   # #(panel ...) status commands resolve the new nix store path. Without
   # this, tmux keeps the stale PATH from when the server started and panel
   # never picks up rebuilt derivations.
-  home.activation.updateTmuxPath = config.lib.dag.entryAfter [ "linkGeneration" ] ''
+  home.activation.updateTmuxPath = config.lib.dag.entryAfter [ "installPackages" ] ''
     if command -v tmux >/dev/null 2>&1 && tmux has-session 2>/dev/null; then
-      tmux set-environment -g PATH "$PATH"
+      tmux set-environment -g PATH "${config.home.profileDirectory}/bin:$PATH" || true
     fi
   '';
 
