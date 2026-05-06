@@ -76,8 +76,8 @@ in
   # this, tmux keeps the stale PATH from when the server started and panel
   # never picks up rebuilt derivations.
   home.activation.updateTmuxPath = config.lib.dag.entryAfter [ "installPackages" ] ''
-    if command -v tmux >/dev/null 2>&1 && tmux has-session 2>/dev/null; then
-      tmux set-environment -g PATH "${config.home.profileDirectory}/bin:$PATH" || true
+    if ${pkgs.tmux}/bin/tmux has-session 2>/dev/null; then
+      ${pkgs.tmux}/bin/tmux set-environment -g PATH "${panel}/bin:$PATH" || true
     fi
   '';
 
