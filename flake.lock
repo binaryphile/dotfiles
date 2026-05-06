@@ -167,11 +167,11 @@
     },
     "nixpkgs_4": {
       "locked": {
-        "lastModified": 1778036283,
-        "narHash": "sha256-62EWg6lI0qyzm7oAx5cAnGkLutvJsRBe0KkEW2JDZCE=",
+        "lastModified": 1777826146,
+        "narHash": "sha256-wQ/iN5Zp5VIa3ebBibijPnLyKhor+xEbDy4d0goa9Zs=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "ed67bc86e84e51d4a88e73c7fd36006dc876476f",
+        "rev": "73c703c22422b8951895a960959dbbaca7296492",
         "type": "github"
       },
       "original": {
@@ -244,11 +244,11 @@
     "task-bash-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1778100472,
-        "narHash": "sha256-+0IWt+0KZFKhb+SkJev3eMPD526A9VWbZvzv8k0w3Dg=",
+        "lastModified": 1778106903,
+        "narHash": "sha256-m1uQRWzTxKsNjGb62FPPydSStMgiB6jhJrM3rPseZVU=",
         "owner": "binaryphile",
         "repo": "task.bash",
-        "rev": "38c5ad2d33765160e9f1c505a912d80c5f26b9c2",
+        "rev": "bbb71540fc10f700723137b5add8f5a2a7de2051",
         "type": "github"
       },
       "original": {
