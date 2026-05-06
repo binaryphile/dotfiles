@@ -383,7 +383,7 @@ stage2() {
     ~/projects/era/scripts/validate-attestation   ~/.local/bin/validate-attestation
   END
   try eraMcpCleanupTask
-  try task.Install 644 ~/projects/era/era-serve.service ~/.config/systemd/user/era-serve.service
+  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era-serve.service
   try eraSystemdEnableTask
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
