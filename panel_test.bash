@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Tests for scripts/panel batModule.
+# Tests for scripts/panel.
 #
 # Covers:
+#   eraProbe  -- era service probe: correct service name
 #   batModule -- battery widget: sysfs detection, capacity threshold,
 #                charge/energy fallback, negative/zero guards.
 #
@@ -30,6 +31,50 @@ mkBatDir() {
 # stripFmt removes tmux format codes from output for clean assertions.
 stripFmt() { sed 's/#\[[^]]*\]//g'; }
 
+
+## eraProbe
+
+test_eraProbe() {
+  local -A case1=(
+    [name]='returns on when era service is active'
+    [mockRc]=0
+    [want]=on
+  )
+
+  local -A case2=(
+    [name]='returns off when era service is inactive'
+    [mockRc]=3
+    [want]=off
+  )
+
+  local -A case3=(
+    [name]='passes era as service name'
+    [mockRc]=0
+    [want]='--user is-active --quiet era'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    # Mock must be exported for subshell visibility in $(eraProbe).
+    # Use space-join (IFS override) since IFS=$'\n' would newline-separate args.
+    systemctl() { IFS=' ' eval 'echo "$*"' >&2; return "$mockRc"; }
+    export -f systemctl
+    export mockRc
+
+    local got args
+    args=$(eraProbe 2>&1 >/dev/null)
+    got=$(eraProbe 2>/dev/null)
+
+    # case3 asserts the systemctl args; others assert the return value.
+    [[ $name == 'passes era as service name' ]] && got=$args
+
+    tesht.AssertGot "$got" "$want"
+  }
+
+  tesht.Run "${!case@}"
+}
 
 ## batModule
 
