@@ -876,26 +876,18 @@ shellcheckrcTask() {
 # Uses nix flake lock --override-input to update each lock file's nixpkgs
 # input to the canonical rev (from ~/projects/era/flake.lock).
 # Nix deduplicates store paths automatically when revs match.
-# flakeLocalOnlyDirs -- projects whose flake.nix is intentionally excluded from
-# git (local-only dev infrastructure that must never reach origin). These dirs
-# are skipped by both the ok-check and the pin action.
-flakeLocalOnlyDirs() {
-  echo "$HOME/projects/urma"
-}
-
 flakeLockPinTask() {
   desc 'pin all flake.lock nixpkgs to canonical rev'
 
-  # flakeManagedDirs emits dirs that have both flake.nix and flake.lock and are
-  # not in the local-only skip list. find is scoped to avoid .git dirs,
-  # node_modules, and other non-project trees.
+  # flakeManagedDirs emits dirs that have both flake.nix and flake.lock, where
+  # flake.nix is tracked by git (the same check nix uses). Untracked flake.nix
+  # files (e.g. urma: local-only, git-excluded) are naturally skipped.
+  # find is scoped to avoid .git dirs, node_modules, and vendor trees.
   flakeManagedDirs() {
-    local skipList
-    skipList=$(flakeLocalOnlyDirs)
     local f
     while IFS= read -r f; do
       [[ -f $f/flake.lock ]] || continue
-      echo "$skipList" | grep -qxF "$f" && continue
+      git -C "$f" ls-files --error-unmatch flake.nix &>/dev/null || continue
       echo "$f"
     done < <(find ~/projects ~/dotfiles \
       -not -path '*/.git/*' \
@@ -918,18 +910,25 @@ flakeLockPinTask() {
   }
   ok flakeLocksPinned
 
+  # flakeLocksPin copies the canonical nixpkgs locked entry from era/flake.lock
+  # directly into each managed project's flake.lock via jq. This avoids
+  # nix flake lock --override-input, which implies --no-write-lock-file and
+  # therefore never actually writes anything.
   flakeLocksPin() {
     local canonical=~/projects/era/flake.lock
     [[ -f $canonical ]] || { echo "no canonical flake.lock at $canonical" >&2; return 1; }
-    local canonicalRev
-    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$canonical")
-    [[ -n $canonicalRev && $canonicalRev != null ]] || { echo "cannot extract nixpkgs rev from canonical" >&2; return 1; }
-    local f
+    local canonicalNode
+    canonicalNode=$(jq '.nodes.nixpkgs.locked' "$canonical")
+    [[ -n $canonicalNode && $canonicalNode != null ]] || { echo "cannot extract nixpkgs locked node from canonical" >&2; return 1; }
+    local f tmp
     while IFS= read -r f; do
-      nix flake lock --override-input nixpkgs "github:NixOS/nixpkgs/$canonicalRev" "$f" || {
-        echo "error: failed to pin nixpkgs in $f" >&2
+      tmp=$(mktemp) || { echo "error: cannot create temp file" >&2; return 1; }
+      jq --argjson node "$canonicalNode" '.nodes.nixpkgs.locked = $node' "$f/flake.lock" >"$tmp" || {
+        rm -f "$tmp"
+        echo "error: jq failed on $f/flake.lock" >&2
         return 1
       }
+      mv "$tmp" "$f/flake.lock"
     done < <(flakeManagedDirs)
   }
   cmd flakeLocksPin
