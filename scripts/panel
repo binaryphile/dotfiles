@@ -11,7 +11,7 @@
 #   panel can-load           exit 0 if session should load panel (SSH check)
 #
 # Modules:
-#   era       era-serve systemd service status         (click: toggle service)
+#   era       systemd service status              (click: toggle service)
 #   vpn       gpclient connect process state         (click: toggle vpn)
 #   dm1            dm1.devdevicecloud.com health (VPN)    (click: open url)
 #   stash          stash.digi.com ssh probe       (VPN)   (click: open url)
@@ -139,7 +139,7 @@ pollAll() {
 # probe-lib.bash.
 
 eraProbe() {
-  systemctl --user is-active --quiet era-serve && echo on || echo off
+  systemctl --user is-active --quiet era && echo on || echo off
 }
 
 vpnProbe() {
@@ -431,10 +431,10 @@ clickModule() {
   local m=${1:-}
   case $m in
     era)
-      if systemctl --user is-active --quiet era-serve; then
-        systemctl --user stop era-serve
+      if systemctl --user is-active --quiet era; then
+        systemctl --user stop era
       else
-        systemctl --user start era-serve
+        systemctl --user start era
       fi
       ;;
     vpn)
