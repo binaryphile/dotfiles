@@ -244,11 +244,11 @@
     "task-bash-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1777921463,
-        "narHash": "sha256-M6UZoZAHLe5VMXQ7upmf0MBScQYaV7Aex9sHy6qgd98=",
+        "lastModified": 1778100472,
+        "narHash": "sha256-+0IWt+0KZFKhb+SkJev3eMPD526A9VWbZvzv8k0w3Dg=",
         "owner": "binaryphile",
         "repo": "task.bash",
-        "rev": "655e7e6e60a7c3156b723f3a4167bc9b0e9c432e",
+        "rev": "38c5ad2d33765160e9f1c505a912d80c5f26b9c2",
         "type": "github"
       },
       "original": {
