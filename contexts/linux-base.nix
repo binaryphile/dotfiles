@@ -71,6 +71,16 @@ in
 
   home.packages = [ notify-send-bridge tmux-with-panel pkgs._1password-gui ];
 
+  # After switching generations, update the running tmux server's PATH so
+  # #(panel ...) status commands resolve the new nix store path. Without
+  # this, tmux keeps the stale PATH from when the server started and panel
+  # never picks up rebuilt derivations.
+  home.activation.updateTmuxPath = config.lib.dag.entryAfter [ "linkGeneration" ] ''
+    if command -v tmux >/dev/null 2>&1 && tmux has-session 2>/dev/null; then
+      tmux set-environment -g PATH "$PATH"
+    fi
+  '';
+
   # Dotfile symlinks migrated from update-env. mkOutOfStoreSymlink keeps
   # them as live symlinks into ~/dotfiles so edits take effect immediately,
   # matching update-env's task.Ln semantics. Bootstrap-critical files
