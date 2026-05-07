@@ -67,11 +67,12 @@ parseOptions() {
   while (( $# )); do
     case $1 in
       -h|--help ) usage; exit 0;;
-      --        ) shift; ParsedPositional+=( "$@" ); return 0;;
+      --        ) shift; ParsedPositional+=( "$@" ); break;;
       -*        ) fatal "op-run: unknown option: $1" 64;;
       *         ) ParsedPositional+=( "$1" ); shift;;
     esac
   done
+  readonly ParsedPositional
 }
 
 # guardSubstitutions fatals (exit 73) if @dotfilesRoot@ wasn't substituted at build.
@@ -152,12 +153,10 @@ loadVisibleVaults() {
   vaultsJson vaultsJson_
   VisibleVaults=()
   mapfile -t VisibleVaults < <(printf '%s' "$vaultsJson_" | $jq -r '.[].name')
+  readonly VisibleVaults
 }
 
 # vaultVisible returns whether `vault` is in the global VisibleVaults. (C)
-#
-# Purity rests on VisibleVaults being immutable after loadVisibleVaults
-# populates it; main never re-loads or mutates it during a launch.
 vaultVisible() {
   local vault=$1 v
   for v in "${VisibleVaults[@]}"; do
@@ -179,9 +178,7 @@ enforceProjectVaultVisible() {
 #
 # "Equals as a set" means same membership; order and duplicates are ignored.
 # `sort -u` is a deterministic transformation and does not disqualify the
-# function from being a Calculation. Purity rests on VisibleVaults and
-# AllowedVaults being immutable after their respective bootstrap sources;
-# see op-run/projects.bash and op-run/machines/<host>.allow.
+# function from being a Calculation.
 vaultsEqualAllowed() {
   local visibleSortedList allowedSortedList
   visibleSortedList=$(printf '%s\n' "${VisibleVaults[@]}" | sort -u)
@@ -373,7 +370,7 @@ main() {
   account=${ProjectAccount[$project]:-}
   vault=${ProjectVault[$project]:-}
   [[ -n $account && -n $vault ]] || fatal "op-run: registry entry [$project] missing account or vault" 71
-  export OP_ACCOUNT=$account
+  declare -gxr OP_ACCOUNT=$account
 
   loadVisibleVaults
   enforceProjectVaultVisible $vault

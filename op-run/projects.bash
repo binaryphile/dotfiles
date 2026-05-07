@@ -6,26 +6,21 @@
 # at the call site to identify which project the launcher is running for.
 #
 # Naming Policy: standalone-script style, no namespace prefix on globals.
-#
-# Immutability contract: these arrays are written once at source time and
-# never mutated thereafter. The (C)-marked Calculations in scripts/op-run
-# (vaultVisible, vaultsEqualAllowed) read them as immutable-by-convention
-# globals, which is what makes those functions referentially transparent.
-# Any code that mutates these after sourcing breaks that contract.
+# Bootstrap globals are PascalCase and `declare -Agr` (readonly-enforced).
 #
 # Per-project env spec is a newline-separated string of KEY=value lines.
 # Values starting with op:// are resolved by `op run` at exec time;
 # all others pass through literally.
 
-declare -Ag ProjectPath=(
+declare -Agr ProjectPath=(
   [urma]=/home/ted/projects/urma
 )
 
-declare -Ag ProjectAccount=(
+declare -Agr ProjectAccount=(
   [urma]=work
 )
 
-declare -Ag ProjectVault=(
+declare -Agr ProjectVault=(
   [urma]=urma-atlassian
 )
 
@@ -39,7 +34,7 @@ declare -Ag ProjectVault=(
 #   urma-atlassian/confluence  field: credential
 # Adjust the op:// references if the vault uses different names.
 
-declare -Ag ProjectEnvSpec=(
+declare -Agr ProjectEnvSpec=(
   [urma]="BITBUCKET_URL=https://stash.digi.com
 BITBUCKET_USERNAME=tlilley
 BITBUCKET_PERSONAL_TOKEN=op://urma-atlassian/bitbucket/credential
