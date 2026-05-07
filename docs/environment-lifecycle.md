@@ -63,6 +63,19 @@ Per CLAUDE.md: docs first, then implementation.
 
 ### Adding a new secret
 
+Two paths depending on consumer type:
+
+**Runtime credential for a tool that takes env vars** (MCP servers, CLI tools that read PATs at startup):
+
+1. Add the credential as an item in the appropriate project vault in 1Password.
+2. Add the env-var line to the project's `ProjectEnvSpec` entry in `op-run/projects.bash`, referencing the new item via `op://<vault>/<item>/<field>`.
+3. If a new vault, also add it to `op-run/machines/<hostname>.allow` for every machine that needs it, and grant the device access in the 1Password admin console.
+4. Test with `cd <project> && op-run <tool>`; failure modes are listed in [`op-run/README.md`](../op-run/README.md#failure-modes).
+
+See [`op-run/README.md`](../op-run/README.md) for the full op-run flow.
+
+**Persistent file-based secret** (auth keys, calendar URLs, etc.):
+
 1. Create the file in `~/secrets/` (see [secrets-lifecycle.md](secrets-lifecycle.md#add-update-remove))
 2. Store in 1Password
 3. Update the Known Secrets table in secrets-lifecycle.md
@@ -96,7 +109,7 @@ Per CLAUDE.md: docs first, then implementation.
 | UC-3 File Management | Working | |
 | UC-4 Environment Deployment | Working | Two-stage + credential-only (`-c`). 1Password SSH agent for auth and signing. sshAgentPreflight gates credential phase. |
 | UC-4a Rotate SSH Key | Implemented | 1Password vault-only rotation; not yet exercised end-to-end |
-| UC-4b Manage Work Credentials | Implemented | 1Password vault management; op-run not yet built (UC-11) |
+| UC-4b Manage Work Credentials | Implemented | 1Password vault management; op-run launcher delivered for UC-11 v1 (mcp-atlassian) |
 | UC-4c Recover from Credential Failure | Implemented | 1Password unlock + agent restart; not yet validated |
 | UC-4d Decommission a Machine | Implemented | 1Password device deauthorization; not yet exercised |
 | UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
