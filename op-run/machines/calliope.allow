@@ -6,5 +6,9 @@
 # missings both fail closed.
 #
 # Naming Policy: standalone-script style, no namespace prefix on globals.
+#
+# Immutability contract: AllowedVaults is written once at source time and
+# never mutated thereafter. vaultsEqualAllowed (C) reads it as an
+# immutable-by-convention global; mutating it after source breaks purity.
 
 declare -ag AllowedVaults=( Private urma-atlassian )

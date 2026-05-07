@@ -155,6 +155,9 @@ loadVisibleVaults() {
 }
 
 # vaultVisible returns whether `vault` is in the global VisibleVaults. (C)
+#
+# Purity rests on VisibleVaults being immutable after loadVisibleVaults
+# populates it; main never re-loads or mutates it during a launch.
 vaultVisible() {
   local vault=$1 v
   for v in "${VisibleVaults[@]}"; do
@@ -176,7 +179,9 @@ enforceProjectVaultVisible() {
 #
 # "Equals as a set" means same membership; order and duplicates are ignored.
 # `sort -u` is a deterministic transformation and does not disqualify the
-# function from being a Calculation.
+# function from being a Calculation. Purity rests on VisibleVaults and
+# AllowedVaults being immutable after their respective bootstrap sources;
+# see op-run/projects.bash and op-run/machines/<host>.allow.
 vaultsEqualAllowed() {
   local visibleSortedList allowedSortedList
   visibleSortedList=$(printf '%s\n' "${VisibleVaults[@]}" | sort -u)
@@ -389,8 +394,8 @@ main() {
 # without running main.
 return 2>/dev/null
 
-set -euo pipefail
-set -o noglob
 IFS=$'\n'
+set -o noglob
+set -euo pipefail
 
 main "$@"

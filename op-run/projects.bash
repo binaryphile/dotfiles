@@ -7,6 +7,12 @@
 #
 # Naming Policy: standalone-script style, no namespace prefix on globals.
 #
+# Immutability contract: these arrays are written once at source time and
+# never mutated thereafter. The (C)-marked Calculations in scripts/op-run
+# (vaultVisible, vaultsEqualAllowed) read them as immutable-by-convention
+# globals, which is what makes those functions referentially transparent.
+# Any code that mutates these after sourcing breaks that contract.
+#
 # Per-project env spec is a newline-separated string of KEY=value lines.
 # Values starting with op:// are resolved by `op run` at exec time;
 # all others pass through literally.

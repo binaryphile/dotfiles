@@ -51,14 +51,17 @@ test_resolveProject_success() {
   local Dir; tesht.MktempDir Dir || return 128
   trap "rm -rf $Dir" RETURN
 
+  ## arrange
   declare -Ag ProjectPath=( [demo]=/some/canonical/path )
   local git realpath
   git=$(stubGit "/some/canonical/path")
   realpath=$(stubRealpath)
 
+  ## act
   local got
   got=$(resolveProject) || return 1
 
+  ## assert
   tesht.AssertGot "$got" "demo"
 }
 
@@ -263,6 +266,7 @@ test_auditPublish_keys_only_op_refs() {
   local Dir; tesht.MktempDir Dir || return 128
   trap "rm -rf $Dir" RETURN
 
+  ## arrange
   local capturePath=$Dir/era-capture
   local eraStub=$Dir/era-stub
   cat >"$eraStub" <<EOF
@@ -286,8 +290,10 @@ SECRET_TOKEN=op://vault/item/credential
 ANOTHER_LITERAL=foo
 ANOTHER_SECRET=op://vault/other/credential"
 
+  ## act
   auditPublish urma work urma-atlassian "$spec" mcp-tool arg1 arg2 >/dev/null 2>&1
 
+  ## assert
   local payload
   payload=$(<"$capturePath")
   echo "$payload" | $jq -e '.keys | sort == ["ANOTHER_SECRET","SECRET_TOKEN"]' >/dev/null \
@@ -438,6 +444,7 @@ test_auditTransport_timeout_falls_back_to_file() {
   local Dir; tesht.MktempDir Dir || return 128
   trap "rm -rf $Dir" RETURN
 
+  ## arrange
   local timeoutStub=$Dir/timeout-stub-124
   cat >"$timeoutStub" <<'EOF'
 #!/usr/bin/env bash
@@ -447,8 +454,11 @@ EOF
 
   local timeout=$timeoutStub era=/nonexistent
   local stateDir=$Dir/state
+
+  ## act
   XDG_STATE_HOME=$stateDir auditTransport '{"ts":"x","keys":[]}' >/dev/null 2>&1
 
+  ## assert
   local logPath=$stateDir/op-run/audit.log
   [[ -f $logPath ]] || { echo "fallback log not created at $logPath"; return 1; }
   local content
@@ -523,6 +533,7 @@ test_runOp_exec_argv() {
   local Dir; tesht.MktempDir Dir || return 128
   trap "rm -rf $Dir" RETURN
 
+  ## arrange
   local mockPath=$Dir/mock-op
   local capturePath=$Dir/argv-capture
   cat >"$mockPath" <<EOF
@@ -533,8 +544,11 @@ EOF
   chmod +x "$mockPath"
 
   local op=$mockPath
+
+  ## act
   ( runOp my-tool arg-one arg-two ) >/dev/null 2>&1
 
+  ## assert
   local got
   got=$(<"$capturePath")
   local want="run
