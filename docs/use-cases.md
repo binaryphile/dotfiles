@@ -512,7 +512,7 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 | UC-3 File Management | Working | |
 | UC-4 Environment Deployment | Working | Two-stage: stage 1 = working shell (VPN deferred), stage 2 = full config. homeConfigurations: crostini, debian, desktop, macos |
 | UC-4a Rotate SSH Key | Implemented | 1Password vault-only rotation; not yet exercised end-to-end |
-| UC-4b Manage Work Credentials | Implemented | 1Password vault management; op-run not yet built (UC-11) |
+| UC-4b Manage Work Credentials | Implemented | 1Password vault management; op-run launcher delivered for UC-11 v1 (mcp-atlassian) |
 | UC-4c Recover from Credential Failure | Implemented | 1Password unlock + agent restart; not yet validated |
 | UC-4d Decommission a Machine | Implemented | 1Password device deauthorization; not yet exercised |
 | UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
@@ -522,5 +522,5 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
-| UC-11 Use a Credentialed Tool | Not started | Blocked on nixos-config UC-1d + vault policy setup |
+| UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2; urma excluded (git-excluded flake.nix) |

@@ -1,5 +1,5 @@
 # evtctl
-@~/projects/era/evtctl.md
+@~/projects/era/docs/evtctl.md
 
 # Conventions
 

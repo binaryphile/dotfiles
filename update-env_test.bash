@@ -515,11 +515,13 @@ test_claudeBaseCopyTask_converges() {
   # act: inject paths and run
   local claudeBase_src=$dir/src/CLAUDE.md
   local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
   claudeBaseCopyTask >/dev/null 2>&1
 
-  # assert: convergence
+  # assert: convergence (file + hash sentinel)
   local rc=0
-  [[ -f $dir/dst/CLAUDE.md ]] || { echo "target not created"; rc=1; }
+  [[ -f $dir/dst/CLAUDE.md ]]                  || { echo "target not created"; rc=1; }
+  [[ -f $dir/dst/CLAUDE.md.base-src-hash ]]    || { echo "hash sentinel not created"; rc=1; }
   diff -q $dir/src/CLAUDE.md $dir/dst/CLAUDE.md >/dev/null 2>&1 || { echo "content mismatch"; rc=1; }
 
   # assert: idempotence
@@ -529,6 +531,84 @@ test_claudeBaseCopyTask_converges() {
   hashAfter=$(sha256sum $dir/dst/CLAUDE.md | awk '{print $1}')
   [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
 
+  return $rc
+}
+
+# Source change must trigger redeploy (the whole reason the task became
+# content-aware). Without this property, a fixed source path doesn't propagate.
+test_claudeBaseCopyTask_redeploysOnSourceChange() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# v1 content' >$dir/src/CLAUDE.md
+
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+
+  # arrange: initial deploy
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  # act: change source content, re-run
+  echo '# v2 content -- source changed' >$dir/src/CLAUDE.md
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  # assert: dst now matches the new source
+  local rc=0
+  diff -q $dir/src/CLAUDE.md $dir/dst/CLAUDE.md >/dev/null 2>&1 \
+    || { echo "dst not updated after source change"; rc=1; }
+  return $rc
+}
+
+# Missing hash sentinel (legacy installs that pre-date the content-aware
+# behavior) must trigger redeploy so the sentinel gets written, restoring
+# content-awareness on the next run.
+test_claudeBaseCopyTask_redeploysWhenSentinelMissing() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# legacy deploy' >$dir/src/CLAUDE.md
+  # simulate legacy install: dst exists, no sentinel.
+  cp $dir/src/CLAUDE.md $dir/dst/CLAUDE.md
+
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+
+  # act: run; should deploy and create sentinel even though dst content matches.
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local rc=0
+  [[ -f $claudeBase_hash ]] || { echo "sentinel not created on legacy redeploy"; rc=1; }
+  return $rc
+}
+
+# Matching hash sentinel + matching source = no-op. Verify the dst's mtime
+# does NOT advance when the task is a no-op, proving the content-aware
+# fast-path actually short-circuits the cp.
+test_claudeBaseCopyTask_noopWhenHashMatches() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# stable content' >$dir/src/CLAUDE.md
+
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local mtimeBefore mtimeAfter
+  mtimeBefore=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+  sleep 1  # make any rewrite observable in a 1s mtime resolution
+  claudeBaseCopyTask >/dev/null 2>&1
+  mtimeAfter=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+
+  local rc=0
+  [[ $mtimeBefore == $mtimeAfter ]] || { echo "dst rewritten despite hash match (mtime $mtimeBefore -> $mtimeAfter)"; rc=1; }
   return $rc
 }
 

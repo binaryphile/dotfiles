@@ -1,0 +1,396 @@
+#!/usr/bin/env bash
+
+# op-run -- runs a credentialed tool with secrets injected from 1Password.
+#
+# Resolves the current git repo against a registry, verifies vault scope,
+# scans for .env override hazards, builds an audit event, and execs the
+# target tool through `op run` so secrets reach the child's environment
+# only -- never the parent shell.
+#
+# Naming Policy:
+#
+# This is a standalone script -- no namespace prefix on functions, no suffix
+# on globals.
+# Function names use camelCase (treating standalone-script functions as
+# private; consistent with update-env's convention).
+# Local variable names begin with lowercase, e.g. localVariable.
+# Global variable names begin with uppercase, e.g. GlobalVariable.
+# Variables ending in _ contain IFS characters and must be quoted on use.
+# Name references borrow the environment namespace, e.g. local -n ARRAY=$1.
+# Injectable dependency variables use the command name directly (lowercase),
+# designed to be shadowed by tests via local declarations.
+
+# @dotfilesRoot@ is substituted by mkScriptBin at build time. Default in the
+# context's home.nix is "${config.home.homeDirectory}/dotfiles". When the
+# substitution fails, guardSubstitutions catches the literal marker.
+
+## injectable dependencies
+
+op=${op:-op}
+era=${era:-era}
+git=${git:-git}
+realpath=${realpath:-realpath}
+jq=${jq:-jq}
+timeout=${timeout:-timeout}
+
+## helpers
+
+# fatal prints `msg_` to stderr and exits with `rc` (default 1).
+#
+# `msg_` is _-suffixed because it may contain newlines (multiline error
+# context, embedded shell-escaped values from ${var@Q}, etc.); the call site
+# does not need to escape its own newlines.
+fatal() {
+  local msg_=$1 rc=${2:-1}
+  echo "$msg_" >&2
+  exit $rc
+}
+
+# usage prints op-run's help text to stdout.
+usage() {
+  cat <<'EOF'
+op-run -- run a credentialed tool with secrets injected from 1Password.
+
+usage:  op-run [-h|--help] <tool> [tool-args...]
+
+The current git repository must be registered in op-run/projects.bash.
+Tokens reach the tool's process environment only; never the parent shell.
+EOF
+}
+
+# parseOptions consumes leading flags and populates the global ParsedPositional array.
+#
+# Always initializes the array (even on the no-flags path) so set -u is safe
+# at the call site. Calls usage+exit on -h/--help, fatals on unknown flag.
+parseOptions() {
+  ParsedPositional=()
+  while (( $# )); do
+    case $1 in
+      -h|--help ) usage; exit 0;;
+      --        ) shift; ParsedPositional+=( "$@" ); return 0;;
+      -*        ) fatal "op-run: unknown option: $1" 64;;
+      *         ) ParsedPositional+=( "$1" ); shift;;
+    esac
+  done
+}
+
+# guardSubstitutions fatals (exit 73) if @dotfilesRoot@ wasn't substituted at build.
+#
+# Detects the literal marker still present in the script body.
+guardSubstitutions() {
+  [[ '@dotfilesRoot@' != *'@dotfilesRoot@'* ]] || fatal 'op-run bootstrap: @dotfilesRoot@ unsubstituted; rebuild via home-manager' 73
+}
+
+# sourceOrFail sources `path`, or fatals with exit 72.
+#
+# Wraps `source` so bootstrap failures (missing or syntax-broken registry /
+# allowlist files) surface with op-run framing instead of raw bash noise like
+# "scripts/op-run: line N: ...: No such file or directory".
+sourceOrFail() {
+  local path=$1
+  [[ -r $path ]] || fatal "op-run bootstrap: cannot read $path" 72
+  source $path || fatal "op-run bootstrap: source failed: $path" 72
+}
+
+# canonicalToplevel writes $PWD's canonical git toplevel into the nameref `OUT`.
+#
+# Fatals with exit 64 outside a git repo, exit 1 if realpath fails. Uses a
+# nameref instead of stdout because a $() subshell would swallow fatal's
+# exit, leaving the caller with an empty value.
+#
+# Example:
+#
+#     local toplevel
+#     canonicalToplevel toplevel
+canonicalToplevel() {
+  local -n OUT=$1
+  local raw
+  raw=$($git rev-parse --show-toplevel 2>/dev/null) || fatal "op-run: not in a git repo (cwd=$PWD)" 64
+  OUT=$($realpath $raw 2>/dev/null) || fatal "op-run: realpath failed for $raw" 1
+}
+
+# resolveProject echoes the project key matching the current canonical git toplevel.
+#
+# Canonicalizes both `ProjectPath[key]` and the live toplevel via realpath
+# so symlinked clones still match the registry. Fatals with exit 65 if no
+# entry matches. Reads the global ProjectPath associative array.
+resolveProject() {
+  local toplevel
+  canonicalToplevel toplevel
+
+  local key registered
+  for key in "${!ProjectPath[@]}"; do
+    registered=$($realpath ${ProjectPath[$key]} 2>/dev/null) || continue
+    [[ $registered == "$toplevel" ]] && { echo $key; return 0; }
+  done
+  fatal "op-run: no project registered for $toplevel; add to @dotfilesRoot@/op-run/projects.bash" 65
+}
+
+# vaultsJson writes `op vault list --format=json` output into the nameref `OUT`.
+#
+# Distinguishes locked-vault (exit 66) from generic op errors (exit 67). Uses
+# a nameref instead of stdout because a $() subshell would swallow fatal's
+# exit, masking the real diagnostic (locked) behind a downstream error
+# (vault-not-visible).
+vaultsJson() {
+  local -n OUT=$1
+  local rc=0
+  OUT=$($op vault list --format=json 2>&1) || rc=$?
+  if (( rc != 0 )); then
+    [[ $OUT == *'not currently signed in'* ]] && fatal 'op-run: 1Password is locked or signed out -- unlock the desktop app' 66
+    fatal "op-run: 1Password CLI error: $OUT" 67
+  fi
+}
+
+# loadVisibleVaults populates the global VisibleVaults array from one op vault list call.
+#
+# Called once at the top of the enforcement sequence so EnforceProjectVaultVisible
+# and EnforceVaultsMatch can both consume the result without re-shelling out.
+# `vaultsJson_` is _-suffixed: multi-line JSON, must be quoted on use.
+loadVisibleVaults() {
+  local vaultsJson_
+  vaultsJson vaultsJson_
+  VisibleVaults=()
+  mapfile -t VisibleVaults < <(printf '%s' "$vaultsJson_" | $jq -r '.[].name')
+}
+
+# vaultVisible returns whether `vault` is in the global VisibleVaults. (C)
+vaultVisible() {
+  local vault=$1 v
+  for v in "${VisibleVaults[@]}"; do
+    [[ $v == "$vault" ]] && return 0
+  done
+  return 1
+}
+
+# enforceProjectVaultVisible returns success if `vault` is in the global VisibleVaults.
+#
+# Fatals with exit 68 naming the vault and the active OP_ACCOUNT otherwise.
+enforceProjectVaultVisible() {
+  local vault=$1
+  vaultVisible $vault && return 0
+  fatal "op-run: project vault $vault not visible to account $OP_ACCOUNT" 68
+}
+
+# vaultsEqualAllowed returns whether VisibleVaults equals AllowedVaults as a set. (C)
+#
+# "Equals as a set" means same membership; order and duplicates are ignored.
+# `sort -u` is a deterministic transformation and does not disqualify the
+# function from being a Calculation.
+vaultsEqualAllowed() {
+  local visibleSortedList allowedSortedList
+  visibleSortedList=$(printf '%s\n' "${VisibleVaults[@]}" | sort -u)
+  allowedSortedList=$(printf '%s\n' "${AllowedVaults[@]}" | sort -u)
+  [[ $visibleSortedList == "$allowedSortedList" ]]
+}
+
+# enforceVaultsMatch returns success if VisibleVaults equals AllowedVaults as a set.
+#
+# Fatals with exit 69 listing the extras and missings otherwise. The diff is
+# computed only on the failure path. `echo` (with trailing newline) feeds
+# comm rather than `printf '%s'` (which strips the newline) -- avoids
+# mis-classifying the alphabetically-last vault.
+enforceVaultsMatch() {
+  vaultsEqualAllowed && return 0
+
+  local visibleSortedList allowedSortedList extra missing
+  visibleSortedList=$(printf '%s\n' "${VisibleVaults[@]}" | sort -u)
+  allowedSortedList=$(printf '%s\n' "${AllowedVaults[@]}" | sort -u)
+  extra=$(comm -23 <(echo "$visibleSortedList") <(echo "$allowedSortedList") | tr '\n' ' ')
+  missing=$(comm -13 <(echo "$visibleSortedList") <(echo "$allowedSortedList") | tr '\n' ' ')
+  fatal "op-run: scope violation -- extra=[${extra% }] missing=[${missing% }]" 69
+}
+
+# enforceNoDotenv fatals (exit 70) if any .env exists in CWD..git-toplevel.
+#
+# Threat-model intent is python-dotenv override-load from inside the project
+# repo; ancestors outside the repo are not part of the threat, so the walk
+# stops at the toplevel rather than continuing to /.
+enforceNoDotenv() {
+  local toplevel cur
+  canonicalToplevel toplevel
+  cur=$($realpath $PWD 2>/dev/null) || fatal "op-run: realpath failed for $PWD" 1
+
+  while :; do
+    [[ -e $cur/.env ]] && fatal "op-run: .env file found at $cur/.env; remove or move outside repo" 70
+    [[ $cur == "$toplevel" ]] && return 0
+    [[ $cur == / ]] && return 0  # belt-and-suspenders; toplevel guard should catch first
+    cur=$(dirname $cur)
+  done
+}
+
+# applyEnvSpec exports each KEY=value line of `$1` into op-run's own env.
+#
+# Skips blank lines and #-prefixed comments. Fatals (exit 71) on a non-empty
+# line missing `=`. `$1` is the per-project ProjectEnvSpec[$project] value --
+# a newline-separated multiline string; the caller passes it _-suffixed
+# (envSpec_) so the quoting contract is visible at call sites.
+applyEnvSpec() {
+  local kv
+  while IFS='' read -r kv; do
+    [[ -z $kv ]] && continue
+    [[ $kv == \#* ]] && continue
+    [[ $kv == *=* ]] || fatal "op-run: registry malformed env line: ${kv@Q}" 71
+    # shellcheck disable=SC2163
+    # export "$kv" intentionally interprets KEY=value -- not exporting the
+    # literal var "kv". This is the documented bash idiom for env injection.
+    export "$kv"
+  done <<<"$1"
+}
+
+# buildAuditPayload echoes the audit JSON for the given fields. (C)
+#
+# Args (positional): ts, project, tool, account, vault, envSpec_, then the
+# wrapped tool's args (which become the payload's args array). `keys` is
+# derived from `envSpec_` lines whose value starts with op:// -- literal vars
+# (URLs, usernames) are not credentials and not logged.
+#
+# awk -- not grep -- extracts the key names because grep exits 1 on zero
+# matches, which would abort under set -euo pipefail. awk returns 0 with no
+# rows on no match.
+#
+# Empty wrappedArgs is special-cased because `printf '%s\n' "${empty[@]}"`
+# emits one newline (printf processes the format once even with zero args),
+# which would yield `args: [""]` instead of `args: []`.
+buildAuditPayload() {
+  local ts=$1 project=$2 tool=$3 account=$4 vault=$5 envSpec_=$6
+  shift 6
+  local -a wrappedArgs=( "$@" )
+
+  local keysJson argsJson
+  keysJson=$(printf '%s\n' "$envSpec_" | awk -F= '$2 ~ /^op:\/\// {print $1}' | $jq -R . | $jq -sc .)
+  if (( ${#wrappedArgs[@]} > 0 )); then
+    argsJson=$(printf '%s\n' "${wrappedArgs[@]}" | $jq -R . | $jq -sc .)
+  else
+    argsJson='[]'
+  fi
+  $jq -nc \
+    --arg ts       $ts \
+    --arg project  $project \
+    --arg tool     $tool \
+    --argjson args $argsJson \
+    --arg account  $account \
+    --arg vault    $vault \
+    --argjson keys $keysJson \
+    '{ts:$ts, project:$project, tool:$tool, args:$args, account:$account, vault:$vault, keys:$keys}'
+}
+
+# auditPublish builds the audit event and dispatches it via auditTransport.
+#
+# Reads the current time. Delegates payload construction to buildAuditPayload
+# and transport to auditTransport. Args (positional): project, account,
+# vault, envSpec_, then the wrapped tool name and its args.
+auditPublish() {
+  local project=$1 account=$2 vault=$3 envSpec_=$4
+  shift 4
+  local tool=$1
+  shift
+
+  # Invariant: jq -nc emits single-line compact JSON, so $payload is a single
+  # shell word. Embedded newlines in input strings are escaped as \n in the
+  # output bytes, never literal line breaks. Relied on by the unquoted uses
+  # below.
+  local payload
+  payload=$(buildAuditPayload "$(date -u '+%FT%TZ')" $project $tool $account $vault "$envSpec_" "$@")
+  auditTransport $payload
+}
+
+# auditTransport publishes `payload_` to the era op-run.audit stream.
+#
+# Hard 2s timeout (KILL at 3s) via $timeout. Failure, timeout, or missing
+# era binary falls through to auditFileFallback. Audit is detective per
+# threat-model.md; a launch is never blocked by audit failure.
+auditTransport() {
+  local payload=$1 rc=0
+  $timeout -k 1 2 $era publish $payload --stream op-run.audit --type launch >/dev/null 2>&1 && return 0
+  rc=$?
+  # rc 124 = timeout; rc 127 = era binary missing; other = era reported failure.
+  auditFileFallback $payload $rc
+}
+
+# auditFileFallback appends `payload` as one JSON-Lines record to the local audit log.
+#
+# Log path is ${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log, file mode
+# 600, parent dir 700. v1 has no rotation; v2 will add a size cap. `rc` is
+# the upstream era failure code, used only in the operator-facing warning
+# text on a fallback-fallback (filesystem write failed too).
+auditFileFallback() {
+  local payload=$1 rc=$2
+  local stateDir=${XDG_STATE_HOME:-$HOME/.local/state}/op-run
+  install -d -m 700 $stateDir 2>/dev/null || { echo "op-run: audit fallback failed (rc=$rc, mkdir failed)" >&2; return 0; }
+  local logPath=$stateDir/audit.log
+  ( umask 077; printf '%s\n' $payload >>$logPath ) || echo "op-run: audit fallback write failed (rc=$rc)" >&2
+  return 0
+}
+
+# runOp execs `op run --no-masking -- "$@"`, replacing the launcher process.
+#
+# Factored as its own function so tests can override the seam: bash exec
+# cannot dispatch a shell function (it tries execve and fails with "not
+# found"), so the dispatch must be a function the test can replace.
+# --no-masking is deliberate for MCP stdio: the MCP child speaks JSON-RPC
+# and masking rewrites stdout, which can perturb framing.
+runOp() {
+  exec $op run --no-masking -- "$@"
+}
+
+## main
+
+# main is op-run's entry point.
+#
+# Parses options, sources the project registry and machine allowlist,
+# identifies the project from the current git toplevel, runs the compliance
+# checks (allowlist match, project vault visibility, .env preflight),
+# publishes the audit event, applies the env spec, and execs the wrapped
+# tool through `op run`. On any compliance or bootstrap failure it fatals
+# with one of exit codes 64-73 (see the failure-mode taxonomy in
+# docs/design.md).
+#
+# Example (the production call shape; .mcp.json invokes this for an MCP
+# server, but it works the same from a shell):
+#
+#     cd ~/projects/urma
+#     op-run uvx mcp-atlassian-with-bitbucket
+main() {
+  parseOptions "$@"
+  set -- "${ParsedPositional[@]}"
+  (( $# >= 1 )) || fatal 'op-run: missing tool argument; see op-run --help' 64
+  guardSubstitutions
+  sourceOrFail '@dotfilesRoot@/scripts/lib.bash'
+  sourceOrFail '@dotfilesRoot@/op-run/projects.bash'
+  local hostname
+  hostname=$(lib.MachineHostname) || fatal 'op-run: cannot determine machine hostname' 1
+  [[ -n $hostname ]] || fatal 'op-run: empty hostname from lib.MachineHostname' 1
+  sourceOrFail "@dotfilesRoot@/op-run/machines/$hostname.allow"
+
+  local project account vault
+  project=$(resolveProject)
+  account=${ProjectAccount[$project]:-}
+  vault=${ProjectVault[$project]:-}
+  [[ -n $account && -n $vault ]] || fatal "op-run: registry entry [$project] missing account or vault" 71
+  export OP_ACCOUNT=$account
+
+  loadVisibleVaults
+  enforceProjectVaultVisible $vault
+  enforceVaultsMatch
+  enforceNoDotenv
+
+  local envSpec_=${ProjectEnvSpec[$project]:-}
+  [[ -n $envSpec_ ]] || fatal "op-run: registry entry [$project] missing env spec" 71
+
+  auditPublish $project $account $vault "$envSpec_" "$@"
+  applyEnvSpec "$envSpec_"
+
+  runOp "$@"
+}
+
+# strict mode and entry point. Sourced execution returns before this block,
+# so test files can `source scripts/op-run` to load functions and DI globals
+# without running main.
+return 2>/dev/null
+
+set -euo pipefail
+set -o noglob
+IFS=$'\n'
+
+main "$@"

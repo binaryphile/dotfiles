@@ -51,6 +51,17 @@ let
     ];
   };
 
+  # op-run: 1Password credential launcher. Wraps `op run` with project-vault
+  # compliance and audit. @dotfilesRoot@ is substituted to the live dotfiles
+  # path so sourced registry/machine-allowlist files resolve at runtime.
+  # See docs/design.md Credential Architecture and UC-11 use cases.
+  op-run = mkScriptBin {
+    name = "op-run";
+    src = ../scripts/op-run;
+    substitutions."dotfilesRoot" = "${config.home.homeDirectory}/dotfiles";
+    runtimeInputs = [ pkgs._1password-cli pkgs.git pkgs.jq pkgs.coreutils ];
+  };
+
   # Tmux with panel on PATH. Overlaid via symlinkJoin so tmux's status
   # bar commands (#(panel ...)) find the panel binary regardless of the
   # session's PATH state. macOS does not need panel (no headless tmux
@@ -69,7 +80,7 @@ in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ notify-send-bridge tmux-with-panel pkgs._1password-gui ];
+  home.packages = [ notify-send-bridge op-run tmux-with-panel pkgs._1password-gui ];
 
   # After switching generations, update the running tmux server's PATH so
   # #(panel ...) status commands resolve the new nix store path. Without

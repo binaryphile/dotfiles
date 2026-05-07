@@ -649,16 +649,12 @@ urmaEnvrcContent() {
 export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
 
-# Atlassian -- Bitbucket Server (stash.digi.com)
-# Token loaded from file. MCP atlassian plugin requires env var values.
-export BITBUCKET_URL=https://stash.digi.com
-export BITBUCKET_USERNAME=tlilley
-export BITBUCKET_PERSONAL_TOKEN=$(< ~/secrets/stash.key)
-
-# Atlassian -- Confluence Cloud (onedigi.atlassian.net)
-export CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
-export CONFLUENCE_USERNAME=tlilley@digi.com
-export CONFLUENCE_PERSONAL_TOKEN=$(< ~/secrets/confluence.key)
+# Atlassian credentials (BITBUCKET_*, CONFLUENCE_*) used to be exported
+# here from ~/secrets/*.key. They now live in 1Password (vault
+# urma-atlassian) and are injected per-tool by op-run; .mcp.json invokes
+# `op-run uvx mcp-atlassian-with-bitbucket` so tokens reach the MCP child
+# only, never the shell session. See dotfiles op-run/projects.bash and
+# docs/design.md Credential Architecture.
 EOF
 }
 
@@ -755,13 +751,29 @@ EOF
 claudeBaseCopyTask() {
   local src=${claudeBase_src:-$HOME/dotfiles/claude/CLAUDE.md}
   local dst=${claudeBase_dst:-$HOME/.claude/CLAUDE.md}
+  local hashFile=${claudeBase_hash:-$HOME/.claude/CLAUDE.md.base-src-hash}
   desc 'install base CLAUDE.md'
-  ok "[[ -f '$dst' ]] && ! [[ -L '$dst' ]]"
+
+  # Content-aware: redeploy when source changes. Per-task hash sentinel matches
+  # the precedent of claudeMemoryRedirectsTask using diff-q. Era and tandem
+  # appends are non-destructive on redeploy because their own ok-tests grep for
+  # marker strings that won't exist after a fresh base copy.
+  #
+  # Uses the $sha256sum DI var (defined near script bottom) which resolves to
+  # GNU sha256sum on Linux/Nix and falls back to BSD `shasum -a 256` on bare
+  # macOS. The DI var is split-on-spaces by bash for the multi-word fallback.
+  claudeBaseUpToDate() {
+    [[ -f $dst ]] && ! [[ -L $dst ]] || return 1
+    [[ -f $hashFile ]] || return 1
+    [[ "$($sha256sum "$src" | cut -d' ' -f1)" == "$(< "$hashFile")" ]]
+  }
+  ok claudeBaseUpToDate
 
   claudeBaseCopy() {
     mkdir -p $(dirname $dst)
     local tmp
     tmp=$(mktemp) && cp $src "$tmp" && mv -f "$tmp" $dst
+    $sha256sum "$src" | cut -d' ' -f1 >"$hashFile"
   }
   cmd claudeBaseCopy
 }
@@ -938,23 +950,31 @@ flakeLockPinTask() {
 writeMcpJsonTask() {
   local dir=$1
   desc   "write .mcp.json to $dir"
-  exist  $dir/.mcp.json
   check  "[[ -d '$dir' ]]"
 
-  writeMcpJson() {
-    cat >$dir/.mcp.json <<'EOF'
+  # Content-aware ok-test: redeploys when the embedded heredoc changes.
+  # Matches the hash/diff pattern used by claudeMemoryRedirectsTask.
+  writeMcpJsonUpToDate() {
+    [[ -f $dir/.mcp.json ]] && diff -q $dir/.mcp.json <(writeMcpJsonContent) >/dev/null 2>&1
+  }
+  ok writeMcpJsonUpToDate
+
+  writeMcpJson() { writeMcpJsonContent >$dir/.mcp.json; }
+  cmd writeMcpJson
+}
+
+writeMcpJsonContent() {
+  cat <<'EOF'
 {
   "mcpServers": {
     "atlassian": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["mcp-atlassian-with-bitbucket"]
+      "command": "op-run",
+      "args": ["uvx", "mcp-atlassian-with-bitbucket"]
     }
   }
 }
 EOF
-  }
-  cmd writeMcpJson
 }
 
 stashCloneAndLinkTask() {
