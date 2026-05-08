@@ -1,31 +1,104 @@
 #!/usr/bin/env bash
-# pre-commit -- reject secrets in tracked config files
+# pre-commit -- reject secrets and security-architecture leakage in tracked files
 #
 # Naming Policy:
 #
 # This is a standalone script -- no namespace prefix on functions, no suffix on globals.
-# Function names use PascalCase.
+# Function names use camelCase (one-off tool; not mk.bash framework).
 # Local variable names begin with lowercase, e.g. localVariable.
 # Global variable names begin with uppercase, e.g. GlobalVariable.
+# Variables ending in *List or _ contain IFS characters and must be quoted on use.
 
-CheckSettingsJson() {
+checkSettingsJson() {
     git diff --cached --name-only | grep -q 'claude/settings.json' || return 0
 
     if jq -e '(.mcpServers // {}) | to_entries[] | select(.value.env != null)' claude/settings.json >/dev/null 2>&1; then
-        echo "BLOCKED: claude/settings.json contains env vars in mcpServers."
-        echo "MCP servers requiring credentials must use op-run."
-        echo "See docs/design.md for the op-run pattern."
+        cat <<'END'
+BLOCKED: claude/settings.json contains env vars in mcpServers.
+MCP servers requiring credentials must use op-run.
+See docs/design.md for the op-run pattern.
+END
         exit 1
     fi
 }
 
-Main() {
-    CheckSettingsJson
+# CheckDocsForSensitive blocks repo docs from re-introducing security architecture
+# detail that's supposed to live only in the 1Password-stored canonical docs
+# (security.md, threat-model.md, secrets-lifecycle.md). Scans only docs/*.md and
+# op-run/README.md; operational files (scripts/op-run, op-run/projects.bash,
+# op-run/machines/*.allow, contexts/, update-env) are intentionally exempt --
+# they reference vault names and the gate mechanism at runtime.
+#
+# Match patterns: section headings the strip operation removed (Credential
+# Architecture, Desktop Integration Gate, UC-11 detail, etc.) plus architecture
+# terms. Only added (^+) lines are checked, so editing a file that legitimately
+# references a term elsewhere is OK.
+#
+# `docList` and `hitList` are newline-separated serialized lists (IFS content);
+# *List suffix per bash style guide signals must-quote on every expansion.
+checkDocsForSensitive() {
+    local docList
+    docList=$(git diff --cached --name-only --diff-filter=AM -- docs/ op-run/README.md 2>/dev/null)
+    [[ -z $docList ]] && return 0
+
+    local pattern='^\+.*('
+    pattern+='## Credential Architecture'
+    pattern+='|## Desktop Integration Gate'
+    pattern+='|### UC-11: Use a Credentialed Tool'
+    pattern+='|## How a launch works'
+    pattern+='|## Failure modes'
+    pattern+='|## Adding a new project'
+    pattern+='|## Adding a new machine'
+    pattern+='|#### Wrapper Architecture'
+    pattern+='|Two-Level Allowlist'
+    pattern+='|Vault Compartmentalization'
+    pattern+='|SO_PEERCRED'
+    pattern+='|onepassword-cli'
+    pattern+='|security\.wrappers'
+    pattern+='|programs\._1password'
+    pattern+='|urma-atlassian'
+    pattern+='|op://[A-Za-z0-9_-]+/'
+    pattern+=')'
+
+    local hitList
+    hitList=$(git diff --cached -- docs/ op-run/README.md 2>/dev/null | grep -nE "$pattern" || true)
+
+    if [[ -n $hitList ]]; then
+        cat <<END
+BLOCKED: staged docs contain security architecture content.
+
+Match(es) on added lines:
+$hitList
+
+Security architecture lives in 1Password-stored canonical docs
+(security.md, threat-model.md, secrets-lifecycle.md), not the repo.
+Operational data files (op-run/projects.bash, machines/*.allow,
+scripts/op-run, contexts/) are exempt -- they reference these
+terms at runtime.
+
+If a doc must reference one of these terms (e.g., a brief
+pointer to the canonical doc), update the pattern list in
+.githooks/pre-commit and document the exception.
+END
+        exit 1
+    fi
 }
 
-# strict mode
+main() {
+    checkSettingsJson
+    checkDocsForSensitive
+}
+
+# IFS / noglob / -u / pipefail apply at source time so functions tested via
+# `source .githooks/pre-commit` behave the same as during direct invocation.
+# Caller's shell inherits these (the price of test fidelity).
 IFS=$'\n'
 set -o noglob
-set -euo pipefail
+set -uo pipefail
 
-Main "$@"
+# Sourced execution returns before set -e + main. set -e is deferred because
+# it would terminate an interactive shell on any failed command after sourcing.
+return 2>/dev/null
+
+set -e
+main "$@"
