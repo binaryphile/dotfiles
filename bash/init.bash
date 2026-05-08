@@ -34,6 +34,21 @@ ShellIsInteractive && {
     [[ -r $Root/../liquidprompt/liquid.theme ]] && source "$Root/../liquidprompt/liquid.theme"
   }
   TestAndSource $Root/apps/direnv/init.bash
+
+  # 1Password SSH agent kick. In a graphical session, push display env into
+  # user-systemd and ensure 1password.service is running so op-ssh-sign can
+  # talk to its agent. Recovery path for hosts where user-systemd starts
+  # before any graphical shell exists (e.g. cold-boot Crostini): import-env
+  # makes display vars visible to the manager; reset-failed clears any
+  # start-limit-hit state from too-early WantedBy fires; start finishes the
+  # job. Idempotent on hosts where the unit already came up via WantedBy.
+  if [[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]]; then
+    {
+      systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR
+      systemctl --user reset-failed 1password.service
+      systemctl --user start 1password.service
+    } 2>/dev/null
+  fi
 }
 
 SplitSpace off
