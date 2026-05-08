@@ -16,8 +16,13 @@ declare -Agr ProjectPath=(
   [urma]=/home/ted/projects/urma
 )
 
+# ProjectAccount accepts anything OP_ACCOUNT accepts: shorthand, sign-in
+# address, or UUID. SSO/desktop-attached accounts have no shorthand --
+# `op account` exposes no command to set one and `op account add` is
+# rejected for SSO accounts (open 1Password community feature request).
+# Use the sign-in address directly for those.
 declare -Agr ProjectAccount=(
-  [urma]=work
+  [urma]=digi.1password.com
 )
 
 declare -Agr ProjectVault=(
