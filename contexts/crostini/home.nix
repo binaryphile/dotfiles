@@ -187,10 +187,17 @@ in
     };
   };
 
+  # http/https default handler is garcon's host-browser bridge -- routes
+  # xdg-open https://... from the container to ChromeOS host Chrome.
+  # firefox-esr's apt install can register itself as the default browser
+  # and break the bridge; declaring the default here keeps the routing
+  # stable across firefox-esr updates and home-manager rebuilds.
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
       "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
+      "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
+      "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
     };
   };
 
