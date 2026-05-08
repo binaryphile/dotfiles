@@ -111,6 +111,68 @@ in
       linkHome ".nix-profile/share/applications/gpgui.desktop";
   };
 
+  # 1Password desktop-integration gate: the desktop app verifies the
+  # connecting `op` binary via SO_PEERCRED, requiring egid to equal the
+  # onepassword-cli group (achieved via setgid bit). The Nix-installed op
+  # is 0555 ted:ted by default and fails the gate with PipeAuthError(NoCreds).
+  # Mirror the official .deb postinst imperatively: create the group
+  # (default GID; >=1000 confirmed sufficient via Phase 0) and setgid the
+  # resolved store binary. Heretical (mutates /nix/store); v2 follow-on is
+  # a wrapper-outside-store pattern. See docs/design.md Desktop Integration
+  # Gate (Linux). NixOS uses security.wrappers."op" instead -- this hook
+  # is crostini-only.
+  home.activation.opSetgid = config.lib.dag.entryAfter [ "installPackages" ] ''
+    set -eu
+    opPath=$(readlink -f "$HOME/.nix-profile/bin/op" 2>/dev/null) || exit 0
+
+    stateDir="$HOME/.local/state/op-run"
+    /usr/bin/install -d -m 700 "$stateDir" 2>/dev/null || true
+    statusFile="$stateDir/activation-status"
+
+    # Atomic state-file write: stage to a temp file, rename at end. Avoids
+    # truncate-then-write races between concurrent home-manager switches.
+    tmpStatus=$(/usr/bin/mktemp "$stateDir/.activation-status.XXXXXX") || tmpStatus=""
+
+    warn() {
+      echo "WARNING: home.activation.opSetgid: $*" >&2
+      [[ -n $tmpStatus ]] && printf 'DEGRADED: %s\n' "$*" >>"$tmpStatus" 2>/dev/null || true
+    }
+
+    # Idempotent fast-path: if the binary is already correctly configured
+    # (setgid + onepassword-cli group), skip sudo entirely. Avoids spurious
+    # warnings on already-deployed hosts. Sudo only fires on first deploy
+    # or after an `op` upgrade replaces the store path with default perms.
+    if /usr/bin/getent group onepassword-cli >/dev/null \
+      && [[ -g $opPath ]] \
+      && [[ $(/usr/bin/stat -c '%G' "$opPath") == onepassword-cli ]]; then
+      : # already configured
+    else
+      if ! /usr/bin/getent group onepassword-cli >/dev/null; then
+        if ! /usr/bin/sudo -n /usr/sbin/groupadd onepassword-cli 2>/dev/null; then
+          warn "could not create onepassword-cli group (sudo -n failed). Run: sudo groupadd onepassword-cli"
+        fi
+      fi
+
+      if /usr/bin/getent group onepassword-cli >/dev/null; then
+        if ! /usr/bin/sudo -n /bin/chgrp onepassword-cli "$opPath" 2>/dev/null \
+          || ! /usr/bin/sudo -n /bin/chmod g+s "$opPath" 2>/dev/null; then
+          warn "could not chgrp/chmod $opPath (sudo -n failed). Run: sudo chgrp onepassword-cli '$opPath' && sudo chmod g+s '$opPath'"
+        fi
+      fi
+    fi
+
+    if [[ -g $opPath ]]; then
+      [[ -n $tmpStatus ]] && printf 'OK %s\n' "$(date -u +%FT%TZ)" >"$tmpStatus" 2>/dev/null || true
+    else
+      warn "op binary at $opPath does not have setgid bit set; op-run will fail with PipeAuthError. See docs/design.md Desktop Integration Gate (Linux)."
+    fi
+
+    # Atomic publish: rename temp file over real status file. POSIX-atomic
+    # on the same filesystem; concurrent activations either win or lose
+    # cleanly, never interleave bytes.
+    [[ -n $tmpStatus ]] && /bin/mv -f "$tmpStatus" "$statusFile" 2>/dev/null || true
+  '';
+
   # Register gpclient as the URL scheme handler for globalprotectcallback://.
   xdg.desktopEntries = {
     gpgui = {
