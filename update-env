@@ -812,24 +812,23 @@ claudeEraConfigTask() {
   cmd claudeEraAppend
 }
 
-# claudeTeshtConfigTask appends the tesht usage block to ~/.claude/CLAUDE.md.
-# Mirrors claudeEraConfigTask -- a single global config block, applied to
-# every project Claude works in. Tesht is general-purpose enough that any
-# bash-bearing project can benefit; not worth discriminating by project type.
+# claudeTeshtConfigTask appends a tesht-doc import line to ~/.claude/CLAUDE.md
+# when the tesht project is cloned. Mirrors claudeTandemConfigTask -- the
+# canonical doc lives in the tesht project (~/projects/tesht/docs/tesht.md),
+# so updates ship with tesht itself rather than requiring a dotfiles round-trip.
 claudeTeshtConfigTask() {
   local base=${claudeTesht_base:-$HOME/.claude/CLAUDE.md}
-  local src=${claudeTesht_src:-$HOME/dotfiles/claude/CLAUDE-tesht.md}
-  desc 'append tesht config to ~/.claude/CLAUDE.md'
+  local src=${claudeTesht_src:-$HOME/projects/tesht/docs/tesht.md}
+  desc 'append tesht doc import to ~/.claude/CLAUDE.md'
   check "[[ -f $src ]] && [[ -f $base ]]"
 
   claudeTeshtUpToDate() {
-    [[ -f $base ]] && grep -qF 'Tesht is the table-driven testing framework' "$base"
+    [[ -f $base ]] && grep -qF '@~/projects/tesht/docs/tesht.md' "$base"
   }
   ok claudeTeshtUpToDate
 
   claudeTeshtAppend() {
-    printf '\n' >>"$base"
-    cat "$src" >>"$base"
+    printf '\n# tesht\n@~/projects/tesht/docs/tesht.md\n' >>"$base"
   }
   cmd claudeTeshtAppend
 }
