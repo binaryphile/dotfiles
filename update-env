@@ -388,6 +388,7 @@ stage2() {
   try eraSystemdEnableTask
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
+  claudeTeshtConfigTask
   claudeTandemConfigTask
   claudeMemoryRedirectsTask
   shellcheckrcTask
@@ -508,15 +509,27 @@ aptUpgradeTask() {
 # yuezk's GitHub releases. Downloads the .deb and installs with dpkg.
 # Crostini-only -- NixOS gets gpoc from nixos-config's flake input.
 aptInstallGpocTask() {
+  # Bumping version triggers reinstall on next update-env run via the
+  # version-equality predicate below (was previously presence-based on
+  # /usr/bin/gpclient, which silently skipped already-installed-but-stale
+  # hosts on version bumps).
+  local version=2.5.4
+  local sha256=edbba2d45533782d695aad76aeb244d758f6d591d14b08f6b190aeda1b2a5663
+
   desc   'install globalprotect-openconnect (gpoc)'
   prog   on
-  exist  /usr/bin/gpclient
+
+  # Use the dpkg DB as source of truth (not `gpclient --version`): avoids
+  # parsing CLI output, fails closed if the package is absent, and immune
+  # to PATH ambiguity. Trade-off: trusts package DB and binary state co-move.
+  gpocVersionMatches() {
+    dpkg-query -W -f='${Version}\n' globalprotect-openconnect 2>/dev/null | grep -qxF "$version-1"
+  }
+  ok gpocVersionMatches
 
   aptInstallGpoc() {
-    local version=2.5.1
     local deb="globalprotect-openconnect_${version}-1_amd64.deb"
     local url="https://github.com/yuezk/GlobalProtect-openconnect/releases/download/v${version}/${deb}"
-    local sha256=676fb6480df402884e5097b29a3bcb8856be1943cab04edb7a251518288064a2
     local tmp
     tmp=$(mktemp -d) || { echo "failed to create temp directory" >&2; return 1; }
     $curl -fsSL "$url" -o "$tmp/$deb" || { rm -rf "$tmp"; echo "failed to download gpoc" >&2; return 1; }
@@ -797,6 +810,28 @@ claudeEraConfigTask() {
     cat "$era" >>"$base"
   }
   cmd claudeEraAppend
+}
+
+# claudeTeshtConfigTask appends the tesht usage block to ~/.claude/CLAUDE.md.
+# Mirrors claudeEraConfigTask -- a single global config block, applied to
+# every project Claude works in. Tesht is general-purpose enough that any
+# bash-bearing project can benefit; not worth discriminating by project type.
+claudeTeshtConfigTask() {
+  local base=${claudeTesht_base:-$HOME/.claude/CLAUDE.md}
+  local src=${claudeTesht_src:-$HOME/dotfiles/claude/CLAUDE-tesht.md}
+  desc 'append tesht config to ~/.claude/CLAUDE.md'
+  check "[[ -f $src ]] && [[ -f $base ]]"
+
+  claudeTeshtUpToDate() {
+    [[ -f $base ]] && grep -qF 'Tesht is the table-driven testing framework' "$base"
+  }
+  ok claudeTeshtUpToDate
+
+  claudeTeshtAppend() {
+    printf '\n' >>"$base"
+    cat "$src" >>"$base"
+  }
+  cmd claudeTeshtAppend
 }
 
 # claudeTandemConfigTask appends the Tandem Protocol reference to CLAUDE.md
