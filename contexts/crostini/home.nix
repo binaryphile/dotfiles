@@ -23,14 +23,13 @@ let
     };
   };
 
-  # onepassword:// scheme handler. Built with absolute Exec path so it
-  # doesn't depend on PATH resolution under garcon's minimal-PATH dispatch
-  # env (cros-garcon.service hardcodes PATH and child processes inherit it;
-  # nix-profile is not on that PATH). The package's bundled .desktop ships
-  # Exec=1password (no path) which fails when ChromeOS dispatches the
-  # callback. makeDesktopItem builds a derivation; home.file (below) places
-  # the resulting .desktop into ~/.local/share/applications/ -- one of the
-  # few directories garcon's XDG_DATA_DIRS actually includes.
+  # URL scheme handler .desktop files for ChromeOS-host->container dispatch.
+  # cros-garcon.service hardcodes a minimal PATH and an XDG_DATA_DIRS that
+  # does NOT include ~/.nix-profile/share/. Garcon-spawned children inherit
+  # that minimal PATH, so any bare-name Exec (like the bundled 1password.desktop's
+  # `Exec=1password`) fails to resolve at dispatch. makeDesktopItem builds a
+  # derivation with absolute store-path Exec; home.file (below) places the
+  # .desktop into ~/.local/share/applications/, one of the few dirs garcon scans.
   onepasswordDesktop = pkgs.makeDesktopItem {
     name = "onepassword";
     desktopName = "1Password (URL scheme handler)";
@@ -38,6 +37,25 @@ let
     mimeTypes = [ "x-scheme-handler/onepassword" ];
     terminal = false;
     noDisplay = true;
+  };
+
+  # gpgui: same Crostini issue as onepassword. The previous xdg.desktopEntries.gpgui
+  # block deployed to ~/.nix-profile/share/applications/ (invisible to garcon),
+  # which broke globalprotectcallback:// dispatch after d9db7a9 removed the
+  # symlink workaround on the assumption xdg.desktopEntries alone was sufficient.
+  # gpclient is /usr/bin/gpclient (apt-installed) -- an absolute path already, so
+  # PATH lookup isn't strictly needed, but we go through makeDesktopItem + home.file
+  # anyway for consistency with onepassword.
+  gpguiDesktop = pkgs.makeDesktopItem {
+    name = "gpgui";
+    desktopName = "GP Connect";
+    comment = "A GUI client for GlobalProtect VPN";
+    genericName = "GlobalProtect VPN Client";
+    categories = [ "Network" "Dialup" ];
+    exec = "${gpclient} launch-gui %u";
+    mimeTypes = [ "x-scheme-handler/globalprotectcallback" ];
+    icon = "gpgui";
+    terminal = false;
   };
 
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
@@ -120,15 +138,15 @@ in
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
-    # Place the onepassword scheme handler where garcon can find it.
+    # Place scheme-handler .desktop files where garcon can find them.
     # home-manager's xdg.desktopEntries deploys to ~/.nix-profile/share/
     # applications/ which is NOT in cros-garcon.service's XDG_DATA_DIRS;
-    # only ~/.local/share/applications/ is reachable. (This contradicts
-    # the assertion in dotfiles commit d9db7a9 that xdg.desktopEntries
-    # alone is sufficient for Crostini -- empirically false. Same fix
-    # would re-enable gpgui dispatch but is left for a separate commit.)
+    # only ~/.local/share/applications/ is reachable. (Empirically verified
+    # via /proc/$(pidof garcon)/environ; contradicts d9db7a9's premise.)
     ".local/share/applications/onepassword.desktop".source =
       "${onepasswordDesktop}/share/applications/onepassword.desktop";
+    ".local/share/applications/gpgui.desktop".source =
+      "${gpguiDesktop}/share/applications/gpgui.desktop";
   };
 
   # 1Password desktop-integration gate: the desktop app verifies the
@@ -192,20 +210,6 @@ in
     # cleanly, never interleave bytes.
     [[ -n $tmpStatus ]] && /bin/mv -f "$tmpStatus" "$statusFile" 2>/dev/null || true
   '';
-
-  # Register gpclient as the URL scheme handler for globalprotectcallback://.
-  xdg.desktopEntries = {
-    gpgui = {
-      name = "GP Connect";
-      comment = "A GUI client for GlobalProtect VPN";
-      genericName = "GlobalProtect VPN Client";
-      categories = [ "Network" "Dialup" ];
-      exec = "${gpclient} launch-gui %u";
-      mimeType = [ "x-scheme-handler/globalprotectcallback" ];
-      icon = "gpgui";
-      terminal = false;
-    };
-  };
 
   # http/https default handler is garcon's host-browser bridge -- routes
   # xdg-open https://... from the container to ChromeOS host Chrome.
