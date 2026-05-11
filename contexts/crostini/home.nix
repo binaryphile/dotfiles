@@ -103,12 +103,6 @@ in
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
-    # ChromeOS host Chrome dispatches custom URL schemes to in-container
-    # handlers via garcon, but garcon only scans the standard XDG user dir
-    # (~/.local/share/applications/), NOT ~/.nix-profile/share/. Symlink the
-    # home-manager-installed gpgui.desktop into the standard location.
-    ".local/share/applications/gpgui.desktop".source =
-      linkHome ".nix-profile/share/applications/gpgui.desktop";
   };
 
   # 1Password desktop-integration gate: the desktop app verifies the

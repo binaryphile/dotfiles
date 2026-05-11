@@ -365,6 +365,10 @@ stage2() {
   try scaffoldTask ~/projects/tandem-protocol
   try obsidianSnippetsTask ~/projects/tandem-protocol/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
+  desc   'remove stale /g command (renamed to /grade)'
+  ok     '[[ ! -e ~/.claude/commands/g.md ]]'
+  cmd    'rm -f ~/.claude/commands/g.md'
+
   lib.Glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
     map path '$path ~/.claude/commands/$(basename $path)' |

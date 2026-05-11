@@ -116,6 +116,9 @@ in
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
+      # globalprotectcallback:// dispatched by the browser after SAML auth completes.
+      # Without this entry the portal drops the URL and gpauth hangs forever.
+      "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
       # Preserved from existing ~/.config/mimeapps.list (Claude Code deep links).
       "x-scheme-handler/claude-cli" = [ "claude-code-url-handler.desktop" ];
     };
