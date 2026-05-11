@@ -78,8 +78,16 @@ parseOptions() {
 # guardSubstitutions fatals (exit 73) if @dotfilesRoot@ wasn't substituted at build.
 #
 # Detects the literal marker still present in the script body.
+#
+# mkScriptBin's --replace-fail substitutes EVERY occurrence of @dotfilesRoot@
+# in the source, so the marker on the RHS must not appear as a contiguous
+# literal -- otherwise both sides get replaced and the check is meaningless.
+# Build the marker via adjacent-string concatenation: bash splices these into
+# the same value at parse time, but the substitution tool reading raw text
+# never sees a contiguous '@dotfilesRoot@' here.
 guardSubstitutions() {
-  [[ '@dotfilesRoot@' != *'@dotfilesRoot@'* ]] || fatal 'op-run bootstrap: @dotfilesRoot@ unsubstituted; rebuild via home-manager' 73
+  local marker='@'"dotfilesRoot"'@'
+  [[ '@dotfilesRoot@' != *"$marker"* ]] || fatal "op-run bootstrap: $marker unsubstituted; rebuild via home-manager" 73
 }
 
 # sourceOrFail sources `path`, or fatals with exit 72.

@@ -99,17 +99,26 @@ test_resolveProject_no_registry_match() {
   tesht.AssertRC $rc 65
 }
 
-# test_guardSubstitutions_after_substitution verifies the post-substitution check passes.
+# test_guardSubstitutions_unsubstituted verifies the REAL function fatals
+# when the LHS marker is still literal. The sourced script body has the
+# unsubstituted marker, so calling the real function should exit 73.
 #
-# Only the substituted-passes case is tested here because the script source
-# in the test environment still has the literal marker. The unsubstituted
-# case is exercised at runtime when op-run is invoked outside its mkScriptBin
-# wrapper -- documented but not unit-tested.
+# This regresses the historical bug where mkScriptBin replaced both LHS
+# and RHS markers, making the inequality always-false and the guard inert.
+test_guardSubstitutions_unsubstituted() {
+  local rc=0
+  ( guardSubstitutions ) >/dev/null 2>&1 || rc=$?
+  tesht.AssertRC $rc 73
+}
+
+# test_guardSubstitutions_after_substitution simulates the post-substitution
+# state by sed-rewriting the LHS literal in the function body, then invoking
+# the real function. The RHS marker (built via adjacent-string concatenation)
+# must survive substitution unchanged, so this exercises the actual fix.
 test_guardSubstitutions_after_substitution() {
-  guardSubstitutions() {
-    # shellcheck disable=SC2193
-    [[ '/home/ted/dotfiles' != *'@dotfilesRoot@'* ]] || return 73
-  }
+  local body
+  body=$(declare -f guardSubstitutions | sed "s|'@dotfilesRoot@'|'/home/ted/dotfiles'|")
+  eval "$body"
   local rc=0
   guardSubstitutions || rc=$?
   tesht.AssertRC $rc 0
@@ -256,6 +265,21 @@ test_applyEnvSpec_malformed() {
   local rc=0
   ( applyEnvSpec "no_equals_sign" ) >/dev/null 2>&1 || rc=$?
   tesht.AssertRC $rc 71
+}
+
+# test_urmaProjectEnvSpec_includesJira verifies the urma project registry
+# declares Jira credential injection. Guards against accidental removal of
+# JIRA_* entries; parser correctness is covered by test_applyEnvSpec_exports.
+test_urmaProjectEnvSpec_includesJira() {
+  ( source "$PWD/op-run/projects.bash"
+
+    local spec=${ProjectEnvSpec[urma]:-}
+    [[ -n $spec ]] || { echo "ProjectEnvSpec[urma] not set"; return 1; }
+
+    grep -qE '^JIRA_URL=' <<<"$spec"            || { echo "missing JIRA_URL";       return 1; }
+    grep -qE '^JIRA_USERNAME=' <<<"$spec"       || { echo "missing JIRA_USERNAME";  return 1; }
+    grep -qE '^JIRA_API_TOKEN=op://' <<<"$spec" || { echo "missing JIRA_API_TOKEN op:// ref"; return 1; }
+  )
 }
 
 # test_auditPublish_keys_only_op_refs verifies the keys list contains only op:// var names.

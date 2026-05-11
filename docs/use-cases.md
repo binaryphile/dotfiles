@@ -522,5 +522,5 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
-| UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
+| UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2; urma excluded (git-excluded flake.nix) |

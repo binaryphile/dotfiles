@@ -8,4 +8,4 @@
 # Naming Policy: standalone-script style, no namespace prefix on globals.
 # Bootstrap globals are PascalCase and `declare -agr` (readonly-enforced).
 
-declare -agr AllowedVaults=( Private urma-atlassian )
+declare -agr AllowedVaults=( Employee urma-atlassian )

@@ -88,9 +88,10 @@ in
   # never picks up rebuilt derivations.
   home.activation.updateTmuxPath = config.lib.dag.entryAfter [ "installPackages" ] ''
     if ${pkgs.tmux}/bin/tmux has-session 2>/dev/null; then
-      local currentPath
+      # activation runs at top level, not inside a function -- no `local`
       currentPath=$(${pkgs.tmux}/bin/tmux show-environment -g PATH 2>/dev/null | sed 's/^PATH=//')
       ${pkgs.tmux}/bin/tmux set-environment -g PATH "${panel}/bin:''${currentPath:-$PATH}" || true
+      unset -v currentPath
     fi
   '';
 

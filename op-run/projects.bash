@@ -29,14 +29,14 @@ declare -Agr ProjectVault=(
   [urma]=urma-atlassian
 )
 
-# urma: matches the env vars the existing .envrc was exporting -- Bitbucket
-# Server (stash.digi.com) and Confluence Cloud (onedigi.atlassian.net),
-# both via _PERSONAL_TOKEN. JIRA_* deliberately omitted (was not in the
-# original .envrc). Add later if/when Jira becomes a consumer.
+# urma: Bitbucket Server (stash.digi.com) via _PERSONAL_TOKEN, plus
+# Confluence Cloud and Jira Cloud (both onedigi.atlassian.net) via Cloud
+# API token. Consumed by mcp-atlassian-with-bitbucket.
 #
-# 1Password item/field names assumed:
+# 1Password item/field names (API Credential item type, default 'credential' field):
 #   urma-atlassian/bitbucket   field: credential
 #   urma-atlassian/confluence  field: credential
+#   urma-atlassian/jira        field: credential
 # Adjust the op:// references if the vault uses different names.
 
 declare -Agr ProjectEnvSpec=(
@@ -45,5 +45,8 @@ BITBUCKET_USERNAME=tlilley
 BITBUCKET_PERSONAL_TOKEN=op://urma-atlassian/bitbucket/credential
 CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
 CONFLUENCE_USERNAME=tlilley@digi.com
-CONFLUENCE_PERSONAL_TOKEN=op://urma-atlassian/confluence/credential"
+CONFLUENCE_PERSONAL_TOKEN=op://urma-atlassian/confluence/credential
+JIRA_URL=https://onedigi.atlassian.net
+JIRA_USERNAME=tlilley@digi.com
+JIRA_API_TOKEN=op://urma-atlassian/jira/credential"
 )
