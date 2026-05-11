@@ -391,6 +391,7 @@ stage2() {
     ~/projects/era/bin/validate-attestation   ~/.local/bin/validate-attestation
   END
   try eraMcpCleanupTask
+  try eraServiceCleanupTask
   try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era-serve.service
   try eraSystemdEnableTask
   try eraRestartTask
@@ -605,9 +606,12 @@ obsidianSnippetsTask() {
 
 # git autostash pop can fail silently when local and upstream both modified the same file;
 # on conflict the stash stays, labeled "autostash". Drop it — pulled version wins.
+# Targets the specific stash ref (not stash@{0}) to avoid clobbering user stashes above it.
 gitUpdate() {
   task.GitUpdate $1
-  git -C $1 stash list 2>/dev/null | grep -qF autostash && loosely git -C $1 stash drop >/dev/null 2>&1
+  local stashRef
+  stashRef=$(git -C $1 stash list 2>/dev/null | grep -E ': autostash$' | grep -o 'stash@{[0-9]*}' | head -1) || true
+  [[ -n $stashRef ]] && loosely git -C $1 stash drop $stashRef >/dev/null 2>&1
 }
 
 urmaFlakeTask() {
@@ -717,6 +721,18 @@ eraMcpCleanupTask() {
     fi
   }
   cmd eraMcpCleanup
+}
+
+eraServiceCleanupTask() {
+  desc  'remove legacy era.service unit (renamed to era-serve.service)'
+  ok    '! systemctl --user cat era.service &>/dev/null'
+
+  eraServiceCleanup() {
+    systemctl --user disable --now era.service 2>/dev/null || true
+    rm -f ~/.config/systemd/user/era.service
+    systemctl --user daemon-reload
+  }
+  cmd eraServiceCleanup
 }
 
 eraSystemdEnableTask() {
