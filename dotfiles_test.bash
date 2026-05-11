@@ -269,16 +269,6 @@ test_vpn_handler_config() {
     [file]="$Root/contexts/crostini/home.nix"
     [want]='xdg.desktopEntries'
   )
-  local -A case3=(
-    [name]='crostini gpgui uses apt gpclient path'
-    [file]="$Root/contexts/crostini/home.nix"
-    [want]='/usr/bin/gpclient'
-  )
-  local -A case4=(
-    [name]='crostini has no broken garcon symlink for gpgui.desktop'
-    [file]="$Root/contexts/crostini/home.nix"
-    [want_absent]='nix-profile/share/applications/gpgui.desktop'
-  )
 
   subtest() {
     local casename=$1
@@ -287,20 +277,29 @@ test_vpn_handler_config() {
     local got
     got=$(< "$file")
 
-    if [[ -n ${want_absent:-} ]]; then
-      [[ $got != *"$want_absent"* ]] || {
-        echo "error: '$file' must not contain '$want_absent'"
-        return 1
-      }
-    else
-      [[ $got == *"$want"* ]] || {
-        echo "error: '$file' missing required string '$want'"
-        return 1
-      }
-    fi
+    [[ $got == *"$want"* ]] || {
+      echo "error: '$file' missing required string '$want'"
+      return 1
+    }
   }
 
   tesht.Run ${!case@}
+}
+
+# Guard against garcon symlink regression (commit 28beecf): a home.file entry
+# pointing to .nix-profile/share/applications/ becomes a broken symlink when
+# the nix gpoc package is removed. xdg.desktopEntries already deploys to the
+# garcon discovery path; the redundant symlink wins the conflict and silently
+# drops URL dispatch. Strip Nix line comments before checking to avoid false
+# positives from comment text that mentions the removed path.
+test_vpn_no_garcon_symlink() {
+  local got
+  got=$(grep -v '^\s*#' "$Root/contexts/crostini/home.nix" | sed 's/\s*#.*//')
+
+  [[ $got != *'nix-profile/share/applications/gpgui.desktop'* ]] || {
+    echo "error: crostini/home.nix must not reference the nix-profile garcon symlink for gpgui.desktop"
+    return 1
+  }
 }
 
 # Deployment-state tests: verify update-env stage 2 outcomes.
