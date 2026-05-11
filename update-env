@@ -416,19 +416,9 @@ stage2() {
 
   section urma
   try stashCloneAndLinkTask urma-next urma idigi develop
-  ProjectDir=~/projects/urma
-  source ~/dotfiles/scripts/scaffold
-  try MkdirTask ~/projects/urma/bin
-  try NixWrapperTask
-  try GitExcludeBinTask
-  try urmaEnvrcTask
-  try urmaDirenvAllowTask
-  try task.Ln nix-wrapper ~/projects/urma/bin/uvx
-  try urmaFlakeTask
+  try scaffoldTask ~/projects/urma
   try gitExcludeTask ~/projects/urma /obsidian
   try obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
-  try gitExcludeTask ~/projects/urma /flake.nix
-  try gitExcludeTask ~/projects/urma /flake.lock
   try writeMcpJsonTask ~/projects/urma
 
   section pepin
@@ -612,82 +602,6 @@ gitUpdate() {
   local stashRef
   stashRef=$(git -C $1 stash list 2>/dev/null | grep -E ': autostash$' | grep -o 'stash@{[0-9]*}' | head -1) || true
   [[ -n $stashRef ]] && loosely git -C $1 stash drop $stashRef >/dev/null 2>&1
-}
-
-urmaFlakeTask() {
-  local path=~/projects/urma/flake.nix
-  desc 'install urma flake.nix'
-
-  urmaFlakeUpToDate() { [[ -f $path ]] && diff -q "$path" <(urmaFlakeContent) >/dev/null 2>&1; }
-  ok urmaFlakeUpToDate
-
-  urmaFlakeInstall() { urmaFlakeContent >$path; }
-  cmd urmaFlakeInstall
-}
-
-urmaFlakeContent() {
-  cat << 'EOF'
-{
-  description = "URMA development environment";
-
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs";
-    flake-utils.url = "github:numtide/flake-utils";
-  };
-
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
-      in {
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            bash
-            coreutils
-            git
-            uv
-          ];
-        };
-      }
-    );
-}
-EOF
-}
-
-urmaEnvrcTask() {
-  local path=~/projects/urma/.envrc
-  desc 'install urma .envrc'
-
-  urmaEnvrcUpToDate() { [[ -f $path ]] && diff -q "$path" <(urmaEnvrcContent) >/dev/null 2>&1; }
-  ok urmaEnvrcUpToDate
-
-  urmaEnvrcInstall() { urmaEnvrcContent >$path; }
-  cmd urmaEnvrcInstall
-}
-
-urmaDirenvAllowTask() {
-  local path=~/projects/urma/.envrc
-  desc "direnv allow ~/projects/urma"
-  check "diff -q '$path' <(urmaEnvrcContent) >/dev/null 2>&1"
-  ok "grep -rq '$path' ~/.local/share/direnv/allow/ 2>/dev/null"
-
-  cmd "direnv allow ~/projects/urma"
-}
-
-urmaEnvrcContent() {
-  cat << 'EOF'
-export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
-export PATH=$PROJECT_ROOT/bin:$PATH
-
-# Atlassian credentials (BITBUCKET_*, CONFLUENCE_*) used to be exported
-# here from ~/secrets/*.key. They now live in 1Password (vault
-# urma-atlassian) and are injected per-tool by op-run; .mcp.json invokes
-# `op-run uvx mcp-atlassian-with-bitbucket` so tokens reach the MCP child
-# only, never the shell session. See dotfiles op-run/projects.bash and
-# docs/design.md Credential Architecture.
-EOF
 }
 
 eraScaffoldTask() {

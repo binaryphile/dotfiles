@@ -32,6 +32,7 @@ in {
     silver-searcher
     stgit
     tree
+    uv
     vpn-slice
     zip
   ] ++ [ effectiveBashTools.mkBash effectiveBashTools.tesht ];
