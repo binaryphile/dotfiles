@@ -23,6 +23,23 @@ let
     };
   };
 
+  # onepassword:// scheme handler. Built with absolute Exec path so it
+  # doesn't depend on PATH resolution under garcon's minimal-PATH dispatch
+  # env (cros-garcon.service hardcodes PATH and child processes inherit it;
+  # nix-profile is not on that PATH). The package's bundled .desktop ships
+  # Exec=1password (no path) which fails when ChromeOS dispatches the
+  # callback. makeDesktopItem builds a derivation; home.file (below) places
+  # the resulting .desktop into ~/.local/share/applications/ -- one of the
+  # few directories garcon's XDG_DATA_DIRS actually includes.
+  onepasswordDesktop = pkgs.makeDesktopItem {
+    name = "onepassword";
+    desktopName = "1Password (URL scheme handler)";
+    exec = "${pkgs._1password-gui}/bin/1password %U";
+    mimeTypes = [ "x-scheme-handler/onepassword" ];
+    terminal = false;
+    noDisplay = true;
+  };
+
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
   # it via garcon's container->host localhost forwarding. Selectively used
   # by Chrome via the PAC file below -- only VPN-bound hosts traverse it.
@@ -103,6 +120,15 @@ in
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
+    # Place the onepassword scheme handler where garcon can find it.
+    # home-manager's xdg.desktopEntries deploys to ~/.nix-profile/share/
+    # applications/ which is NOT in cros-garcon.service's XDG_DATA_DIRS;
+    # only ~/.local/share/applications/ is reachable. (This contradicts
+    # the assertion in dotfiles commit d9db7a9 that xdg.desktopEntries
+    # alone is sufficient for Crostini -- empirically false. Same fix
+    # would re-enable gpgui dispatch but is left for a separate commit.)
+    ".local/share/applications/onepassword.desktop".source =
+      "${onepasswordDesktop}/share/applications/onepassword.desktop";
   };
 
   # 1Password desktop-integration gate: the desktop app verifies the
@@ -192,6 +218,16 @@ in
       "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
       "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
       "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
+      # onepassword:// is Okta's SSO redirect target after auth. ChromeOS
+      # Chrome dispatches the URI back into the container via garcon; the
+      # in-container 1Password's running instance receives it via Electron's
+      # single-instance arg-forward and verifies the OIDC callback. NOTE:
+      # this completes the AUTH; the Chrome sign-in tab does NOT auto-close
+      # because the 1Password browser extension's native-messaging bridge
+      # cannot reach a container-resident binary from host Chrome (same
+      # architectural constraint as Snap/Flatpak per 1Password docs). Close
+      # the Chrome tab manually after auth completes.
+      "x-scheme-handler/onepassword" = [ "onepassword.desktop" ];
     };
   };
 
