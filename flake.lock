@@ -260,11 +260,11 @@
     "tesht-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1773076958,
-        "narHash": "sha256-Jt/n7S+fxHvL5Gq0U5RbD2pm2o2krTFXQF1kxRJAhpQ=",
+        "lastModified": 1778521318,
+        "narHash": "sha256-qzJEPT5Hzi0ipgOcuMkrjKFOOytoykx0cj3jZkHNBWM=",
         "owner": "binaryphile",
         "repo": "tesht",
-        "rev": "8f5848ee3fe469eb4d3a288bdda7b8c5b09f3465",
+        "rev": "1b454ae950d007717012e53dc2119b996a231c6b",
         "type": "github"
       },
       "original": {
