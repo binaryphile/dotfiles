@@ -142,6 +142,24 @@ All project repos -- including private repos like jeeves -- are cloned by update
 
 On NixOS, `~/nixos-config/flake.nix` imports `home.nix` via flake input. Dotfile symlinks still deployed by `update-env`.
 
+#### Obsidian Snippets
+
+Shared CSS snippets from `dotfiles/obsidian/snippets/*.css` are deployed to each project vault's `.obsidian/snippets/` directory by `obsidianSnippetsTask`. Vaults covered: task.bash, fp.bash, mk.bash, tesht, jeeves, sofdevsim-2026, binaryphile.github.io, tandem-protocol, era (personal), urma/obsidian, pepin/obsidian, cloud-services/obsidian, dal/obsidian, tlilley-daily-notes.
+
+Idempotent: ok check uses `diff -q` to skip files already matching. Install uses `cp` — no symlinks, so each vault's Obsidian instance owns its copy. Empty source dir is a no-op: ok check returns 0, target dir not created.
+
+`obsidianSnippetsTask` uses `lib.Glob` (not a bare `*.css` pattern) because `update-env` runs with `set -f` (noglob); bare globs would not expand. `lib.Glob` temporarily restores glob expansion with nullglob, emits newline-separated matches, and restores the previous state. Empty source dir → no output → for-loop body never runs.
+
+#### Era Server Build and Deploy
+
+The era server (`era-serve`) is a Go binary built by `eraBuildTask` via `./mk build` (runs inside `nix develop` for the Go toolchain). Ok check: `exist ~/projects/era/bin/era-serve` (the gitignored Go binary). `era` is now a tracked bash CLI script — checking for `era` would always pass and skip the build.
+
+After build, `task.Ln` creates `~/projects/era/bin/era-serve → ~/.local/bin/era-serve` (same pattern as `era`, `era-hook`). The service unit (`era-serve.service`) runs `%h/.local/bin/era-serve`.
+
+`eraSystemdEnableTask` ensures `era-serve.service` is enabled. `eraRestartTask` (ok: `is-active era-serve`) starts the service if not already running — this covers fresh builds where the binary now exists but the service hasn't started.
+
+Known limitation: `eraBuildTask` only ensures the binary exists, not that it matches the current source. After pulling new era commits, rebuild with `rm ~/projects/era/bin/era-serve && update-env -2`.
+
 ### Bash Init (UC-1)
 
 #### Why a single entry point
