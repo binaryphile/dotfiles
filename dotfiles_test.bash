@@ -255,6 +255,54 @@ test_prompt_integration() {
   tesht.Run ${!case@}
 }
 
+# VPN handler registration: guard against regression where the
+# globalprotectcallback URL scheme handler is accidentally dropped from the
+# shared config layer (as happened in commit 28beecf -- see docs/vpn.md).
+test_vpn_handler_config() {
+  local -A case1=(
+    [name]='linux-base has globalprotectcallback mimeApps entry'
+    [file]="$Root/contexts/linux-base.nix"
+    [want]='x-scheme-handler/globalprotectcallback'
+  )
+  local -A case2=(
+    [name]='crostini has gpgui desktopEntries declaration'
+    [file]="$Root/contexts/crostini/home.nix"
+    [want]='xdg.desktopEntries'
+  )
+  local -A case3=(
+    [name]='crostini gpgui uses apt gpclient path'
+    [file]="$Root/contexts/crostini/home.nix"
+    [want]='/usr/bin/gpclient'
+  )
+  local -A case4=(
+    [name]='crostini has no broken garcon symlink for gpgui.desktop'
+    [file]="$Root/contexts/crostini/home.nix"
+    [want_absent]='nix-profile/share/applications/gpgui.desktop'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+
+    local got
+    got=$(< "$file")
+
+    if [[ -n ${want_absent:-} ]]; then
+      [[ $got != *"$want_absent"* ]] || {
+        echo "error: '$file' must not contain '$want_absent'"
+        return 1
+      }
+    else
+      [[ $got == *"$want"* ]] || {
+        echo "error: '$file' missing required string '$want'"
+        return 1
+      }
+    fi
+  }
+
+  tesht.Run ${!case@}
+}
+
 # Deployment-state tests: verify update-env stage 2 outcomes.
 # These test orchestration results, not config correctness.
 # They fail on machines where stage 2 hasn't run -- that's expected.
