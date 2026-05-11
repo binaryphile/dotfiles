@@ -871,3 +871,41 @@ test_shellcheckrcTask_skipsUncreatedProjects() {
   [[ -f $dir/.config/shellcheck/shellcheckrc ]] || { echo "neutral path not created"; return 1; }
   [[ ! -e $dir/projects ]] || { echo "projects dir should not exist"; return 1; }
 }
+
+## obsidianSnippetsTask -- Q3 integration: CSS snippet deploy to .obsidian/snippets/
+
+test_obsidianSnippetsTask_converges() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/dotfiles/obsidian/snippets
+  echo '.md { max-width: 1100px; }' >$dir/dotfiles/obsidian/snippets/custom-width.css
+
+  local HOME=$dir
+  obsidianSnippetsTask $dir/target/.obsidian/snippets >/dev/null 2>&1
+
+  local rc=0
+  [[ -f $dir/target/.obsidian/snippets/custom-width.css ]] || { echo "file not deployed"; rc=1; }
+  diff -q $dir/dotfiles/obsidian/snippets/custom-width.css \
+          $dir/target/.obsidian/snippets/custom-width.css >/dev/null 2>&1 || { echo "content mismatch"; rc=1; }
+
+  local hashBefore hashAfter
+  hashBefore=$(sha256sum $dir/target/.obsidian/snippets/custom-width.css | awk '{print $1}')
+  obsidianSnippetsTask $dir/target/.obsidian/snippets >/dev/null 2>&1
+  hashAfter=$(sha256sum $dir/target/.obsidian/snippets/custom-width.css | awk '{print $1}')
+  [[ $hashBefore == $hashAfter ]] || { echo "not idempotent"; rc=1; }
+
+  return $rc
+}
+
+test_obsidianSnippetsTask_noopWhenSrcEmpty() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/dotfiles/obsidian/snippets
+
+  local HOME=$dir
+  obsidianSnippetsTask $dir/target/.obsidian/snippets >/dev/null 2>&1
+
+  [[ ! -d $dir/target ]] || { echo "target dir created despite empty source"; return 1; }
+}

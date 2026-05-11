@@ -136,7 +136,7 @@ stage1() {
   section dotfiles
   task.GitClone https://github.com/binaryphile/dotfiles ~/dotfiles main
   try git -C ~/dotfiles remote set-url origin git@github.com:binaryphile/dotfiles.git
-  try task.GitUpdate ~/dotfiles
+  try gitUpdate ~/dotfiles
   each task.Ln <<'  END'
     contexts/"$Platform"                          ~/dotfiles/context
     ~/dotfiles/bash/init.bash                     ~/.bash_profile
@@ -388,8 +388,9 @@ stage2() {
     ~/projects/era/bin/validate-attestation   ~/.local/bin/validate-attestation
   END
   try eraMcpCleanupTask
-  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era.service
+  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era-serve.service
   try eraSystemdEnableTask
+  try eraRestartTask
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeTeshtConfigTask
@@ -467,7 +468,7 @@ stage2() {
   section neovim
   try task.GitClone https://github.com/binaryphile/dot_vim ~/.config/nvim main
   try git -C ~/.config/nvim remote set-url origin git@github.com:binaryphile/dot_vim.git
-  try task.GitUpdate ~/.config/nvim
+  try gitUpdate ~/.config/nvim
   curlTask https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim ~/.local/share/nvim/site/autoload/plug.vim
   nvimHeadlessPlugInstallTask
   task.Ln ~/.config/nvim ~/nvim
@@ -551,14 +552,14 @@ aptInstallGpocTask() {
 bitbucketCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone git@bitbucket.org:accelecon/$repo ~/projects/$repo $branch
-  try task.GitUpdate ~/projects/$repo
+  try gitUpdate ~/projects/$repo
 }
 
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone https://codeberg.org/binaryphile/$repo ~/projects/$repo $branch
   try git -C ~/projects/"$repo" remote set-url origin "git@codeberg.org:binaryphile/$repo.git"
-  try task.GitUpdate ~/projects/$repo
+  try gitUpdate ~/projects/$repo
 }
 
 scaffoldTask() {
@@ -583,20 +584,27 @@ obsidianSnippetsTask() {
 
   obsidianSnippetsUpToDate() {
     local f
-    for f in "$srcDir"/*.css; do
-      [[ -f "$snippetsDir/$(basename "$f")" ]] && diff -q "$f" "$snippetsDir/$(basename "$f")" >/dev/null 2>&1 || return 1
+    for f in $(lib.Glob $srcDir/*.css); do
+      [[ -f $snippetsDir/$(basename $f) ]] && diff -q $f $snippetsDir/$(basename $f) >/dev/null 2>&1 || return 1
     done
   }
   ok obsidianSnippetsUpToDate
 
   obsidianSnippetsInstall() {
-    mkdir -p "$snippetsDir"
+    mkdir -p $snippetsDir
     local f
-    for f in "$srcDir"/*.css; do
-      cp "$f" "$snippetsDir/$(basename "$f")"
+    for f in $(lib.Glob $srcDir/*.css); do
+      cp $f $snippetsDir/$(basename $f)
     done
   }
   cmd obsidianSnippetsInstall
+}
+
+# git autostash pop can fail silently when local and upstream both modified the same file;
+# on conflict the stash stays, labeled "autostash". Drop it — pulled version wins.
+gitUpdate() {
+  task.GitUpdate $1
+  git -C $1 stash list 2>/dev/null | grep -qF autostash && loosely git -C $1 stash drop >/dev/null 2>&1
 }
 
 urmaFlakeTask() {
@@ -687,7 +695,7 @@ eraScaffoldTask() {
 eraBuildTask() {
   desc  'build era binaries'
   prog  on
-  exist ~/projects/era/bin/era
+  exist ~/projects/era/bin/era-serve
 
   cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && ./mk build"'
 }
@@ -709,11 +717,16 @@ eraMcpCleanupTask() {
 }
 
 eraSystemdEnableTask() {
-  desc  'enable era systemd service'
-  ok    'systemctl --user is-enabled era &>/dev/null'
-  cmd   'systemctl --user enable --now era'
+  desc  'enable era-serve systemd service'
+  ok    'systemctl --user is-enabled era-serve &>/dev/null'
+  cmd   'systemctl --user enable --now era-serve'
 }
 
+eraRestartTask() {
+  desc 'start era-serve if not running'
+  ok   'systemctl --user is-active era-serve &>/dev/null'
+  cmd  'systemctl --user restart era-serve'
+}
 
 chromeDevtoolsMcpRegisterTask() {
   desc  'register chrome-devtools MCP in claude.json'
@@ -1045,7 +1058,7 @@ stashCloneAndLinkTask() {
   }
   cmd stashClone
 
-  try task.GitUpdate ~/projects/$dir
+  try gitUpdate ~/projects/$dir
 }
 
 gitExcludeTask() {
@@ -1063,7 +1076,7 @@ githubCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone https://github.com/binaryphile/$repo ~/projects/$repo $branch
   try git -C ~/projects/"$repo" remote set-url origin "git@github.com:binaryphile/$repo.git"
-  try task.GitUpdate ~/projects/$repo
+  try gitUpdate ~/projects/$repo
 }
 
 # hash verification
