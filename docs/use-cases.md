@@ -158,7 +158,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
   - 4a. *Provider auth fails:* Reports per provider; private repos skipped. Fail (partial deployment).
   - 5a. *VPN-dependent repo unreachable:* Skips that repo. Resume at next repo.
 - **Minimal Guarantee:** Machine usable for HTTPS-only work even if credential setup fails.
-- **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; remaining manual steps documented.
+- **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; Obsidian CSS snippets synced to all active project vaults; Era memory server binary built and service running; remaining manual steps documented.
 - **Technology:** update-env (bash), 1Password, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4).
 
 **Credential model (UC-4 family):** documented in the 1Password-stored canonical doc set.
