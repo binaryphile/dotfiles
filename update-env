@@ -311,6 +311,9 @@ stage2() {
 
   section tesht
   try githubCloneAndLinkTask tesht
+  desc  'switch tesht to main (was develop)'
+  ok    '[[ $(git -C ~/projects/tesht branch --show-current 2>/dev/null) != develop ]]'
+  cmd   'git -C ~/projects/tesht checkout main'
   try scaffoldTask ~/projects/tesht
   try task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
   try obsidianSnippetsTask ~/projects/tesht/.obsidian/snippets
