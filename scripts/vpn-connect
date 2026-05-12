@@ -19,7 +19,7 @@ onInterrupt() {
 }
 
 connect() {
-  gpauth access.digi.com --browser xdg-open |
+  gpauth access.digi.com --browser "chromium --incognito" |
     sudo @gpclient@ connect access.digi.com \
       --cookie-on-stdin \
       --user "$USER" \
@@ -34,6 +34,7 @@ main() {
   while true; do
     connect && rc=$? || rc=$?
     $Interrupted && break
+    (( rc != 0 )) && { echo "VPN error (exit $rc). Not reconnecting." >&2; break; }
     echo "VPN disconnected (exit $rc). Reconnecting..." >&2
     sleep 2
   done
