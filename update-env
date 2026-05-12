@@ -945,11 +945,16 @@ flakeLockPinTask() {
   # directly into each managed project's flake.lock via jq. This avoids
   # nix flake lock --override-input, which implies --no-write-lock-file and
   # therefore never actually writes anything.
+  # After pinning, commits and pushes each changed flake.lock so other machines
+  # see the canonical rev on their next gitUpdate and avoid autostash conflicts.
+  # Push is loosely'd -- SSH failures (Codeberg, Bitbucket) are non-fatal;
+  # the next machine with remote access propagates.
   flakeLocksPin() {
     local canonical=~/projects/era/flake.lock
     [[ -f $canonical ]] || { echo "no canonical flake.lock at $canonical" >&2; return 1; }
-    local canonicalNode
+    local canonicalNode canonicalRev
     canonicalNode=$(jq '.nodes.nixpkgs.locked' "$canonical")
+    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$canonical")
     [[ -n $canonicalNode && $canonicalNode != null ]] || { echo "cannot extract nixpkgs locked node from canonical" >&2; return 1; }
     local f tmp
     while IFS= read -r f; do
@@ -960,6 +965,12 @@ flakeLockPinTask() {
         return 1
       }
       mv "$tmp" "$f/flake.lock"
+    done < <(flakeManagedDirs)
+    while IFS= read -r f; do
+      [[ -z $(git -C "$f" status --porcelain -- flake.lock 2>/dev/null) ]] && continue
+      git -C "$f" add flake.lock
+      loosely git -C "$f" commit -m "pin nixpkgs to canonical rev ${canonicalRev:0:8}"
+      loosely git -C "$f" push
     done < <(flakeManagedDirs)
   }
   cmd flakeLocksPin

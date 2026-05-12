@@ -491,15 +491,16 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 - **Main Success Scenario:**
   1. Ted updates the canonical package revision
   2. System records the new revision in the canonical lock file
-  3. Ted propagates the update across all machines
-  4. System updates all development environment lock files to the new revision
+  3. Ted runs `update-env -2` on any machine
+  4. System updates all development environment lock files to the new revision, commits each change, and pushes to the project's remote repository
+  5. Other machines pull the canonical revision on their next `update-env` run without conflict
 - **Extensions:**
   - 1a. *Canonical lock file absent:* Era project not cloned. Fail.
   - 4a. *A development environment's lock file is not git-tracked:* System skips that environment. Resume at next environment.
-  - 4b. *Propagation fails on one environment:* System reports the failure. Fail.
-- **Minimal Guarantee:** Canonical lock file updated; no environment partially updated.
-- **Success Guarantee:** All managed development environments share the new package revision.
-- **Technology:** `./mk bump-nixpkgs` (updates era/flake.lock), `update-env -2` (propagates to all managed flake.lock files). See [design.md Deployment step 10](design.md#deployment-uc-4).
+  - 4b. *Push to remote fails (SSH unavailable for Codeberg or Bitbucket remotes):* System records commit locally; push deferred to next machine with remote access. Non-fatal.
+- **Minimal Guarantee:** Canonical lock file updated; local development environments pinned; no environment partially updated.
+- **Success Guarantee:** All managed development environments share the new package revision; canonical revision committed and pushed to all reachable remote repositories so other machines converge without conflict.
+- **Technology:** `./mk bump-nixpkgs` (updates era/flake.lock), `update-env -2` (pins all managed flake.lock files, commits, and pushes to remotes). See [design.md Deployment step 10](design.md#deployment-uc-4).
 
 ---
 
