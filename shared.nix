@@ -46,6 +46,12 @@ in {
     XDG_CONFIG_HOME = "$HOME/.config";
     TASK_BASH_LIB = "${effectiveBashTools.taskBash}/lib/task.bash";
     MK_BASH_LIB = "${effectiveBashTools.mkBash}/lib/mk.bash";
+    # Align all era telemetry consumers on one path: era-serve's slog
+    # appender, era-soak's drip JSONL, and `./mk grafana-up`'s Promtail
+    # tailer all read this env var. Mismatch yields silently-empty Loki
+    # (UC-27). era-soak.service hardcodes the same path; era-serve.service
+    # currently does not — tracked upstream as tasks.era #5021.
+    ERA_STATE_DIR = "$HOME/.local/share/era-telemetry";
   };
   home.sessionPath = [
     "$HOME/.local/bin"

@@ -393,6 +393,7 @@ stage2() {
   try eraMcpCleanupTask
   try eraServiceCleanupTask
   try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era.service
+  try eraStateDirDropInTask
   try eraSystemdEnableTask
   try eraRestartTask
   chromeDevtoolsMcpRegisterTask
@@ -687,6 +688,31 @@ eraSystemdEnableTask() {
   desc  'enable era systemd service'
   ok    'systemctl --user is-enabled era &>/dev/null'
   cmd   'systemctl --user enable --now era'
+}
+
+# era.service upstream (in era's repo) does not set ERA_STATE_DIR.
+# Install a drop-in so era-serve appends its slog metrics under the same
+# tree era-soak writes to, so `./mk grafana-up` sees both in Loki.
+# When era.service upstream gains the Environment= line (tracked as
+# tasks.era #5021), this drop-in becomes redundant but harmless.
+eraStateDirDropInTask() {
+  local path=$HOME/.config/systemd/user/era.service.d/era-state-dir.conf
+  local content='[Service]
+Environment=ERA_STATE_DIR=%h/.local/share/era-telemetry'
+
+  desc 'install era.service drop-in: Environment=ERA_STATE_DIR'
+  ok '[[ -f '"$path"' ]] && diff -q '"$path"' <(printf "%s" "'"$content"'") >/dev/null 2>&1'
+
+  eraStateDirDropInInstall() {
+    mkdir -p $(dirname $path)
+    printf '%s' "$content" > $path
+    systemctl --user daemon-reload
+    # Pick up the new Environment on already-running era. eraRestartTask
+    # below is a no-op when era is active, so without this restart the
+    # drop-in installs but the running era keeps the old (empty) env.
+    systemctl --user is-active era &>/dev/null && systemctl --user restart era || true
+  }
+  cmd eraStateDirDropInInstall
 }
 
 eraRestartTask() {
