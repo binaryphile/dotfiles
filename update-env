@@ -565,7 +565,7 @@ restrictedBitbucketCloneTask() {
   local dir=~/projects/$repo
 
   desc "clone bitbucket.org:accelecon/$repo to $dir (restricted 700/600 perms)"
-  exist "$dir"
+  exist "'$dir'"
   restrictedClone() {
     (
       umask 077
