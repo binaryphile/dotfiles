@@ -40,20 +40,20 @@ The SAML callback is the most platform-sensitive part of the flow. NixOS and Cro
 
 ```mermaid
 flowchart TD
-    A["gpauth: SAML form loads in browser"] --> B["IdP success → redirect to globalprotectcallback://..."]
+    A["gpauth: SAML form loads in browser"] --> B["IdP success -> redirect to globalprotectcallback://..."]
     B --> C{"OS URL dispatch"}
 
-    C -->|"NixOS / Wayland"| D["Firefox → XDG portal OpenURI"]
+    C -->|"NixOS / Wayland"| D["Firefox -> XDG portal OpenURI"]
     D --> E{"mimeapps.list\n[Default Applications]?"}
     E -->|"entry present"| F["gpgui.desktop resolved\ngpclient launch-gui invoked"]
     E -->|"entry MISSING"| G["URL silently dropped\ngpauth hangs on accept()"]
 
-    C -->|"Crostini / ChromeOS"| H["Host Chrome → garcon bridge"]
+    C -->|"Crostini / ChromeOS"| H["Host Chrome -> garcon bridge"]
     H --> I{"~/.local/share/applications/\ngpgui.desktop exists + valid?"}
     I -->|"real file (xdg.desktopEntries)"| J["gpclient launch-gui /usr/bin"]
-    I -->|"broken symlink (→ .nix-profile)"| K["URL silently dropped\ngpauth hangs on accept()"]
+    I -->|"broken symlink (-> .nix-profile)"| K["URL silently dropped\ngpauth hangs on accept()"]
 
-    F --> L["TCP → gpauth listener\n/tmp/gpcallback.port\nSAML cookie delivered"]
+    F --> L["TCP -> gpauth listener\n/tmp/gpcallback.port\nSAML cookie delivered"]
     J --> L
     L --> M["gpclient connect --cookie-on-stdin\nVPN tunnel established"]
 
@@ -64,7 +64,7 @@ flowchart TD
 
 **NixOS failure mode:** `mimeapps.list` missing `x-scheme-handler/globalprotectcallback` in `[Default Applications]`. XDG portal (GTK backend, routed via `config.sway.default = ["gtk"]`) requires an explicit entry; MimeType= scanning in desktop files is insufficient when the portal uses strict mimeapps.list lookup.
 
-**Crostini failure mode:** The garcon symlink `~/.local/share/applications/gpgui.desktop → ~/.nix-profile/share/applications/gpgui.desktop` becomes broken when the nix gpoc package is removed from `home.packages` (gpoc moved to apt-install). `xdg.desktopEntries.gpgui` conflicts with the same `home.file` key; the broken symlink wins.
+**Crostini failure mode:** The garcon symlink `~/.local/share/applications/gpgui.desktop -> ~/.nix-profile/share/applications/gpgui.desktop` becomes broken when the nix gpoc package is removed from `home.packages` (gpoc moved to apt-install). `xdg.desktopEntries.gpgui` conflicts with the same `home.file` key; the broken symlink wins.
 
 **Fix (2026-05-11):** Restored `x-scheme-handler/globalprotectcallback` to `xdg.mimeApps.defaultApplications` in `linux-base.nix`. Removed the garcon symlink from `crostini/home.nix`; `xdg.desktopEntries.gpgui` already deploys to `~/.local/share/applications/` which is garcon's discovery path.
 

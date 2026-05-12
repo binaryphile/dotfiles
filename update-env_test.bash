@@ -800,7 +800,10 @@ test_flakeLockPinTask_detectsMismatch() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  # arrange: canonical with one rev, project with a different rev
+  # arrange: canonical with one rev, project with a different rev.
+  # foo must be a git repo with flake.nix tracked, because flakeManagedDirs
+  # uses `git ls-files --error-unmatch flake.nix` to skip untracked flakes
+  # (the same check nix uses).
   mkdir -p $dir/projects/era $dir/projects/foo
   cat >$dir/projects/era/flake.lock <<'JSON'
 {"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
@@ -809,10 +812,15 @@ JSON
 {"nodes":{"nixpkgs":{"locked":{"rev":"bbbb"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
 JSON
   echo '{}' >$dir/projects/foo/flake.nix
+  git -C $dir/projects/foo init -q
+  git -C $dir/projects/foo add flake.nix
 
-  # act: run task to define inner functions, then test ok-check
+  # act: run task to define inner functions, then test ok-check.
+  # Override cmd to no-op so flakeLocksPin doesn't run and rewrite foo's
+  # flake.lock to match canonical (which would defeat the mismatch assertion).
+  cmd() { :; }
   local HOME=$dir
-  flakeLockPinTask >/dev/null 2>&1  # will attempt cmd (nix not available = fails gracefully)
+  flakeLockPinTask >/dev/null 2>&1
   flakeLocksPinned && { echo "should have detected mismatch"; return 1; }
   return 0
 }
@@ -821,7 +829,7 @@ test_flakeLockPinTask_passesWhenAligned() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  # arrange: same rev everywhere
+  # arrange: same rev everywhere. foo must be git-tracked (see _detectsMismatch).
   mkdir -p $dir/projects/era $dir/projects/foo
   cat >$dir/projects/era/flake.lock <<'JSON'
 {"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
@@ -830,6 +838,8 @@ JSON
 {"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
 JSON
   echo '{}' >$dir/projects/foo/flake.nix
+  git -C $dir/projects/foo init -q
+  git -C $dir/projects/foo add flake.nix
 
   # act
   local HOME=$dir

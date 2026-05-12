@@ -595,7 +595,7 @@ obsidianSnippetsTask() {
 }
 
 # git autostash pop can fail silently when local and upstream both modified the same file;
-# on conflict the stash stays, labeled "autostash". Drop it — pulled version wins.
+# on conflict the stash stays, labeled "autostash". Drop it -- pulled version wins.
 # Targets the specific stash ref (not stash@{0}) to avoid clobbering user stashes above it.
 gitUpdate() {
   task.GitUpdate $1

@@ -391,11 +391,11 @@ EOF
 
   local era=$eraStub timeout=$timeoutPass
 
-  auditPublish urma work urma-atlassian "FOO=op://x/y/z" tool 'arg with spaces' 'arg"with"quotes' 'unicode-é' >/dev/null 2>&1
+  auditPublish urma work urma-atlassian "FOO=op://x/y/z" tool 'arg with spaces' 'arg"with"quotes' $'unicode-\xc3\xa9' >/dev/null 2>&1
 
   local payload
   payload=$(<"$capturePath")
-  echo "$payload" | $jq -e '.args == ["arg with spaces","arg\"with\"quotes","unicode-é"]' >/dev/null \
+  echo "$payload" | $jq -e '.args == ["arg with spaces","arg\"with\"quotes","unicode-\u00e9"]' >/dev/null \
     || { echo "args mismatch: $(echo "$payload" | $jq -c '.args')"; return 1; }
 }
 
