@@ -219,7 +219,9 @@ in
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
+      # globalprotectcallback handler lives in linux-base.nix (shared across
+      # all Linux platforms); declaring it here too produced
+      # `gpgui.desktop;gpgui.desktop` in the merged mimeapps.list.
       "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
       "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
       # onepassword:// is Okta's SSO redirect target after auth. ChromeOS
