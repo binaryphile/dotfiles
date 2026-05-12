@@ -796,7 +796,11 @@ test_shellcheckrcTask_converges() {
 ## ok-check logic only. Invoke flakeLockPinTask to define inner functions,
 ## then test flakeLocksPinned directly.
 
-test_flakeLockPinTask_detectsMismatch() {
+# Predicate-level test: flakeLocksPinned correctly detects a rev mismatch.
+# Scope: ok-check only. Mocks cmd() so flakeLocksPin doesn't run and silently
+# repair the mismatch before the assertion. The companion test
+# test_flakeLockPinTask_repairsMismatch covers the full task path (no mock).
+test_flakeLocksPinned_detectsMismatch() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
@@ -815,13 +819,42 @@ JSON
   git -C $dir/projects/foo init -q
   git -C $dir/projects/foo add flake.nix
 
-  # act: run task to define inner functions, then test ok-check.
-  # Override cmd to no-op so flakeLocksPin doesn't run and rewrite foo's
-  # flake.lock to match canonical (which would defeat the mismatch assertion).
+  # Mock cmd to no-op: we want the inner functions defined but no fix to run.
   cmd() { :; }
   local HOME=$dir
   flakeLockPinTask >/dev/null 2>&1
   flakeLocksPinned && { echo "should have detected mismatch"; return 1; }
+  return 0
+}
+
+# Full-task test: flakeLockPinTask actually repairs a detected mismatch.
+# Scope: end-to-end. No mocks; runs flakeLocksPin's jq rewrite for real and
+# asserts foo's flake.lock got pinned to canonical rev.
+test_flakeLockPinTask_repairsMismatch() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/projects/era $dir/projects/foo
+  cat >$dir/projects/era/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"aaaa"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+  cat >$dir/projects/foo/flake.lock <<'JSON'
+{"nodes":{"nixpkgs":{"locked":{"rev":"bbbb"}},"root":{"inputs":{"nixpkgs":"nixpkgs"}}}}
+JSON
+  echo '{}' >$dir/projects/foo/flake.nix
+  git -C $dir/projects/foo init -q
+  git -C $dir/projects/foo add flake.nix
+
+  local HOME=$dir
+  flakeLockPinTask >/dev/null 2>&1
+
+  # assert: foo's flake.lock now has the canonical rev
+  local fooRev
+  fooRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$dir/projects/foo/flake.lock")
+  [[ $fooRev == "aaaa" ]] || { echo "foo's rev not repaired (got '$fooRev', expected 'aaaa')"; return 1; }
+
+  # assert: ok-check now passes (idempotent on re-run)
+  flakeLocksPinned || { echo "ok-check should pass after repair"; return 1; }
   return 0
 }
 
