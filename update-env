@@ -1462,6 +1462,7 @@ fi
 ssh=${ssh:-ssh}
 ssh_add=${ssh_add:-ssh-add}
 ssh_keygen=${ssh_keygen:-ssh-keygen}
+ip=${ip:-ip}
 NL=$'\n'
 
 # 1Password item naming convention. Single source of truth.
