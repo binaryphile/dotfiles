@@ -952,3 +952,33 @@ test_obsidianSnippetsTask_noopWhenSrcEmpty() {
 
   [[ ! -d $dir/target ]] || { echo "target dir created despite empty source"; return 1; }
 }
+
+# gitUpdate's autostash-cleanup must not exit non-zero when there is no
+# autostash entry to drop (the common case). Previous form used
+# `[[ -n $stashRef ]] && cmd`, which returns 1 with an empty stashRef and
+# terminates the script under set -e.
+test_gitUpdate_handlesEmptyAutostash() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: bare origin + clean local clone, both pointing at the same
+  # commit (so task.GitUpdate's rebase is a no-op), no autostash present
+  git init --bare $dir/origin.git >/dev/null 2>&1
+  git -c init.defaultBranch=main init $dir/local >/dev/null 2>&1
+  git -C $dir/local -c user.email=t@e -c user.name=t commit --allow-empty -m init >/dev/null 2>&1
+  git -C $dir/local remote add origin $dir/origin.git
+  git -C $dir/local push -u origin main >/dev/null 2>&1
+
+  # act
+  gitUpdate $dir/local >/dev/null 2>&1
+  local rc=$?
+
+  # assert: returned 0 (the bug case)
+  (( rc == 0 )) || { echo "gitUpdate returned $rc (expected 0); empty-stashRef path failed"; return 1; }
+
+  # assert: no spurious stash entries
+  local stashCount
+  stashCount=$(git -C $dir/local stash list 2>/dev/null | wc -l)
+  (( stashCount == 0 )) || { echo "$stashCount unexpected stash entries"; return 1; }
+  return 0
+}

@@ -601,7 +601,7 @@ gitUpdate() {
   task.GitUpdate $1
   local stashRef
   stashRef=$(git -C $1 stash list 2>/dev/null | grep -E ': autostash$' | grep -o 'stash@{[0-9]*}' | head -1) || true
-  [[ -n $stashRef ]] && loosely git -C $1 stash drop $stashRef >/dev/null 2>&1
+  [[ -z $stashRef ]] || loosely git -C $1 stash drop $stashRef >/dev/null 2>&1
 }
 
 eraScaffoldTask() {
