@@ -1,6 +1,9 @@
 # evtctl
 @~/projects/era/docs/evtctl.md
 
+# era
+@~/projects/era/docs/era.md
+
 # Conventions
 
 Ted uses bash parameter expansion operators as inline shorthand in prose. For
