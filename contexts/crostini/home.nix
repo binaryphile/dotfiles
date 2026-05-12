@@ -23,13 +23,11 @@ let
     };
   };
 
-  # URL scheme handler .desktop files for ChromeOS-host->container dispatch.
-  # cros-garcon.service hardcodes a minimal PATH and an XDG_DATA_DIRS that
-  # does NOT include ~/.nix-profile/share/. Garcon-spawned children inherit
-  # that minimal PATH, so any bare-name Exec (like the bundled 1password.desktop's
-  # `Exec=1password`) fails to resolve at dispatch. makeDesktopItem builds a
-  # derivation with absolute store-path Exec; home.file (below) places the
-  # .desktop into ~/.local/share/applications/, one of the few dirs garcon scans.
+  # URL scheme handlers for ChromeOS-host->container dispatch. Built with
+  # absolute store-path Exec (cros-garcon's hardcoded PATH does not include
+  # ~/.nix-profile/bin, so bare-name Exec lines fail to resolve at dispatch
+  # time) and deployed via home.file into ~/.local/share/applications/ (one
+  # of the few dirs cros-garcon.service's XDG_DATA_DIRS includes).
   onepasswordDesktop = pkgs.makeDesktopItem {
     name = "onepassword";
     desktopName = "1Password (URL scheme handler)";
@@ -39,13 +37,10 @@ let
     noDisplay = true;
   };
 
-  # gpgui: same Crostini issue as onepassword. The previous xdg.desktopEntries.gpgui
-  # block deployed to ~/.nix-profile/share/applications/ (invisible to garcon),
-  # which broke globalprotectcallback:// dispatch after d9db7a9 removed the
-  # symlink workaround on the assumption xdg.desktopEntries alone was sufficient.
-  # gpclient is /usr/bin/gpclient (apt-installed) -- an absolute path already, so
-  # PATH lookup isn't strictly needed, but we go through makeDesktopItem + home.file
-  # anyway for consistency with onepassword.
+  # gpclient is at /usr/bin/gpclient (apt-installed), so the absolute Exec
+  # isn't strictly needed for PATH resolution here; we go through
+  # makeDesktopItem + home.file for the same garcon-discovery reason as
+  # onepassword (and uniform shape across both handlers).
   gpguiDesktop = pkgs.makeDesktopItem {
     name = "gpgui";
     desktopName = "GP Connect";
@@ -138,11 +133,10 @@ in
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
-    # Place scheme-handler .desktop files where garcon can find them.
-    # home-manager's xdg.desktopEntries deploys to ~/.nix-profile/share/
-    # applications/ which is NOT in cros-garcon.service's XDG_DATA_DIRS;
-    # only ~/.local/share/applications/ is reachable. (Empirically verified
-    # via /proc/$(pidof garcon)/environ; contradicts d9db7a9's premise.)
+    # Scheme-handler .desktop files must land in ~/.local/share/applications/
+    # for cros-garcon to discover them; xdg.desktopEntries (which would deploy
+    # to ~/.nix-profile/share/applications/) isn't reachable by garcon's
+    # XDG_DATA_DIRS.
     ".local/share/applications/onepassword.desktop".source =
       "${onepasswordDesktop}/share/applications/onepassword.desktop";
     ".local/share/applications/gpgui.desktop".source =
@@ -219,9 +213,8 @@ in
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      # globalprotectcallback handler lives in linux-base.nix (shared across
-      # all Linux platforms); declaring it here too produced
-      # `gpgui.desktop;gpgui.desktop` in the merged mimeapps.list.
+      # globalprotectcallback handler is declared in linux-base.nix (shared
+      # across all Linux platforms).
       "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
       "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
       # onepassword:// is Okta's SSO redirect target after auth. ChromeOS
