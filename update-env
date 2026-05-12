@@ -869,21 +869,12 @@ claudeMemoryRedirectsTask() {
   desc 'install era memory redirects for all projects'
   check "[[ -f $redirectSrc ]]"
 
-  claudeRedirectsUpToDate() {
-    [[ -f $HOME/.claude/projects/-home-ted-dotfiles/memory/MEMORY.md ]] &&
-      diff -q "$HOME/.claude/projects/-home-ted-dotfiles/memory/MEMORY.md" "$redirectSrc" >/dev/null 2>&1
-  }
-  ok claudeRedirectsUpToDate
-
-  claudeRedirectsInstall() {
-    installRedirect() {
-      local dir=$1 encoded=${1//\//-}
-      local memDir=$HOME/.claude/projects/$encoded/memory
-      mkdir -p "$memDir"
-      cp "$redirectSrc" "$memDir/MEMORY.md"
-    }
-    installRedirect $HOME/dotfiles
-    map path '$HOME/projects/$path' <<'    END' | each installRedirect
+  # Project dirs covered by the redirect. Single source of truth shared
+  # by the up-to-date check and the install command — adding a project
+  # means adding one line here.
+  memoryProjectDirs() {
+    echo $HOME/dotfiles
+    map path '$HOME/projects/$path' <<'    END'
       era
       fp.bash
       mk.bash
@@ -898,6 +889,26 @@ claudeMemoryRedirectsTask() {
       share
       dal
     END
+  }
+
+  claudeRedirectsUpToDate() {
+    local dir encoded f
+    for dir in $(memoryProjectDirs); do
+      encoded=${dir//\//-}
+      f=$HOME/.claude/projects/$encoded/memory/MEMORY.md
+      [[ -f $f ]] && diff -q "$f" "$redirectSrc" >/dev/null 2>&1 || return 1
+    done
+  }
+  ok claudeRedirectsUpToDate
+
+  claudeRedirectsInstall() {
+    installRedirect() {
+      local dir=$1 encoded=${1//\//-}
+      local memDir=$HOME/.claude/projects/$encoded/memory
+      mkdir -p "$memDir"
+      cp "$redirectSrc" "$memDir/MEMORY.md"
+    }
+    memoryProjectDirs | each installRedirect
   }
   cmd claudeRedirectsInstall
 }
