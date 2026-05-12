@@ -324,7 +324,15 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 
 ### Credential Architecture (UC-4, UC-4a-e, UC-11)
 
-Documented in the 1Password-stored canonical doc set (security.md, threat-model.md, secrets-lifecycle.md). Repo content reflects functional behavior; architectural detail lives in the canonical docs.
+Documented in the private security-architecture doc set (`~/secrets/security.md`, `~/secrets/threat-model.md`, `~/secrets/secrets-lifecycle.md`). These docs live in a separate private git repo from this dotfiles repo — the segregation is itself a security control. Repo content reflects functional behavior; architectural detail lives in the private docs.
+
+**v2 mechanism: 1Password Service Accounts (not Connect).** v2 uses 1Password's Service Account model — per-machine and per-project SAs with cryptographic vault scoping — rather than 1Password Connect (the daemon-based credential broker). Rationale:
+
+- The local-compromise threat model already accepts "same-user attacker reads any disk secret." Connect's main advantage (no plaintext disk secret) doesn't address an unmitigated threat in this model.
+- Connect requires running a daemon process per machine, which adds a new attack surface (process to compromise, port to attack) and conflicts with the dotfiles philosophy of stateless local config.
+- SA's distributed-bearer-token model fits the existing op-run launcher shape (resolve credential at launch, exec the tool); Connect would require a different integration pattern.
+
+The cryptographic scoping that Service Accounts provide bounds *which vaults a token can decrypt*, not *who can use the token*. Theft resistance comes from local controls (bwrap mount policy in Hardened mode, filesystem permissions and storage hardening in Default mode), not from the cryptographic property. See `~/secrets/threat-model.md` for the full Property A vs Property B analysis.
 
 ### VPN (UC-7)
 
