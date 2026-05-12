@@ -392,7 +392,7 @@ stage2() {
   END
   try eraMcpCleanupTask
   try eraServiceCleanupTask
-  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era-serve.service
+  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era.service
   try eraSystemdEnableTask
   try eraRestartTask
   chromeDevtoolsMcpRegisterTask
@@ -471,6 +471,9 @@ stage2() {
   try bitbucketCloneAndLinkTask tlilley-daily-notes
   try obsidianSnippetsTask ~/projects/tlilley-daily-notes/.obsidian/snippets
 
+  section security-docs
+  try restrictedBitbucketCloneTask security-docs
+
   #  +-------------------------------------------------------------+
   #  | PHASE 7: SSH Key Generation (section unique_credential)     |
   #  |   +-> [crostini/linux] Generate unique SSH key if needed    |
@@ -547,6 +550,37 @@ bitbucketCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone git@bitbucket.org:accelecon/$repo ~/projects/$repo $branch
   try gitUpdate ~/projects/$repo
+}
+
+# restrictedBitbucketCloneTask clones a bitbucket accelecon repo with
+# restrictive permissions (700 directories, 600 files) for sensitive
+# material -- security architecture docs, anything that shouldn't be
+# readable by host-side backup/index agents on shared filesystems or
+# by any future non-owner user on this machine.
+#
+# Defense in depth: bitbucket-side privacy gates who can clone; this
+# task gates who can read after clone. Both layers are necessary.
+restrictedBitbucketCloneTask() {
+  local repo=$1 branch=${2:-main}
+  local dir=~/projects/$repo
+
+  desc "clone bitbucket.org:accelecon/$repo to $dir (restricted 700/600 perms)"
+  exist "$dir"
+  restrictedClone() {
+    (
+      umask 077
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10' \
+        git -c http.connectTimeout=10 clone --branch $branch \
+          git@bitbucket.org:accelecon/$repo $dir
+    )
+  }
+  cmd restrictedClone
+
+  try gitUpdate $dir
+
+  desc "enforce 700/600 perms on $dir"
+  ok '[[ -z $(find '"$dir"' -perm /go=rwx -print -quit 2>/dev/null) ]]'
+  cmd chmod -R go-rwx $dir
 }
 
 codebergCloneAndLinkTask() {
@@ -638,27 +672,27 @@ eraMcpCleanupTask() {
 }
 
 eraServiceCleanupTask() {
-  desc  'remove legacy era.service unit (renamed to era-serve.service)'
-  ok    '! systemctl --user cat era.service &>/dev/null'
+  desc  'remove legacy era-serve.service unit (renamed to era.service)'
+  ok    '! systemctl --user cat era-serve.service &>/dev/null'
 
   eraServiceCleanup() {
-    systemctl --user disable --now era.service 2>/dev/null || true
-    rm -f ~/.config/systemd/user/era.service
+    systemctl --user disable --now era-serve.service 2>/dev/null || true
+    rm -f ~/.config/systemd/user/era-serve.service
     systemctl --user daemon-reload
   }
   cmd eraServiceCleanup
 }
 
 eraSystemdEnableTask() {
-  desc  'enable era-serve systemd service'
-  ok    'systemctl --user is-enabled era-serve &>/dev/null'
-  cmd   'systemctl --user enable --now era-serve'
+  desc  'enable era systemd service'
+  ok    'systemctl --user is-enabled era &>/dev/null'
+  cmd   'systemctl --user enable --now era'
 }
 
 eraRestartTask() {
-  desc 'start era-serve if not running'
-  ok   'systemctl --user is-active era-serve &>/dev/null'
-  cmd  'systemctl --user restart era-serve'
+  desc 'start era if not running'
+  ok   'systemctl --user is-active era &>/dev/null'
+  cmd  'systemctl --user restart era'
 }
 
 chromeDevtoolsMcpRegisterTask() {
