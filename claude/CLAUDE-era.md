@@ -24,9 +24,3 @@ triage without opening files. Use `era callgraph` to trace data flow and
 assess change impact. Use `era commit-search` when investigating bugs,
 understanding design evolution, or checking if something was already
 attempted.
-
-## Tasks
-
-At session start, run `evtctl open` to check for open tasks on the current
-project's stream. See `evtctl.md` (imported above) for the full task
-lifecycle and event commands.
