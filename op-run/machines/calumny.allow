@@ -1,0 +1,11 @@
+# shellcheck shell=bash
+# op-run/machines/calumny.allow -- machine vault allowlist
+#
+# Sourced by scripts/op-run. Lists every 1Password vault this machine
+# should see. Visible vaults must equal this set exactly; extras and
+# missings both fail closed.
+#
+# Naming Policy: standalone-script style, no namespace prefix on globals.
+# Bootstrap globals are PascalCase and `declare -agr` (readonly-enforced).
+
+declare -agr AllowedVaults=( Employee urma-atlassian )

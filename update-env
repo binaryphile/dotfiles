@@ -811,7 +811,7 @@ claudeEraConfigTask() {
   check "[[ -f $era ]] && [[ -f $base ]]"
 
   claudeEraUpToDate() {
-    [[ -f $base ]] && grep -qF 'Era is your persistent memory' "$base"
+    [[ -f $base ]] && grep -qF 'Do not use the Claude Code auto-memory system' "$base"
   }
   ok claudeEraUpToDate
 
@@ -865,7 +865,8 @@ claudeTandemConfigTask() {
 # claudeMemoryRedirectsTask installs per-project MEMORY.md files that point
 # Claude Code's auto-memory to Era. One file per project.
 claudeMemoryRedirectsTask() {
-  local redirectSrc=$HOME/dotfiles/claude/era-memory-redirect.md
+  local redirectSrc=${claudeRedirects_src:-$HOME/dotfiles/claude/era-memory-redirect.md}
+  local memBase=${claudeRedirects_memBase:-$HOME/.claude/projects}
   desc 'install era memory redirects for all projects'
   check "[[ -f $redirectSrc ]]"
 
@@ -895,7 +896,7 @@ claudeMemoryRedirectsTask() {
     local dir encoded f
     for dir in $(memoryProjectDirs); do
       encoded=${dir//\//-}
-      f=$HOME/.claude/projects/$encoded/memory/MEMORY.md
+      f=$memBase/$encoded/memory/MEMORY.md
       [[ -f $f ]] && diff -q "$f" "$redirectSrc" >/dev/null 2>&1 || return 1
     done
   }
@@ -904,7 +905,7 @@ claudeMemoryRedirectsTask() {
   claudeRedirectsInstall() {
     installRedirect() {
       local dir=$1 encoded=${1//\//-}
-      local memDir=$HOME/.claude/projects/$encoded/memory
+      local memDir=$memBase/$encoded/memory
       mkdir -p "$memDir"
       cp "$redirectSrc" "$memDir/MEMORY.md"
     }
@@ -1525,7 +1526,7 @@ map() {
   local VARNAME=$1 EXPRESSION=$2
   case $VARNAME in VARNAME|EXPRESSION ) fatal "map: VARNAME may not be 'VARNAME' or 'EXPRESSION'";; esac
   local $VARNAME
-  while IFS='' read -r $VARNAME; do
+  while IFS=' ' read -r $VARNAME; do
     eval "echo \"$EXPRESSION\""
   done
 }

@@ -120,7 +120,7 @@ Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -
 | `home-manager` (`home.file`) | gitconfig, gitignore_global, tmux.conf, liquidprompt (2), ssh (2), ranger (3) | 10 symlinks (`linux-base.nix`) | Static dotfile configs consumed by programs. No bootstrap dependency. Benefit from HM's atomic generation switching and rollback. |
 | `home-manager` (`home.file`) | Claude settings.json + project CLAUDE.md files | 3 copies (`claude.nix`) | `force: true` copies -- Claude Code may overwrite these, so HM restores them on switch. Stage-1-safe only; no era/evtctl/guide dependencies. |
 | `update-env` (stage 1) | Base CLAUDE.md (Conventions, Secrets) | 1 copy (`claudeBaseCopyTask`) | Copied by update-env rather than HM because stage 2 appends era config, requiring a writable file. HM's store copy is read-only. |
-| `update-env` (stage 2) | Claude era config (appended to CLAUDE.md) + per-project memory redirects | ~15 files | Era-dependent Claude Code config: `claudeEraConfigTask` appends era/evtctl/guide instructions to the base CLAUDE.md. Memory redirects point projects to era. Requires era to be built and running. |
+| `update-env` (stage 2) | Claude era config (appended to CLAUDE.md) + per-project memory redirects | ~15 files | Era-dependent Claude Code config: `claudeEraConfigTask` appends `CLAUDE-era.md` (era memory instructions, code search, auto-memory prohibition) to the base CLAUDE.md. `claudeMemoryRedirectsTask` installs `era-memory-redirect.md` as `MEMORY.md` in each project's Claude state dir, directing the auto-memory system to era. Requires era to be built and running. |
 | `home-manager` (`home.file`) | vpn, digi-security-watch scripts; proxy PAC; gpgui desktop entry | 2 symlinks + 1 generated + 1 symlink (`crostini/home.nix`) | Crostini-only scripts, generated config, and gpoc URL scheme handler. Panel is nix-packaged as a tmux dependency in `linux-base.nix`, not a `home.file` symlink. |
 | `home-manager` (`programs.*`) | direnv, bat, firefox, khal, vdirsyncer | 5 modules | Declarative program config via HM modules -- not `home.file` but the same dependency tree. |
 
@@ -333,6 +333,8 @@ Documented in the private security-architecture doc set (`~/projects/security-do
 - SA's distributed-bearer-token model fits the existing op-run launcher shape (resolve credential at launch, exec the tool); Connect would require a different integration pattern.
 
 The cryptographic scoping that Service Accounts provide bounds *which vaults a token can decrypt*, not *who can use the token*. Theft resistance comes from local controls (bwrap mount policy in Hardened mode, filesystem permissions and storage hardening in Default mode), not from the cryptographic property. See `~/projects/security-docs/threat-model.md` for the full Property A vs Property B analysis.
+
+**op-run nix packaging:** `op-run` is built via `mkScriptBin` in `linux-base.nix`. `pkgs._1password-cli` is intentionally absent from its `runtimeInputs` — the NixOS system wrapper for `op` must be used instead of the nix store binary. See the comment in `linux-base.nix` for the security rationale; the system wrapper is managed by nixos-config.
 
 ### VPN (UC-7)
 
@@ -557,7 +559,7 @@ The `tesht` test suite serves as the living specification of the configured envi
 
 Three test layers:
 - **Unit tests** (pure output-based): `nixConfContent`, `platformTaskGroups`, `each`/`keepIf`/`map`/`stream` -- pure functions tested by input/output, no I/O
-- **Integration tests** (controller, mocked inter-system boundaries): `writeNixConfTask` (mocks sudo at the process boundary to verify cmd string survives `bash -c` under `runas root`), `installNix` (mocks curl/sha256sum)
+- **Integration tests** (controller, mocked inter-system boundaries): `writeNixConfTask` (mocks sudo at the process boundary to verify cmd string survives `bash -c` under `runas root`), `installNix` (mocks curl/sha256sum), `claudeMemoryRedirectsTask` (injects `claudeRedirects_src` and `claudeRedirects_memBase` to avoid touching `~/.claude`; validates convergence, idempotence, and skip-when-source-missing)
 - **Runtime tests** (interactive login shell): aliases exist, functions exist, vi mode on, umask correct, PROMPT_COMMAND ordering -- require home-manager applied
 
 Tests do not duplicate nix's guarantees. Nix handles package presence, derivation correctness, and generated file content. Tests handle the bash-layer contract: after startup, the expected runtime state exists.

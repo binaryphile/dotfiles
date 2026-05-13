@@ -6,6 +6,10 @@ reference.
 
 ## Memory
 
+Do not use the Claude Code auto-memory system (`~/.claude/projects/.../memory/`).
+All memories go to Era exclusively. MEMORY.md files exist only to hold this
+directive; do not store or read content from them.
+
 When seeking clarification or investigating an issue, search era memory
 first (`era search`) before asking the user. Use early when starting work
 on a module, investigating a bug, making a design decision, or when the

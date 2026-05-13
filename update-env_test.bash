@@ -672,7 +672,7 @@ test_claudeEraConfigTask_converges() {
 
   # arrange: base and era source files
   echo '# base content' >$dir/base.md
-  echo 'Era is your persistent memory' >$dir/era.md
+  echo 'Do not use the Claude Code auto-memory system' >$dir/era.md
 
   # act: inject paths, run append
   local claudeEra_base=$dir/base.md
@@ -681,7 +681,7 @@ test_claudeEraConfigTask_converges() {
 
   # assert: convergence (era appended)
   local rc=0
-  grep -qF 'Era is your persistent memory' $dir/base.md || { echo "era not appended"; rc=1; }
+  grep -qF 'Do not use the Claude Code auto-memory system' $dir/base.md || { echo "era not appended"; rc=1; }
 
   # assert: idempotence (second run = no change)
   local sizeBefore sizeAfter
@@ -697,7 +697,7 @@ test_claudeEraConfigTask_skipsWhenBaseMissing() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  echo 'Era is your persistent memory' >$dir/era.md
+  echo 'Do not use the Claude Code auto-memory system' >$dir/era.md
   local claudeEra_base=$dir/base.md
   local claudeEra_src=$dir/era.md
   claudeEraConfigTask >/dev/null 2>&1
@@ -716,6 +716,51 @@ test_claudeEraConfigTask_skipsWhenEraMissing() {
 
   # base should be unchanged (check guard skips when era source missing)
   [[ $(cat $dir/base.md) == '# base only' ]] || { echo "base was modified despite missing era source"; return 1; }
+}
+
+## claudeMemoryRedirectsTask -- Q3 integration: per-project MEMORY.md deployment
+
+test_claudeMemoryRedirectsTask_converges() {
+  local dir; tesht.MktempDir dir || return 128
+
+  # arrange: redirect source + injectable memBase
+  local src=$dir/era-memory-redirect.md
+  echo 'DO NOT STORE ANYTHING IN THIS FILE' >"$src"
+  local claudeRedirects_src="$src"
+  local claudeRedirects_memBase="$dir/mem"
+
+  claudeMemoryRedirectsTask >/dev/null 2>&1
+
+  # memoryProjectDirs returns real paths; pick one we know exists
+  local encoded; encoded=$HOME/.claude/projects
+  # check that at least one MEMORY.md was installed under memBase
+  local count
+  count=$(find "$dir/mem" -name "MEMORY.md" 2>/dev/null | wc -l)
+  local rc=0
+  (( count > 0 )) || { echo "no MEMORY.md files installed under memBase"; rc=1; }
+
+  # spot-check: jeeves should be in the list
+  local jeevesMd="$dir/mem/-home-ted-projects-jeeves/memory/MEMORY.md"
+  diff -q "$src" "$jeevesMd" >/dev/null 2>&1 || { echo "jeeves MEMORY.md missing or wrong content"; rc=1; }
+
+  # idempotence: second run is a no-op
+  local mtBefore mtAfter
+  mtBefore=$(stat -c %Y "$jeevesMd")
+  claudeMemoryRedirectsTask >/dev/null 2>&1
+  mtAfter=$(stat -c %Y "$jeevesMd")
+  (( mtBefore == mtAfter )) || { echo "MEMORY.md re-installed on second run"; rc=1; }
+
+  return $rc
+}
+
+test_claudeMemoryRedirectsTask_skipsWhenSrcMissing() {
+  local dir; tesht.MktempDir dir || return 128
+
+  local claudeRedirects_src="$dir/nonexistent.md"
+  local claudeRedirects_memBase="$dir/mem"
+  claudeMemoryRedirectsTask >/dev/null 2>&1
+
+  [[ ! -d "$dir/mem" ]] || { echo "install should not run when source missing"; return 1; }
 }
 
 test_deploySigningPub_skipsWhenSidecarMissing() {
