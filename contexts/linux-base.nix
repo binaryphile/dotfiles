@@ -128,6 +128,9 @@ in
       "x-scheme-handler/globalprotectcallback" = [ "gpgui.desktop" ];
       # Preserved from existing ~/.config/mimeapps.list (Claude Code deep links).
       "x-scheme-handler/claude-cli" = [ "claude-code-url-handler.desktop" ];
+      # Okta SSO redirects to onepassword:// after SAML auth; without this
+      # Firefox opens a blank tab instead of handing off to the 1Password app.
+      "x-scheme-handler/onepassword" = [ "1password.desktop" ];
     };
   };
 
