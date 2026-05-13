@@ -55,11 +55,17 @@ let
   # compliance and audit. @dotfilesRoot@ is substituted to the live dotfiles
   # path so sourced registry/machine-allowlist files resolve at runtime.
   # See docs/design.md Credential Architecture and UC-11 use cases.
+  #
+  # _1password-cli is intentionally absent from runtimeInputs. Including it
+  # would prepend the store op binary to PATH, bypassing the NixOS security
+  # wrapper at /run/wrappers/bin/op. The daemon's SO_PEERCRED check requires
+  # egid == onepassword-cli; only the wrapper (setgid onepassword-cli) sets
+  # this. The wrapper is on PATH via the NixOS system environment.
   op-run = mkScriptBin {
     name = "op-run";
     src = ../scripts/op-run;
     substitutions."dotfilesRoot" = "${config.home.homeDirectory}/dotfiles";
-    runtimeInputs = [ pkgs._1password-cli pkgs.git pkgs.jq pkgs.coreutils ];
+    runtimeInputs = [ pkgs.git pkgs.jq pkgs.coreutils ];
   };
 
   # Tmux with panel on PATH. Overlaid via symlinkJoin so tmux's status
