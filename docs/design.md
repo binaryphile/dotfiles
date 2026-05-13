@@ -517,9 +517,9 @@ Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `s
 
 `scripts/claude-budget` is a Claude Code hook script that tracks daily token usage and injects warnings into Claude's session context when configurable thresholds are crossed.
 
-**Metric**: `input_tokens + output_tokens` from session JSONL transcripts (`~/.claude/projects/*/*.jsonl`). Matches Claude Code's `/usage` display. Cache tokens excluded. Dedup by `message.id` (same response appears 2–8× across branching and subagent JSONL entries; empirically verified: all duplicate IDs have identical token values).
+**Metric**: `input_tokens + output_tokens` from session JSONL transcripts (`~/.claude/projects/*/*.jsonl`). Matches Claude Code's `/usage` display. Cache tokens excluded. Dedup by `message.id` (same response appears 2-8x across branching and subagent JSONL entries; empirically verified: all duplicate IDs have identical token values).
 
-**Budget day**: resets at 2am — `date -d "2 hours ago" +%Y-%m-%d`.
+**Budget day**: resets at 2am -- `date -d "2 hours ago" +%Y-%m-%d`.
 
 **Architecture**: four hook events, one script:
 
@@ -532,25 +532,25 @@ Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `s
 
 **Sync hook stdout**: Claude Code injects plain text stdout from sync hooks as session context. Warnings appear in Claude's next response. Block decision format: `{"decision":"block","reason":"..."}`.
 
-**JSONL resilience**: `head -n -1 transcript | jq -sc ...` — strips the potentially truncated last line before parsing; `|| exit 0` guard skips the token-file write on jq failure. Zero tokens → no file written (session hasn't completed a response yet; counted on next Stop).
+**JSONL resilience**: `head -n -1 transcript | jq -sc ...` -- strips the potentially truncated last line before parsing; `|| exit 0` guard skips the token-file write on jq failure. Zero tokens -> no file written (session hasn't completed a response yet; counted on next Stop).
 
-**Threshold tracking**: `flock`-protected append to `~/.local/state/claude-budget/warned/{day}`. Each of 25/10/5/1% fires exactly once per budget day. Parallel session race → flock serializes; second session sees threshold already recorded, stays silent.
+**Threshold tracking**: `flock`-protected append to `~/.local/state/claude-budget/warned/{day}`. Each of 25/10/5/1% fires exactly once per budget day. Parallel session race -> flock serializes; second session sees threshold already recorded, stays silent.
 
 **Warning format**: `[Claude Budget] NN% remaining (NNNk/NNNk tokens, N sessions today). <action>`
 
-Actions by threshold: 25% → "Consider closing idle parallel sessions." 10% → "Close all but one session." 5% → "Finish current work only." 1% → "Stop after this prompt."
+Actions by threshold: 25% -> "Consider closing idle parallel sessions." 10% -> "Close all but one session." 5% -> "Finish current work only." 1% -> "Stop after this prompt."
 
 **Config** (`~/.config/claude-budget/config.json`):
 ```json
 {"daily_tokens": 1000000, "enforce_at_pct": 0}
 ```
-- `daily_tokens`: self-imposed daily limit. Observed peak: 3,120,151 (the quota-exhaustion day); typical heavy days 1.0–1.3M. `1000000` recommended — triggers 25% warning at 750k, well into a heavy session.
-- `enforce_at_pct`: optional hard-stop percentage. `0` → warn-only. `1` → block at 1% remaining.
+- `daily_tokens`: self-imposed daily limit. Observed peak: 3,120,151 (the quota-exhaustion day); typical heavy days 1.0-1.3M. `1000000` recommended -- triggers 25% warning at 750k, well into a heavy session.
+- `enforce_at_pct`: optional hard-stop percentage. `0` -> warn-only. `1` -> block at 1% remaining.
 
 **State dir**: `~/.local/state/claude-budget/`
-- `sessions/{day}-{session_id}.tokens` — per-session token count (parallel-safe, one file per session)
-- `warned/{day}` — newline-separated thresholds already fired today
-- `warned/{day}.lock` — flock target
+- `sessions/{day}-{session_id}.tokens` -- per-session token count (parallel-safe, one file per session)
+- `warned/{day}` -- newline-separated thresholds already fired today
+- `warned/{day}.lock` -- flock target
 
 **Test env vars**: `CLAUDE_BUDGET_STATE`, `CLAUDE_BUDGET_CONFIG`, `__CLAUDE_BUDGET_TESTING` (sourcing guard for tesht).
 

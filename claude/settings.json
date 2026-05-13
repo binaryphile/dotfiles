@@ -1,13 +1,25 @@
 {
   "skipDangerousModePermissionPrompt": true,
   "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
-    "Stop": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
+      {"hooks": [{"type": "command", "command": "claude-budget"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
+      {"hooks": [{"type": "command", "command": "claude-budget", "async": true}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
+      {"hooks": [{"type": "command", "command": "claude-budget"}]}
+    ],
     "PermissionRequest": [{"hooks": [{"type": "command", "command": "era-hook"}]}],
     "SubagentStart": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
     "SubagentStop": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
+    "SessionEnd": [
+      {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
+      {"hooks": [{"type": "command", "command": "claude-budget", "async": true}]}
+    ],
     "PreCompact": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
     "PostCompact": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}]
   }

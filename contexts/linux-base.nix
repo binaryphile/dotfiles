@@ -68,6 +68,14 @@ let
     runtimeInputs = [ pkgs.git pkgs.jq pkgs.coreutils ];
   };
 
+  # claude-budget: daily token usage warner. Warns at 25/10/5/1% remaining
+  # of a self-imposed daily token budget via Claude Code hooks. See UC-13.
+  claude-budget = mkScriptBin {
+    name = "claude-budget";
+    src = ../scripts/claude-budget;
+    runtimeInputs = [ pkgs.jq pkgs.coreutils pkgs.util-linux ];
+  };
+
   # Tmux with panel on PATH. Overlaid via symlinkJoin so tmux's status
   # bar commands (#(panel ...)) find the panel binary regardless of the
   # session's PATH state. macOS does not need panel (no headless tmux
@@ -86,7 +94,7 @@ in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ notify-send-bridge op-run tmux-with-panel ];
+  home.packages = [ claude-budget notify-send-bridge op-run tmux-with-panel ];
 
   # After switching generations, update the running tmux server's PATH so
   # #(panel ...) status commands resolve the new nix store path. Without

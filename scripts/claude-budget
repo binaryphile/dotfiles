@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+
+[[ ${__CLAUDE_BUDGET_TESTING:-} ]] && return 2>/dev/null
+
+set -euo pipefail
+
+StateDir=${CLAUDE_BUDGET_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-budget}
+ConfigFile=${CLAUDE_BUDGET_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-budget/config.json}
+
+main() {
+  local hook_json
+  hook_json=$(cat)
+
+  local event
+  event=$(printf '%s' "$hook_json" | jq -r '.hook_event_name // empty')
+
+  case $event in
+    Stop)         handleStop "$hook_json" ;;
+    SessionEnd)   handleSessionEnd ;;
+    SessionStart | UserPromptSubmit) handleWarning "$event" "$hook_json" ;;
+    *)            exit 0 ;;
+  esac
+}
+
+handleStop() {
+  local hook_json=$1
+
+  local session_id transcript
+  session_id=$(printf '%s' "$hook_json" | jq -r '.session_id // empty')
+  transcript=$(printf '%s' "$hook_json" | jq -r '.transcript_path // empty')
+
+  [[ -n $session_id && -n $transcript && -r $transcript ]] || exit 0
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+
+  local tokens
+  tokens=$(head -n -1 "$transcript" | jq -sc '
+    [.[] | select(.message? and .message.id? and .message.usage?)
+         | {id: .message.id,
+            t: ((.message.usage.input_tokens // 0) + (.message.usage.output_tokens // 0))}]
+    | unique_by(.id)
+    | map(.t)
+    | add // 0
+  ' 2>/dev/null) || exit 0
+
+  [[ ${tokens:-0} -gt 0 ]] || exit 0
+
+  mkdir -p "$StateDir/sessions"
+  printf '%s\n' "$tokens" > "$StateDir/sessions/${day}-${session_id}.tokens"
+}
+
+handleSessionEnd() {
+  local sessions_dir="$StateDir/sessions"
+  [[ -d $sessions_dir ]] || exit 0
+  find "$sessions_dir" -name '*.tokens' -mtime +7 -delete
+}
+
+handleWarning() {
+  local event=$1
+
+  [[ -r $ConfigFile ]] || exit 0
+
+  local limit
+  limit=$(jq -r '.daily_tokens // 0' "$ConfigFile")
+  [[ ${limit:-0} -gt 0 ]] || exit 0
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+
+  local total=0
+  local sessions_dir="$StateDir/sessions"
+  if [[ -d $sessions_dir ]]; then
+    local f n
+    for f in "$sessions_dir/${day}"-*.tokens; do
+      [[ -f $f ]] || continue
+      n=$(< "$f")
+      total=$(( total + ${n:-0} ))
+    done
+  fi
+
+  local pct_remaining
+  pct_remaining=$(( (limit - total) * 100 / limit ))
+  if (( pct_remaining < 0 )); then pct_remaining=0; fi
+  if (( pct_remaining > 100 )); then pct_remaining=100; fi
+
+  if [[ $event == UserPromptSubmit ]]; then
+    local enforce
+    enforce=$(jq -r '.enforce_at_pct // 0' "$ConfigFile")
+    if [[ ${enforce:-0} -gt 0 && $pct_remaining -le $enforce ]]; then
+      local used_k limit_k
+      used_k=$(( total / 1000 ))
+      limit_k=$(( limit / 1000 ))
+      printf '{"decision":"block","reason":"[Claude Budget] Budget floor reached: %d%% remaining (%dk/%dk tokens). Adjust daily_tokens or close sessions."}\n' \
+        "$pct_remaining" "$used_k" "$limit_k"
+      exit 0
+    fi
+  fi
+
+  local session_count=0
+  if [[ -d $sessions_dir ]]; then
+    local f
+    for f in "$sessions_dir/${day}"-*.tokens; do
+      [[ -f $f ]] || continue
+      session_count=$(( session_count + 1 ))
+    done
+  fi
+
+  local used_k limit_k
+  used_k=$(( total / 1000 ))
+  limit_k=$(( limit / 1000 ))
+
+  local warned_file="$StateDir/warned/${day}"
+  local lock_file="$StateDir/warned/${day}.lock"
+  mkdir -p "$StateDir/warned"
+
+  local threshold warned_this
+  for threshold in 25 10 5 1; do
+    (( pct_remaining <= threshold )) || continue
+
+    warned_this=false
+    {
+      flock -x 9
+
+      local warned_content=''
+      [[ -f $warned_file ]] && warned_content=$(< "$warned_file")
+
+      if ! printf '%s\n' "$warned_content" | grep -qxF "$threshold"; then
+        printf '%d\n' "$threshold" >> "$warned_file"
+        warned_this=true
+      fi
+    } 9>"$lock_file"
+
+    if [[ $warned_this == true ]]; then
+      local action
+      case $threshold in
+        25) action='Consider closing idle parallel sessions.' ;;
+        10) action='Close all but one session.' ;;
+        5)  action='Finish current work only.' ;;
+        1)  action='Stop after this prompt.' ;;
+      esac
+
+      printf '[Claude Budget] %d%% remaining (%dk/%dk tokens, %d sessions today). %s\n' \
+        "$pct_remaining" "$used_k" "$limit_k" "$session_count" "$action"
+
+      exit 0
+    fi
+  done
+}
+
+main

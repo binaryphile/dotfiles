@@ -511,7 +511,7 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 - **Goal:** Ted receives timely warnings when daily token usage approaches his self-imposed budget, enabling him to reduce parallel sessions before exhausting the Enterprise quota
 - **Scope:** Dotfiles environment (Claude Code hook system)
 - **Level:** User goal
-- **Trigger:** Automatic — fires at each Claude Code session start and at the completion of each response
+- **Trigger:** Automatic -- fires at each Claude Code session start and at the completion of each response
 - **Preconditions:** UC-4 completed; `~/.config/claude-budget/config.json` exists with a `daily_tokens` value
 - **Stakeholders:**
   - Ted -- warned early enough to reduce parallel sessions and preserve remaining quota
