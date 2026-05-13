@@ -109,6 +109,7 @@ in
   home.stateVersion = "24.11";
 
   home.packages = with pkgs; [
+    _1password-gui
     ast-grep
     bubblewrap
     abcde

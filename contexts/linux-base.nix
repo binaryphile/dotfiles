@@ -80,7 +80,7 @@ in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ notify-send-bridge op-run tmux-with-panel pkgs._1password-gui ];
+  home.packages = [ notify-send-bridge op-run tmux-with-panel ];
 
   # After switching generations, update the running tmux server's PATH so
   # #(panel ...) status commands resolve the new nix store path. Without
