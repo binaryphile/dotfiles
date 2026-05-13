@@ -504,6 +504,35 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 
 ---
 
+### UC-13: Stay Within Daily Token Budget
+
+- **Primary Actor:** Ted
+- **Secondary Actors:** Claude Code (hook infrastructure), claude-budget script
+- **Goal:** Ted receives timely warnings when daily token usage approaches his self-imposed budget, enabling him to reduce parallel sessions before exhausting the Enterprise quota
+- **Scope:** Dotfiles environment (Claude Code hook system)
+- **Level:** User goal
+- **Trigger:** Automatic — fires at each Claude Code session start and at the completion of each response
+- **Preconditions:** UC-4 completed; `~/.config/claude-budget/config.json` exists with a `daily_tokens` value
+- **Stakeholders:**
+  - Ted -- warned early enough to reduce parallel sessions and preserve remaining quota
+  - Enterprise quota -- not silently exhausted by unattended agents
+- **Main Success Scenario:**
+  1. Ted starts a Claude Code session (or Claude completes a response)
+  2. System computes total tokens used today across all sessions
+  3. System computes percent remaining against Ted's configured daily budget
+  4. If percent remaining has crossed a warning threshold (25%, 10%, 5%, or 1%) for the first time today, system injects a warning into Claude's session context
+  5. Ted reads the warning, sees token count and active session count, and decides to close idle sessions
+  6. Each threshold fires at most once per budget day (2am reset); subsequent sessions in the same day see no duplicate warnings for already-fired thresholds
+- **Extensions:**
+  - 1a. *Config absent:* System exits silently; no warnings emitted
+  - 3a. *Budget fully exhausted and `enforce_at_pct` configured:* System issues a hard block to Claude Code instead of a warning; further prompts are rejected until Ted adjusts the budget or closes sessions
+  - 4a. *Two sessions cross the same threshold simultaneously:* `flock` ensures exactly one warning is emitted; the other session sees the threshold already recorded and stays silent
+  - 6a. *Token files from old sessions accumulate:* `SessionEnd` hook prunes files older than 7 days automatically
+- **Minimal Guarantee:** System exits cleanly; no warning emitted if any precondition is unmet
+- **Success Guarantee:** Ted is warned at each of the four thresholds (exactly once each per budget day), with token count and active session count visible, giving enough time to act before exhaustion
+
+---
+
 ## Status
 
 | Use Case | Status | Notes |
@@ -525,3 +554,4 @@ Architecture, threat model, and operational procedures documented in the 1Passwo
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
 | UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2 |
+| UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |

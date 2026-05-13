@@ -513,6 +513,49 @@ Work calendar synced from OWA via published ICS URL. Three components:
 
 Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `services.vdirsyncer`) plus the custom khal-notify systemd unit live in `contexts/linux-base.nix`, imported by both `contexts/desktop/home.nix` and `contexts/crostini/home.nix`. The khal-notify ExecStart uses `${config.home.homeDirectory}/dotfiles/scripts/khal-notify`, which works identically on both standalone home-manager (Crostini) and the NixOS home-manager module (linux). The systemd unit's `DBUS_SESSION_BUS_ADDRESS` uses systemd's `%U` specifier for the user UID instead of hardcoding `1000`.
 
+### Claude Code Budget (UC-13)
+
+`scripts/claude-budget` is a Claude Code hook script that tracks daily token usage and injects warnings into Claude's session context when configurable thresholds are crossed.
+
+**Metric**: `input_tokens + output_tokens` from session JSONL transcripts (`~/.claude/projects/*/*.jsonl`). Matches Claude Code's `/usage` display. Cache tokens excluded. Dedup by `message.id` (same response appears 2–8× across branching and subagent JSONL entries; empirically verified: all duplicate IDs have identical token values).
+
+**Budget day**: resets at 2am — `date -d "2 hours ago" +%Y-%m-%d`.
+
+**Architecture**: four hook events, one script:
+
+| Hook | Mode | Responsibility |
+|------|------|----------------|
+| `Stop` | async | Parse session JSONL, write `sessions/{day}-{session_id}.tokens`. Skips zero-token sessions (no completed responses yet). |
+| `SessionEnd` | async | Prune `sessions/` files older than 7 days. |
+| `SessionStart` | sync | Sum today's token files, check thresholds, inject warning via stdout. |
+| `UserPromptSubmit` | sync | Same check + optional hard-block if `enforce_at_pct` crossed. |
+
+**Sync hook stdout**: Claude Code injects plain text stdout from sync hooks as session context. Warnings appear in Claude's next response. Block decision format: `{"decision":"block","reason":"..."}`.
+
+**JSONL resilience**: `head -n -1 transcript | jq -sc ...` — strips the potentially truncated last line before parsing; `|| exit 0` guard skips the token-file write on jq failure. Zero tokens → no file written (session hasn't completed a response yet; counted on next Stop).
+
+**Threshold tracking**: `flock`-protected append to `~/.local/state/claude-budget/warned/{day}`. Each of 25/10/5/1% fires exactly once per budget day. Parallel session race → flock serializes; second session sees threshold already recorded, stays silent.
+
+**Warning format**: `[Claude Budget] NN% remaining (NNNk/NNNk tokens, N sessions today). <action>`
+
+Actions by threshold: 25% → "Consider closing idle parallel sessions." 10% → "Close all but one session." 5% → "Finish current work only." 1% → "Stop after this prompt."
+
+**Config** (`~/.config/claude-budget/config.json`):
+```json
+{"daily_tokens": 1000000, "enforce_at_pct": 0}
+```
+- `daily_tokens`: self-imposed daily limit. Observed peak: 3,120,151 (the quota-exhaustion day); typical heavy days 1.0–1.3M. `1000000` recommended — triggers 25% warning at 750k, well into a heavy session.
+- `enforce_at_pct`: optional hard-stop percentage. `0` → warn-only. `1` → block at 1% remaining.
+
+**State dir**: `~/.local/state/claude-budget/`
+- `sessions/{day}-{session_id}.tokens` — per-session token count (parallel-safe, one file per session)
+- `warned/{day}` — newline-separated thresholds already fired today
+- `warned/{day}.lock` — flock target
+
+**Test env vars**: `CLAUDE_BUDGET_STATE`, `CLAUDE_BUDGET_CONFIG`, `__CLAUDE_BUDGET_TESTING` (sourcing guard for tesht).
+
+**Packaging**: `mkScriptBin` in `contexts/linux-base.nix` with `runtimeInputs = [ pkgs.jq pkgs.coreutils pkgs.util-linux ]` (`util-linux` provides `flock`). Hooks wired in `claude/settings.json`.
+
 ### Relationship to nixos-config
 
 ```nix
