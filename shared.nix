@@ -1,9 +1,15 @@
-{ config, pkgs, bashTools ? null, ... }:
+{ config, pkgs, lib, bashTools ? null, shellcheckFork ? null, shellcheckPlugin ? null, ... }:
 
 let
   effectiveBashTools = if bashTools != null then bashTools else import ./bash-tools.nix { inherit pkgs; };
+
+  # Fallback: any importer that doesn't pass shellcheckFork gets stock pkgs.shellcheck.
+  # Silent downgrade — every configured importer SHOULD pass it explicitly via
+  # extraSpecialArgs in flake.nix; criterion #5 (SC9001+ identity probe) catches
+  # the configured path, but unconfigured ad-hoc importers won't be flagged.
+  effectiveShellcheck = if shellcheckFork != null then shellcheckFork else pkgs.shellcheck;
 in {
-  home.packages = with pkgs; [
+  home.packages = (with pkgs; [
     bottom
     claude-code
     coreutils
@@ -27,7 +33,6 @@ in {
     ranger
     rsync
     scc
-    shellcheck
     signal-desktop
     silver-searcher
     stgit
@@ -35,7 +40,14 @@ in {
     uv
     vpn-slice
     zip
-  ] ++ [ effectiveBashTools.mkBash effectiveBashTools.tesht ];
+  ]) ++ [ effectiveShellcheck effectiveBashTools.mkBash effectiveBashTools.tesht ];
+
+  # Deploy the shellcheck-convention-plugin .so into the fork's XDG discovery
+  # path. lib.mkIf guards against unconfigured importers (matches the
+  # effectiveShellcheck fallback above).
+  xdg.dataFile."shellcheck/plugins/libconvention-checks.so" = lib.mkIf (shellcheckPlugin != null) {
+    source = "${shellcheckPlugin}/lib/shellcheck/plugins/libconvention-checks.so";
+  };
 
   home.sessionVariables = {
     EDITOR = "nvim";

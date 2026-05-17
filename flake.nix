@@ -15,6 +15,23 @@
       url = "github:yuezk/GlobalProtect-openconnect";
     };
 
+    # ShellCheck fork (binaryphile/shellcheck) with dynamic plugin loading
+    # via $XDG_DATA_HOME/shellcheck/plugins/. Replaces nixpkgs shellcheck
+    # so the convention-plugin's .so (next input) is actually loadable.
+    # Uses its own pinned nixpkgs (NO follows) — the Haskell build relies on
+    # a specific GHC version; following dotfiles' nixpkgs breaks compilation.
+    shellcheck-fork = {
+      url = "github:binaryphile/shellcheck";
+    };
+
+    # IFS/noglob convention plugin (SC9001-SC9006) for the fork above.
+    # Builds libconvention-checks.so under $out/lib/shellcheck/plugins/;
+    # deployed via xdg.dataFile in shared.nix to the fork's discovery path.
+    # Uses its own pinned nixpkgs (NO follows) — same GHC pinning reason.
+    shellcheck-convention-plugin = {
+      url = "github:binaryphile/shellcheck-convention-plugin";
+    };
+
     # Bash dev tool sources -- flake = false gives lockfile pinning without
     # requiring the repos to be flakes. nix flake update <name> bumps pins.
     task-bash-src = { url = "github:binaryphile/task.bash"; flake = false; };
@@ -23,6 +40,7 @@
   };
 
   outputs = { self, nixpkgs, home-manager, globalprotect-openconnect
+            , shellcheck-fork, shellcheck-convention-plugin
             , task-bash-src, mk-bash-src, tesht-src, ... }:
   let
     linuxSystem = "x86_64-linux";
@@ -52,6 +70,8 @@
 
     commonSpecialArgs = {
       inherit bashTools;
+      shellcheckFork   = shellcheck-fork.packages.${linuxSystem}.default;
+      shellcheckPlugin = shellcheck-convention-plugin.packages.${linuxSystem}.default;
     };
 
     # Multi-system outputs for dev shell (used on NixOS, Crostini, macOS).
@@ -77,7 +97,11 @@
     homeConfigurations.macos = home-manager.lib.homeManagerConfiguration {
       pkgs = macosPkgs;
       modules = [ ./contexts/macos/home.nix ];
-      extraSpecialArgs = { bashTools = macosBashTools; };
+      extraSpecialArgs = {
+        bashTools        = macosBashTools;
+        shellcheckFork   = shellcheck-fork.packages.${macosSystem}.default;
+        shellcheckPlugin = shellcheck-convention-plugin.packages.${macosSystem}.default;
+      };
     };
 
     packages.${linuxSystem} = {
