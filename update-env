@@ -328,6 +328,7 @@ stage2() {
   #  |   +-> tandem-protocol   - Claude slash commands (codeberg)  |
   #  |   +-> era               - semantic memory MCP (codeberg)    |
   #  |       Default branch: main. Cloned and symlinked.           |
+  #  |   +-> toc               - TOC DBR pipeline lib (codeberg)   |
   #  |   +-> flake-locks       - pin all locks to same nixpkgs rev |
   #  +-------------------------------------------------------------+
 
@@ -402,6 +403,9 @@ stage2() {
   claudeTandemConfigTask
   claudeMemoryRedirectsTask
   shellcheckrcTask
+
+  section toc
+  try codebergCloneAndLinkTask toc
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
