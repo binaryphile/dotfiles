@@ -290,7 +290,6 @@ stage2() {
 
   section task.bash
   try githubCloneAndLinkTask task.bash
-  try scaffoldTask ~/projects/task.bash
   try task.Ln ~/projects/task.bash/task.bash ~/.local/bin/task.bash
   try obsidianSnippetsTask ~/projects/task.bash/.obsidian/snippets
 
@@ -301,7 +300,6 @@ stage2() {
 
   section mk.bash
   try githubCloneAndLinkTask mk.bash
-  try scaffoldTask ~/projects/mk.bash
   try obsidianSnippetsTask ~/projects/mk.bash/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/mk.bash/bin/node
   try task.Ln nix-wrapper ~/projects/mk.bash/bin/npx
@@ -314,7 +312,6 @@ stage2() {
   desc  'switch tesht to main (was develop)'
   ok    '[[ $(git -C ~/projects/tesht branch --show-current 2>/dev/null) != develop ]]'
   cmd   'git -C ~/projects/tesht checkout main'
-  try scaffoldTask ~/projects/tesht
   try task.Ln ~/projects/tesht/tesht ~/.local/bin/tesht
   try obsidianSnippetsTask ~/projects/tesht/.obsidian/snippets
 
@@ -337,11 +334,9 @@ stage2() {
 
   section shellcheck-convention-plugin
   try githubCloneAndLinkTask shellcheck-convention-plugin
-  try scaffoldTask ~/projects/shellcheck-convention-plugin
 
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
-  try scaffoldTask ~/projects/jeeves
   try obsidianSnippetsTask ~/projects/jeeves/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/jeeves/bin/go
   try task.Ln nix-wrapper ~/projects/jeeves/bin/node
@@ -349,7 +344,6 @@ stage2() {
 
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
-  try scaffoldTask ~/projects/sofdevsim-2026
   try obsidianSnippetsTask ~/projects/sofdevsim-2026/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/go
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/node
@@ -357,7 +351,6 @@ stage2() {
 
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
-  try scaffoldTask ~/projects/binaryphile.github.io
   try obsidianSnippetsTask ~/projects/binaryphile.github.io/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/ruby
   try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/bundler
@@ -366,7 +359,6 @@ stage2() {
 
   section tandem-protocol
   try codebergCloneAndLinkTask tandem-protocol
-  try scaffoldTask ~/projects/tandem-protocol
   try obsidianSnippetsTask ~/projects/tandem-protocol/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
   desc   'remove stale /g command (renamed to /grade)'
@@ -644,7 +636,6 @@ gitUpdate() {
 }
 
 eraScaffoldTask() {
-  scaffoldTask ~/projects/era
   each task.Ln <<'  END'
     nix-wrapper ~/projects/era/bin/go
     nix-wrapper ~/projects/era/bin/node
