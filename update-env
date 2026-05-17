@@ -372,7 +372,6 @@ stage2() {
 
   section era
   try codebergCloneAndLinkTask era
-  try eraScaffoldTask
   try obsidianSnippetsTask ~/projects/era/.obsidian/snippets
   try eraBuildTask
   each task.Ln <<'  END'
@@ -633,14 +632,6 @@ gitUpdate() {
   local stashRef
   stashRef=$(git -C $1 stash list 2>/dev/null | grep -E ': autostash$' | grep -o 'stash@{[0-9]*}' | head -1) || true
   [[ -z $stashRef ]] || loosely git -C $1 stash drop $stashRef >/dev/null 2>&1
-}
-
-eraScaffoldTask() {
-  each task.Ln <<'  END'
-    nix-wrapper ~/projects/era/bin/go
-    nix-wrapper ~/projects/era/bin/node
-    nix-wrapper ~/projects/era/bin/npx
-  END
 }
 
 eraBuildTask() {
