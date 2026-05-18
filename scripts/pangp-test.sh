@@ -7,7 +7,11 @@ set -euo pipefail
 # ticket SC-80940. See conversation history (2026-05-18) for design.
 
 # Parameters (env-overridable)
-DIR=~/pangp-test-$(date -u +%Y%m%dT%H%M%SZ)
+# DIR is relative to the invoking shell's cwd so test artifacts land
+# next to the project the operator is working in (typically
+# ~/projects/jeeves), not scattered across $HOME. Override DIR=... to
+# place elsewhere.
+DIR=./pangp-test-$(date -u +%Y%m%dT%H%M%SZ)
 WORK_USER=${WORK_USER:-tlilley@digi.com}
 HM_FLAKE=${HM_FLAKE:-$HOME/dotfiles#crostini}
 GPOC_TIMEOUT=${GPOC_TIMEOUT:-300}
@@ -25,6 +29,9 @@ ack_or_exit() {
 }
 
 sudo_check() {
+  # SUDO_KEEPER=-1 sentinel = NOPASSWD environment (Crostini); no keepalive
+  # to monitor. sudo -n true would always succeed; skip the check entirely.
+  [[ ${SUDO_KEEPER:-0} -eq -1 ]] && return
   if ! kill -0 "${SUDO_KEEPER:-0}" 2>/dev/null; then
     echo "WARN: sudo keepalive died; re-priming." >&2
     sudo -v
@@ -157,10 +164,20 @@ preflight
 mkdir -p "$DIR"
 chmod 700 "$DIR"
 
-sudo -v
-( while true; do sleep 60; sudo -n true 2>/dev/null || exit; done ) &
-SUDO_KEEPER=$!
-trap '[[ -n ${SUDO_KEEPER:-} ]] && kill "$SUDO_KEEPER" 2>/dev/null || true' EXIT
+# Probe before priming. Crostini and other NOPASSWD-only environments
+# can't satisfy `sudo -v` (per sudoers(5): verifypw defaults to 'all', so
+# any non-NOPASSWD entry — e.g. inherited from %sudo group — makes `sudo
+# -v` require a password even when individual sudo calls don't). Probe
+# avoids prompting for an unsatisfiable password; individual sudo calls
+# later still work because NOPASSWD covers them.
+if sudo -n true 2>/dev/null; then
+  SUDO_KEEPER=-1  # sentinel: NOPASSWD path; no keepalive process
+else
+  sudo -v
+  ( while true; do sleep 60; sudo -n true 2>/dev/null || exit; done ) &
+  SUDO_KEEPER=$!
+fi
+trap '[[ ${SUDO_KEEPER:-0} -gt 0 ]] && kill "$SUDO_KEEPER" 2>/dev/null || true' EXIT
 
 vpn down 2>/dev/null || true
 
