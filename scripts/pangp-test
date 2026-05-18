@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# pangp-test.sh — one-shot discriminator test: install official Palo Alto
+# pangp-test — one-shot discriminator test: install official Palo Alto
 # Networks GlobalProtect CLI alongside existing OSS gpoc, capture both
 # clients' behavior against the Digi tenant, package evidence for IT
 # ticket SC-80940. See conversation history (2026-05-18) for design.
