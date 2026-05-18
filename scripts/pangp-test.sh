@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pangp-test.sh — one-shot discriminator test: install official Palo Alto
+# Networks GlobalProtect CLI alongside existing OSS gpoc, capture both
+# clients' behavior against the Digi tenant, package evidence for IT
+# ticket SC-80940. See conversation history (2026-05-18) for design.
+
+# Parameters (env-overridable)
+DIR=~/pangp-test-$(date -u +%Y%m%dT%H%M%SZ)
+WORK_USER=${WORK_USER:-tlilley@digi.com}
+HM_FLAKE=${HM_FLAKE:-$HOME/dotfiles#crostini}
+GPOC_TIMEOUT=${GPOC_TIMEOUT:-300}
+PANGP_TIMEOUT=${PANGP_TIMEOUT:-300}
+HAVE_ERA=0
+
+# Helpers
+ack_or_exit() {
+  local prompt=$1 ack
+  read -rp "$prompt (y/n) " ack
+  case ${ack:-} in
+    y|Y|yes) return 0 ;;
+    *) echo "Aborted by operator at: $prompt" >&2; exit 1 ;;
+  esac
+}
+
+sudo_check() {
+  if ! kill -0 "${SUDO_KEEPER:-0}" 2>/dev/null; then
+    echo "WARN: sudo keepalive died; re-priming." >&2
+    sudo -v
+    ( while true; do sleep 60; sudo -n true 2>/dev/null || exit; done ) &
+    SUDO_KEEPER=$!
+  fi
+}
+
+preflight() {
+  local missing=()
+  for cmd in gpclient gpauth chromium home-manager curl tar sed xdg-mime vpn; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("cmd:$cmd")
+  done
+  [[ -f $HOME/crostini/PanGPLinux-6.3.3-c31.tgz ]] || missing+=("file:~/crostini/PanGPLinux-6.3.3-c31.tgz")
+  [[ -d $HOME/dotfiles/contexts/crostini ]] || missing+=("dir:~/dotfiles/contexts/crostini")
+  if (( ${#missing[@]} > 0 )); then
+    printf "Preflight failed; missing:\n" >&2
+    printf "  %s\n" "${missing[@]}" >&2
+    exit 1
+  fi
+  if command -v era >/dev/null 2>&1; then
+    HAVE_ERA=1
+  else
+    echo "INFO: era not available; archival step will be skipped." >&2
+  fi
+}
+
+classify_outcome() {
+  local status_file="$DIR/show-status.txt"
+  local connect_log="$DIR/pangp-connect.log"
+
+  [[ -s $status_file ]] || { echo UNKNOWN; return; }
+
+  if grep -qE '\bConnected\b' "$status_file" \
+     && ! grep -qiE '\bDisconnected\b|\bnot[[:space:]]+connected\b' "$status_file"; then
+    echo connected
+    return
+  fi
+
+  [[ -s $connect_log ]] || { echo UNKNOWN; return; }
+
+  if grep -qiE 'HTTP[/[:space:]]*[0-9.]*[[:space:]]*512|Invalid[[:space:]]+username[[:space:]]+or[[:space:]]+password|Authentication[[:space:]]+failed|Login[[:space:]]+failed|gateway[[:space:]]+(login[[:space:]]+)?error' "$connect_log"; then
+    echo identical-512
+    return
+  fi
+
+  if grep -qiE '(authentication|saml|cert|hip|policy|forbidden|denied)[[:space:]:]' "$connect_log"; then
+    echo different-error
+    return
+  fi
+
+  if grep -qiE 'fail(ed|ure).*portal|portal.*fail|saml.*status[[:space:]]*[:=]?[[:space:]]*-?1|cannot[[:space:]]+connect[[:space:]]+to[[:space:]]+local|no[[:space:]]+portal[[:space:]]+config' "$connect_log"; then
+    echo pre-gateway-fail
+    return
+  fi
+
+  echo UNKNOWN
+}
+
+repackage() {
+  local f
+  for f in gpoc-capture.log source-ip.txt versions.txt; do
+    [[ -f "$DIR/$f" ]] || { echo "ERROR: missing artifact $DIR/$f" >&2; exit 1; }
+  done
+
+  sed -i -E 's/(prelogin-cookie|portal-userauthcookie|portal-prelogonuserauthcookie|authcookie|portalcookie|gatewaycookie)[^&"[:space:]]*([&"[:space:]])/\1=REDACTED\2/g' "$DIR/gpoc-capture.log"
+  sed -i -E 's/^([[:space:]]*)(Cookie|Set-Cookie|Authorization):.*/\1\2: REDACTED/' "$DIR/gpoc-capture.log"
+  sed -i -E 's|globalprotectcallback:[A-Za-z0-9+/=]+|globalprotectcallback:REDACTED|g' "$DIR/gpoc-capture.log"
+
+  echo
+  echo "Review remaining potentially-sensitive material (first 50 matches):"
+  grep -nEi 'cookie|token|assertion|callback|authoriz|bearer' "$DIR/gpoc-capture.log" | head -50 || true
+  ack_or_exit "Redaction acceptable?"
+
+  cat > "$DIR/DATA_CLASSIFICATION.txt" <<EOF
+Bundle: gpoc capture (cookies/callback URLs redacted; SAML XML may persist),
+pangp connect log, daemon logs, routing tables, versions, source IP, exit codes.
+dotGlobalProtect/ contains pangp's user-state (less-sensitive).
+Distribution: Digi IT (Brad Barber via SC-80940) and forwarded PAN vendor support.
+EOF
+
+  local outcome
+  outcome=$(classify_outcome)
+
+  cat > "$DIR/summary.md" <<EOF
+# pangp discriminator test $(date -u +%FT%TZ)
+
+Outcome (HEURISTIC — verify against logs): $outcome
+Source IP: $(cat "$DIR/source-ip.txt")
+Versions: see versions.txt
+Exit codes: see exit-codes.txt
+Within-A signals: procs.txt (PanGpHip?), gpd.log (HIP submission?)
+Operational: post-routes.txt, post-resolv.txt, show-status.txt
+Decision threshold state: <fill manually>
+Ticket: SC-80940
+
+Classifier notes: 'connected' requires \bConnected\b in show-status.txt
+with no Disconnected/Not Connected. 'identical-512' is heuristic across
+multiple likely pangp surface forms — confirm by inspecting pangp-connect.log
+and gpd.log directly.
+EOF
+
+  tar czf "${DIR}.tgz" -C "$(dirname "$DIR")" "$(basename "$DIR")"
+  chmod 600 "${DIR}.tgz"
+
+  if (( HAVE_ERA )); then
+    era store --type knowledge -t "vpn,digi,pangp,test-result" \
+      --desc "pangp discriminator test $(date -u +%FT%TZ); outcome=$outcome (heuristic); bundle=${DIR}.tgz" \
+      --from-file "$DIR/summary.md"
+  else
+    echo "INFO: skipping era store (era unavailable). Bundle preserved at ${DIR}.tgz."
+  fi
+
+  echo
+  echo "Outcome (heuristic): $outcome"
+  echo "Attach to SC-80940: ${DIR}.tgz"
+  echo "If reverting later: ~/pangp-revert.sh"
+}
+
+# REPACKAGE_ONLY entry point: re-run sed+classify+package against existing DIR
+if [[ ${REPACKAGE_ONLY:-} == 1 ]]; then
+  [[ -d ${DIR:-} ]] || { echo "Set DIR=<existing test dir>" >&2; exit 1; }
+  preflight
+  repackage
+  exit 0
+fi
+
+# Main flow
+preflight
+mkdir -p "$DIR"
+chmod 700 "$DIR"
+
+sudo -v
+( while true; do sleep 60; sudo -n true 2>/dev/null || exit; done ) &
+SUDO_KEEPER=$!
+trap '[[ -n ${SUDO_KEEPER:-} ]] && kill "$SUDO_KEEPER" 2>/dev/null || true' EXIT
+
+vpn down 2>/dev/null || true
+
+curl -s --max-time 10 https://ifconfig.me > "$DIR/source-ip.txt" || echo "(curl failed)" > "$DIR/source-ip.txt"
+gpclient --version > "$DIR/versions.txt"
+echo "test started: $(date -u +%FT%TZ)" >> "$DIR/versions.txt"
+
+# Step 1: gpoc baseline capture (xdg-mime still → gpgui.desktop)
+xdg-mime query default x-scheme-handler/globalprotectcallback > "$DIR/mime-before.txt"
+echo
+echo "==> Starting gpoc baseline capture (timeout: ${GPOC_TIMEOUT}s)."
+echo "    Chromium will open. Complete SAML + Duo auth. Return to terminal."
+echo
+sudo_check
+set +e
+timeout "$GPOC_TIMEOUT" bash -c "
+  gpauth access.digi.com --browser 'chromium --incognito' | \
+    sudo gpclient -vv connect access.digi.com \
+      --cookie-on-stdin --user '$USER' --gateway 'US East' \
+      2>'$DIR/gpoc-capture.log'
+  echo \"gpoc_pipestatus=\${PIPESTATUS[*]}\" > '$DIR/gpoc-pipestatus.txt'
+"
+gpoc_outer_exit=$?
+set -e
+chmod 600 "$DIR/gpoc-capture.log"
+{
+  echo "gpoc_outer_exit=$gpoc_outer_exit"
+  [[ -f "$DIR/gpoc-pipestatus.txt" ]] && cat "$DIR/gpoc-pipestatus.txt"
+} > "$DIR/exit-codes.txt"
+[[ $gpoc_outer_exit -eq 124 ]] && echo "WARN: gpoc capture timed out." >&2
+
+# Step 2: flip xdg-mime → gp.desktop
+ack_or_exit "Edit ~/dotfiles/contexts/crostini/home.nix to add 'x-scheme-handler/globalprotectcallback = lib.mkForce [\"gp.desktop\"]' and commit?"
+grep -qE '^[[:space:]]+"x-scheme-handler/globalprotectcallback".*mkForce.*gp\.desktop' \
+  "$HOME/dotfiles/contexts/crostini/home.nix" \
+  || { echo "ERROR: active mkForce gp.desktop line not found (comments don't count)" >&2; exit 1; }
+home-manager switch --flake "$HM_FLAKE"
+xdg-mime query default x-scheme-handler/globalprotectcallback > "$DIR/mime-after.txt"
+if ! grep -q '^gp\.desktop$' "$DIR/mime-after.txt"; then
+  echo "ERROR: xdg-mime did not flip to gp.desktop (got: $(cat $DIR/mime-after.txt))" >&2
+  exit 1
+fi
+grep globalprotectcallback ~/.config/mimeapps.list >> "$DIR/mime-after.txt"
+echo "xdg-mime flip verified (source + runtime)."
+
+echo
+echo "If host Chrome had prior SAML attempts, restart cros-garcon or close those tabs."
+ack_or_exit "Ready to proceed?"
+
+# Step 3: pangp install
+sudo_check
+tar xzf ~/crostini/PanGPLinux-6.3.3-c31.tgz -C ~/crostini --one-top-level=extracted --skip-old-files
+sudo apt install -y "$HOME/crostini/extracted/GlobalProtect_deb-6.3.3.1-638.deb"
+dpkg -l globalprotect | tail -1 >> "$DIR/versions.txt"
+sudo cat /opt/paloaltonetworks/globalprotect/install.log >> "$DIR/versions.txt" 2>/dev/null || true
+
+# Step 4: pangp connect + observe
+timeout 30 bash -c 'until globalprotect show --status >/dev/null 2>&1; do sleep 1; done' \
+  || { echo "gpd not ready within 30s"; exit 1; }
+
+sudo_check
+echo
+echo "==> Starting pangp connect (timeout: ${PANGP_TIMEOUT}s)."
+echo "    May reopen browser for SAML if cookies expired. Same wait pattern as gpoc."
+echo
+set +e
+timeout "$PANGP_TIMEOUT" globalprotect connect \
+  --portal access.digi.com \
+  --gateway us-east-g-digiinte.gpgnosyogsn.gw.gpcloudservice.com \
+  --user "$WORK_USER" 2>&1 | tee "$DIR/pangp-connect.log"
+pangp_exit=${PIPESTATUS[0]}
+set -e
+echo "pangp_exit=$pangp_exit" >> "$DIR/exit-codes.txt"
+
+ip route                              > "$DIR/post-routes.txt"
+cat /etc/resolv.conf                  > "$DIR/post-resolv.txt"
+ps -ef | grep -E 'PanGP[SA]|PanGpHip' > "$DIR/procs.txt" || true
+sudo journalctl -u gpd --since "5 min ago" > "$DIR/gpd.log"
+globalprotect show --status      | tee "$DIR/show-status.txt"   || true
+globalprotect show --statistics  | tee "$DIR/show-stats.txt"    || true
+globalprotect collect-log && cp -r ~/.GlobalProtect "$DIR/dotGlobalProtect" 2>/dev/null || true
+
+# Step 5: redact + classify + package (resumable as REPACKAGE_ONLY=1 DIR=...)
+repackage
+
+# Emit revert script
+cat > ~/pangp-revert.sh <<'REVERT'
+#!/usr/bin/env bash
+set -euo pipefail
+sudo "$HOME/crostini/extracted/gp_uninstall.sh"
+echo "Now revert crostini/home.nix's mkForce line, then:"
+echo "  home-manager switch --flake \${HM_FLAKE:-\$HOME/dotfiles#crostini}"
+REVERT
+chmod 700 ~/pangp-revert.sh
