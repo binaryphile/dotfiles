@@ -238,8 +238,13 @@ in
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      # globalprotectcallback handler is declared in linux-base.nix (shared
-      # across all Linux platforms).
+      # globalprotectcallback handler is declared in linux-base.nix
+      # (shared across all Linux platforms) and pinned to gpgui.desktop.
+      # Overridden here to gp.desktop for the pangp discriminator test
+      # (SC-80940 / tasks.dotfiles). home-manager merges
+      # defaultApplications via list-concat, so lib.mkForce is required
+      # to replace the base value rather than co-register both handlers.
+      "x-scheme-handler/globalprotectcallback" = lib.mkForce [ "gp.desktop" ];
       "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
       "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
       # onepassword:// is Okta's SSO redirect target after auth. ChromeOS
