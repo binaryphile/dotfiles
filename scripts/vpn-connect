@@ -19,7 +19,7 @@ onInterrupt() {
 }
 
 connect() {
-  gpauth access.digi.com --browser "chromium --incognito" |
+  gpauth access.digi.com --browser xdg-open |
     sudo @gpclient@ connect access.digi.com \
       --cookie-on-stdin \
       --user "$USER" \
