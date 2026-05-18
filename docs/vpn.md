@@ -4,12 +4,39 @@ How `vpn-connect` works on Crostini, why the SAML callback flow is fragile, and 
 
 ## The stack
 
-1. **`gpauth`** -- Rust binary from yuezk's globalprotect-openconnect (Rust rewrite). Performs SAML auth via an external browser, captures the cookie, prints it to stdout.
-2. **`gpclient connect --cookie-on-stdin`** -- reads the cookie, drives `openconnect` (linked in via FFI) to bring up the GP tunnel.
+1. **`gpauth`** -- Rust binary from yuezk's globalprotect-openconnect (Rust rewrite). Performs SAML auth via an external browser, captures the cookie, prints it to stdout. The `--browser` arg is **single-token** (since Aug 2024, commit `9460d49`): a named choice from `{default, firefox, chrome, chromium, remote}` OR a path to a browser executable. Multi-token strings like `"chromium --incognito"` are treated as a single filename → ENOENT. See "Known pitfalls" below.
+2. **`gpclient connect`** -- can either pipe-consume a cookie from `gpauth` (`--cookie-on-stdin`) or drive SAML itself via its own `--browser` flag. The integrated mode is simpler; the pipeline mode lets you inspect/cache the cookie. Both invoke `openconnect` (linked via FFI) to bring up the GP tunnel.
 3. **`vpn-slice`** -- passed as `--script` to gpclient/openconnect for split-horizon DNS. Only the named hosts route through the tunnel; everything else stays on the LAN.
 4. **`vpn-connect` script** -- reconnect-loop wrapper around the above. Lives at `scripts/vpn-connect`, deployed via the Nix derivation in `contexts/linux-base.nix`.
 
 The Nix derivation substitutes absolute store paths for `@vpn-slice@` and `@gpclient@` because the script invokes them under `sudo`, which strips PATH.
+
+### Invocation patterns
+
+**Integrated (simpler)**: gpclient drives SAML directly.
+```bash
+sudo gpclient connect access.digi.com --browser default --user "$USER" --gateway 'US East'
+```
+
+**Pipeline (cookie inspectable)**: gpauth captures cookie, gpclient consumes.
+```bash
+gpauth access.digi.com --browser default \
+  | sudo gpclient connect access.digi.com --cookie-on-stdin --user "$USER" --gateway 'US East'
+```
+
+### Forcing fresh SAML per connect
+
+gpclient 2.5.4 supports `--clean` ("Do not reuse the remembered authentication cookie"). This is the proper way to force re-auth each connect. Do NOT attempt to achieve this by passing browser args (e.g., `--browser "chromium --incognito"`) — see "Known pitfalls" below.
+
+### Client identity flags (2.5.4)
+
+- `--os {Linux,Windows,Mac}` -- declared client OS.
+- `--client-version <VERSION>` -- emulate a specific GP client version, e.g., `6.3.3-650` to match a portal's expected client.
+- `--user-agent <UA>` -- explicit override. If not specified, gpclient auto-generates a correct UA from `--os` + `--client-version`. Don't fabricate UAs manually unless you know the exact format the gateway expects.
+- `--hip [<HIP>]` -- enable Host Integrity Protection report submission. Optional value is the path to a HIP script. Bare `--hip` semantics not documented in `--help` (test empirically).
+- `--hip-user <USER>` -- the user under which the HIP script runs.
+
+Note: `--csd-wrapper` and `--csd-user` are deprecated aliases for `--hip` and `--hip-user`.
 
 ## The SAML callback dance (the tricky part)
 
@@ -70,6 +97,31 @@ flowchart TD
 
 ## Diagnosing failures
 
+**Symptom: gateway login returns HTTP 512 AFTER SAML cookie delivered (active, SC-80940)**
+
+Pattern as of 2026-05-18:
+
+```
+[INFO  gpclient::connect] Reading cookie from standard input
+[INFO  auth::browser::auth_server] Received the browser authentication data from the socket
+[INFO  gpapi::portal::config] Retrieve the portal config, user_agent: PAN GlobalProtect/6.3.0-33 ...
+[INFO  gpapi::portal::config] Detected portal version: Some("6.3.3-650")
+[INFO  gpapi::gateway::login] Perform gateway login
+[WARN  gpapi::gateway::login] GP response error: reason=<none>, status=512 <unknown status code>,
+       body=<html>...Authentication failure: Invalid username or password...</html>
+Error: Gateway login error: <none>
+```
+
+The SAML callback flow works correctly (cookie delivered to the in-container TCP listener). The failure is at the GATEWAY LOGIN step that follows. The error body text is PAN's verbatim string from the gateway. "Invalid username or password" is misleading in a SAML/cookie context — the literal interpretation is "gateway rejected the SAML cookie the portal just issued."
+
+Under investigation. Hypotheses NOT yet confirmed: portal/gateway version mismatch (client UA reports `6.3.0-33`, portal is `6.3.3-650`); HIP-check enforcement; account/group-policy change; tenant-side auth pipeline change. IT ticket SC-80940 open.
+
+**Symptom: gpauth fails immediately with `{"failure":"No such file or directory (os error 2)"}`**
+
+gpauth's `--browser` arg was passed a multi-token string (e.g., `"chromium --incognito"`). gpauth's `--browser` is single-token; the whole string is treated as one filename and ENOENT fires before the browser ever launches. The JSON failure goes to gpauth's stdout. If piped into `gpclient --cookie-on-stdin`, gpclient parses the JSON as `SamlAuthResult::Failure(String)` (`apps/gpclient/src/connect.rs:610` uses `serde_json::from_str::<SamlAuthResult>`) and bails locally with "Failed to parse auth data" — does NOT contact the gateway.
+
+Fix: pass `--browser` a single token (`default`, `firefox`, `chrome`, `chromium`, `remote`, or a path to a single browser executable). Use `--clean` if your goal is forcing fresh SAML, not multi-arg browser invocation.
+
 **Symptom: gpauth hangs after "stop the auth server"**
 
 The TCP listener is waiting on `accept()` but no `gpclient launch-gui` ever ran. Check:
@@ -105,5 +157,28 @@ The Crostini case is technically supported (works via the garcon symlink) but it
 
 ## Non-fatal warnings during connection
 
-- `Server asked us to submit HIP report` -- the GP gateway wants a Host Information Profile. openconnect doesn't generate one natively; you'd need a `--csd-wrapper` script. The connection still works without it but may eventually be limited or disconnected.
+- `Server asked us to submit HIP report` -- the GP gateway wants a Host Information Profile. gpclient 2.5.4 supports this natively via `--hip [<script-path>]` and `--hip-user <user>` (the deprecated aliases `--csd-wrapper` and `--csd-user` still work). The connection may still complete without HIP submission but the gateway may rate-limit or disconnect later.
 - `Failed to open /dev/vhost-net` -- vhost-net isn't available in Crostini's kernel. openconnect uses a userspace fallback. Performance hit but functional.
+
+## Known pitfalls
+
+**Do NOT use multi-token `--browser` strings.** `--browser "chromium --incognito"` (or any space-separated string) is treated by gpauth as a single filename → ENOENT. Has been broken since Aug 2024 (commit `9460d49`); no released gpauth has ever supported shell-style splitting of this arg.
+
+If your intent is forcing fresh SAML per connect, use `gpclient connect --clean` (or the corresponding flag on whichever invocation pattern you use). Do not try to force fresh SAML via `--incognito` browser flags.
+
+If your intent is using a specific browser configuration, write a single-token wrapper script that exec's the browser with your desired flags:
+
+```bash
+cat > ~/.local/bin/chromium-incognito <<'EOF'
+#!/usr/bin/env bash
+exec chromium --incognito "$@"
+EOF
+chmod +x ~/.local/bin/chromium-incognito
+# Then: --browser chromium-incognito
+```
+
+But prefer `--browser default` + `--clean` if the incognito-for-fresh-auth was the real goal.
+
+**Do NOT assume gpauth's `--browser` arg supports the same syntax as openconnect's `--external-browser`.** They are different binaries with different argument-parsing implementations. openconnect's `--external-browser=BROWSER` also takes a single token (verified in openconnect 9.12).
+
+**Do NOT confuse gpauth's stdout cookie payload with a raw SAML assertion.** gpauth's stdout is a JSON-encoded `SamlAuthResult` (serde-tagged enum, `rename_all = "camelCase"`). The cookie field within carries PAN-internal token data, not raw SAML XML. Field name and exact structure: inspect a real output with `cat` before constructing `jq` filters.
