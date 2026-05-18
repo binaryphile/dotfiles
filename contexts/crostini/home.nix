@@ -134,6 +134,13 @@ in
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
 
+    # crostini-procfs-doctor lives in jeeves (not dotfiles) — first cross-repo
+    # path-dep in this flake. linkHome (not linkDotfile) because target is
+    # outside ~/dotfiles/. mkOutOfStoreSymlink does NOT validate target at
+    # eval; precondition is that ~/projects/jeeves is cloned.
+    ".local/bin/crostini-procfs-doctor".source =
+      linkHome "projects/jeeves/guides/scripts/crostini-procfs-doctor";
+
     # Scheme-handler .desktop files must land in ~/.local/share/applications/
     # for cros-garcon to discover them; xdg.desktopEntries (which would deploy
     # to ~/.nix-profile/share/applications/) isn't reachable by garcon's
@@ -143,6 +150,23 @@ in
     ".local/share/applications/gpgui.desktop".source =
       "${gpguiDesktop}/share/applications/gpgui.desktop";
   };
+
+  # One-time migration: surrender any pre-existing manual symlink at the
+  # crostini-procfs-doctor target so HM can claim the path on first switch.
+  # Idempotent: discriminator checks whether the existing link's first hop
+  # is in /nix/store (HM-owned) vs elsewhere (legacy manual symlink). The
+  # /nix/store/* check is HM-version-agnostic — HM stages link targets
+  # through the store regardless of its internal layout convention.
+  home.activation.rmStaleProcfsDoctor = config.lib.dag.entryBefore [ "checkLinkTargets" ] ''
+    set -eu
+    link="$HOME/.local/bin/crostini-procfs-doctor"
+    if [[ -L $link ]]; then
+      case $(readlink "$link") in
+        /nix/store/*) : ;;            # HM owns it; no-op
+        *)            rm "$link" ;;   # legacy manual symlink — surrender
+      esac
+    fi
+  '';
 
   # 1Password desktop-integration gate: the desktop app verifies the
   # connecting `op` binary via SO_PEERCRED, requiring egid to equal the

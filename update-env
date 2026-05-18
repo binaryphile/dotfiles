@@ -68,6 +68,10 @@ main() {
   fi
 
   case $Stage in
+    1|2|credential|all ) preflightCrostiniLxcfs ;;
+  esac
+
+  case $Stage in
     1          ) stage1; stage1Epilogue;;
     2          ) stage2Preflight; stage2;;
     credential ) credentialPreflight; credentialStage;;
@@ -101,6 +105,20 @@ platformTaskGroups() {
 hasGroup() {
   local NL=$'\n'
   [[ "${NL}${1}${NL}" == *"${NL}${2}${NL}"* ]]
+}
+
+# preflightCrostiniLxcfs detects orphaned lxcfs FUSE mounts on Crostini and
+# aborts with a recovery pointer before any nix work happens. Returns 0 on
+# non-crostini platforms or when /proc/meminfo is readable. Called only for
+# substantive stages (1, 2, credential, all) -- -h bypasses.
+preflightCrostiniLxcfs() {
+  [[ $Platform == crostini ]] || return 0
+  test -r /proc/meminfo && return 0
+  echo "fatal: lxcfs disconnect detected (/proc/meminfo unreadable)" >&2
+  echo "  Repair (doctor on PATH): crostini-procfs-doctor --repair" >&2
+  echo "  Repair (direct path):    bash ~/projects/jeeves/guides/scripts/crostini-procfs-doctor --repair" >&2
+  echo "  Guide:                   ~/projects/jeeves/guides/crostini-recovery-guide.md" >&2
+  exit 1
 }
 
 # Stage 1: critical path -- working shell after completion + exec bash
