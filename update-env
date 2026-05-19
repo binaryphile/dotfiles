@@ -396,9 +396,13 @@ stage2() {
     ~/projects/era/bin/era           ~/.local/bin/era
     ~/projects/era/bin/era-serve     ~/.local/bin/era-serve
     ~/projects/era/bin/era-hook      ~/.local/bin/era-hook
+    ~/projects/era/bin/era-soak              ~/.local/bin/era-soak
+    ~/projects/era/bin/era-soak-fit          ~/.local/bin/era-soak-fit
+    ~/projects/era/bin/era-package           ~/.local/bin/era-package
     ~/projects/era/bin/evtctl                ~/.local/bin/evtctl
     ~/projects/era/bin/task-audit             ~/.local/bin/task-audit
     ~/projects/era/bin/validate-attestation   ~/.local/bin/validate-attestation
+    ~/projects/era/bin/validate-plan          ~/.local/bin/validate-plan
   END
   try eraMcpCleanupTask
   try eraServiceCleanupTask
