@@ -73,8 +73,9 @@ readState() {
   fi
 }
 
-# vpnUp returns true if the VPN tunnel interface exists.
-vpnUp() { $ip link show tun0 >/dev/null 2>&1; }
+# vpnUp returns true if the VPN tunnel interface exists. tun0 = gpoc
+# (openconnect); gpd0 = official pangp client.
+vpnUp() { $ip link show tun0 >/dev/null 2>&1 || $ip link show gpd0 >/dev/null 2>&1; }
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
 # unreliable because most vendor sites block it). Returns ok or fail.

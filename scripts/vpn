@@ -42,12 +42,20 @@ cmdDown() {
 cmdAttach() { tmux attach -t "$Session"; }
 
 cmdStatus() {
+  # Official pangp path (systemd-managed; no tmux session). Check first
+  # because it's the more authoritative state — gpd.service knows whether
+  # the tunnel is actually up, not just whether a wrapper process exists.
+  if globalprotect show --status 2>/dev/null | grep -q 'Connected$'; then
+    echo up
+    return
+  fi
+  # OSS gpoc path (tmux-wrapped vpn-connect running gpclient).
   if tmux has-session -t "$Session" 2>/dev/null \
      && pgrep -f 'gpclient connect' >/dev/null 2>&1; then
     echo up
-  else
-    echo down
+    return
   fi
+  echo down
 }
 
 main() {

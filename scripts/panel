@@ -143,7 +143,12 @@ eraProbe() {
 }
 
 vpnProbe() {
-  ip link show tun0 >/dev/null 2>&1 && echo on || echo off
+  # tun0 = gpoc (openconnect); gpd0 = official pangp client.
+  if ip link show tun0 >/dev/null 2>&1 || ip link show gpd0 >/dev/null 2>&1; then
+    echo on
+  else
+    echo off
+  fi
 }
 
 # Module rendering -- fast: read cached state, kick off async refresh,
