@@ -73,9 +73,14 @@ readState() {
   fi
 }
 
-# vpnUp returns true if the VPN tunnel interface exists. tun0 = gpoc
-# (openconnect); gpd0 = official pangp client.
-vpnUp() { $ip link show tun0 >/dev/null 2>&1 || $ip link show gpd0 >/dev/null 2>&1; }
+# vpnUp returns true if the VPN tunnel interface exists AND is UP (carrier).
+# An interface can persist in DOWN state after a tear-down (gpoc leaves tun0
+# around on disconnect; pangp leaves gpd0 around between connect cycles).
+# tun0 = gpoc (openconnect); gpd0 = official pangp client.
+vpnUp() {
+  $ip -o link show tun0 2>/dev/null | grep -q 'state UP' \
+    || $ip -o link show gpd0 2>/dev/null | grep -q 'state UP'
+}
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
 # unreliable because most vendor sites block it). Returns ok or fail.

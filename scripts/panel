@@ -144,11 +144,26 @@ eraProbe() {
 
 vpnProbe() {
   # tun0 = gpoc (openconnect); gpd0 = official pangp client.
-  if ip link show tun0 >/dev/null 2>&1 || ip link show gpd0 >/dev/null 2>&1; then
-    echo on
-  else
-    echo off
+  # Require state=UP — interface persists after tear-down on both clients;
+  # presence alone is a stale signal that turns the widget into a liar.
+  local new=off
+  if ip -o link show tun0 2>/dev/null | grep -q 'state UP' \
+     || ip -o link show gpd0 2>/dev/null | grep -q 'state UP'; then
+    new=on
   fi
+
+  # On off→on transition, invalidate stale SSH caches. sshHost has a
+  # 600s TTL because SSH connections are expensive; without this hook,
+  # widgets show stale 'fail' for up to 10 min after the tunnel comes
+  # back. $State/vpn still holds the PREVIOUS value here because
+  # refresh() writes atomically (.tmp + mv) AFTER this function returns.
+  local prev
+  prev=$(cat "$State/vpn" 2>/dev/null || echo off)
+  if [[ $prev == off && $new == on ]]; then
+    rm -f "$State"/*-ssh 2>/dev/null
+  fi
+
+  echo "$new"
 }
 
 # Module rendering -- fast: read cached state, kick off async refresh,
