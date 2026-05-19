@@ -146,6 +146,69 @@ If gpauth advances past `accept()` and removes `/tmp/gpcallback.port`, the in-co
 
 Probably SIGPIPE. The downstream side of `gpauth | sudo gpclient ...` (e.g., sudo prompting for a password and timing out, or gpclient hitting an early error) closes the read end of the pipe. When gpauth next writes, it gets SIGPIPE and dies. To diagnose, run `gpauth` standalone (no pipe) and capture stdout/stderr to files.
 
+## Official PAN GlobalProtect CLI (pangp) — for discriminator testing
+
+When debugging server-side-vs-client-side rejection (e.g., SC-80940), install the official PAN GP CLI from the vendor bundle and try the same connect against the same portal/gateway. If pangp connects where yuezk gpoc 512s, the issue is gpoc-specific; if pangp fails identically, it's account/tenant/server side.
+
+### Install
+
+```bash
+tar xzf ~/crostini/PanGPLinux-6.3.3-c31.tgz -C ~/crostini --one-top-level=extracted --skip-old-files
+sudo apt install -y ~/crostini/extracted/GlobalProtect_deb-6.3.3.1-638.deb
+```
+
+Installs to `/opt/paloaltonetworks/globalprotect`, registers systemd units `gpd.service` (system) and `gpa.service` (user), installs `/usr/bin/globalprotect` symlink, installs `/usr/share/applications/gp.desktop` with `Exec=/usr/bin/globalprotect defaultbrowser %u` and `MimeType=x-scheme-handler/globalprotectcallback`.
+
+### Critical: default-browser handshake
+
+Out of the box, pangp on Linux is configured for an **embedded browser** SAML flow. Most modern PAN portals (including Digi's) push down a "use default browser" requirement. Without client-side opt-in, the first `connect` attempt aborts with:
+
+```
+Failed to connect to access.digi.com.
+Error: Default browser is not enabled
+```
+
+The handshake is two-sided:
+- **Client side**: add `<default-browser>yes</default-browser>` under `<Settings>` in `/opt/paloaltonetworks/globalprotect/pangps.xml`, then restart the services.
+- **Portal side** (your PAN admin): `Network > GlobalProtect > Portals > [config] > Agent > [config] > App > Use Default Browser for SAML Authentication = Yes`.
+
+Strings in `/opt/paloaltonetworks/globalprotect/PanGPS` confirm the portal pushes the toggle (`Portal's saml default browser support = %s`, `Prelogin use-default-browser = %s`). The literal "Default browser is not enabled" error fires when the portal asks for it and the client hasn't opted in.
+
+Client-side fix:
+
+```bash
+sudo cp /opt/paloaltonetworks/globalprotect/pangps.xml /opt/paloaltonetworks/globalprotect/pangps.xml.bak
+sudo sed -i 's|<agent-user-override/>|<agent-user-override/>\n\t\t<default-browser>yes</default-browser>|' /opt/paloaltonetworks/globalprotect/pangps.xml
+sudo systemctl restart gpd.service
+systemctl --user restart gpa.service
+```
+
+Verify: `grep default-browser /opt/paloaltonetworks/globalprotect/pangps.xml` should show the element inside `<Settings>`.
+
+### xdg-mime ordering trap (in any test script)
+
+If a test script writes `mkForce gp.desktop` to mimeapps.list BEFORE installing pangp (when `gp.desktop` doesn't exist on disk yet), `xdg-mime query default x-scheme-handler/globalprotectcallback` returns the next available .desktop file (e.g., `gpgui.desktop` from gpoc), not `gp.desktop`. xdg-mime falls back when the pinned default's .desktop file is missing.
+
+Correct order: install pangp FIRST (creates `/usr/share/applications/gp.desktop`), THEN apply the mimeapps.list mkForce override, THEN verify with `xdg-mime query`.
+
+### Connect (different CLI vocabulary than gpoc)
+
+```bash
+globalprotect connect --portal access.digi.com --username tlilley@digi.com
+```
+
+Differences from gpoc invocation:
+- `--username` (pangp) vs `--user` (gpoc).
+- No `--gateway` arg in the common case; pangp uses portal-driven gateway discovery. If you must pin, use the portal-config label (not a DNS hostname): the value pangp expects matches what's exposed by the portal config, often the same label gpoc uses (e.g., `"US East"`).
+- Logs to `~/.GlobalProtect/`; status via `globalprotect show --status`, `globalprotect show --statistics`.
+
+### Uninstall (full rollback)
+
+```bash
+sudo apt remove globalprotect           # runs prerm + postrm; clears /opt, systemd units, /usr/bin/globalprotect, /usr/share/applications/gp.desktop, user dirs, certs
+# revert the home.nix mkForce override that pinned globalprotectcallback to gp.desktop
+```
+
 ## Known related issues upstream
 
 - yuezk/GlobalProtect-openconnect#439 -- same pattern in KASM Docker, closed WONTFIX. Containers are an unsupported topology for the external-browser callback flow.

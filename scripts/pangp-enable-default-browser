@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pangp-enable-default-browser — opt the official PAN GlobalProtect Linux
+# CLI into default-browser SAML authentication. PAN portals that push
+# "Use Default Browser for SAML Authentication = Yes" require the client
+# to opt in via pangps.xml; without this, `globalprotect connect` aborts
+# with "Default browser is not enabled". See docs/vpn.md for the full
+# two-sided-handshake explanation.
+
+readonly XML=/opt/paloaltonetworks/globalprotect/pangps.xml
+readonly Marker='<default-browser>yes</default-browser>'
+
+[[ -f $XML ]] || { echo "error: $XML not found; is the globalprotect package installed?" >&2; exit 1; }
+
+if sudo grep -qF "$Marker" "$XML"; then
+  echo "already enabled (found $Marker in $XML); skipping edit."
+else
+  # Backup once; don't clobber an existing .bak from a prior run.
+  if [[ ! -f ${XML}.bak ]]; then
+    sudo cp "$XML" "${XML}.bak"
+    echo "backed up $XML -> ${XML}.bak"
+  fi
+  sudo sed -i 's|<agent-user-override/>|<agent-user-override/>\n\t\t<default-browser>yes</default-browser>|' "$XML"
+  echo "added $Marker under <Settings> in $XML"
+fi
+
+echo
+echo "verification:"
+sudo grep -A1 agent-user-override "$XML"
+
+echo
+echo "restarting services..."
+sudo systemctl restart gpd.service
+systemctl --user restart gpa.service
+echo "gpd.service + gpa.service restarted."
+
+echo
+echo "next: globalprotect connect --portal <portal> --username <user>"

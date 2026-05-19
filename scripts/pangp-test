@@ -42,7 +42,7 @@ sudo_check() {
 
 preflight() {
   local missing=()
-  for cmd in gpclient gpauth chromium home-manager curl tar sed xdg-mime vpn; do
+  for cmd in gpclient gpauth home-manager curl tar sed xdg-mime vpn; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("cmd:$cmd")
   done
   [[ -f $HOME/crostini/PanGPLinux-6.3.3-c31.tgz ]] || missing+=("file:~/crostini/PanGPLinux-6.3.3-c31.tgz")
@@ -194,7 +194,7 @@ echo
 sudo_check
 set +e
 timeout "$GPOC_TIMEOUT" bash -c "
-  gpauth access.digi.com --browser 'chromium --incognito' | \
+  gpauth access.digi.com --browser default | \
     sudo gpclient -vv connect access.digi.com \
       --cookie-on-stdin --user '$USER' --gateway 'US East' \
       2>'$DIR/gpoc-capture.log'
