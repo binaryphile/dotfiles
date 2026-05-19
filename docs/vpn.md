@@ -209,6 +209,141 @@ sudo apt remove globalprotect           # runs prerm + postrm; clears /opt, syst
 # revert the home.nix mkForce override that pinned globalprotectcallback to gp.desktop
 ```
 
+## Diff-the-requests instrumentation (debugging "gpoc fails / pangp works")
+
+When the OSS yuezk gpoc client returns a server-side error (e.g., HTTP 512 at gateway login) and the official pangp client succeeds against the same portal/account, the discriminator is some field-level diff in the request bodies. The two clients implement the GlobalProtect protocol independently. Capture both clients' requests and diff to identify what gpoc is omitting or misformatting.
+
+### Pangp logging levels (what they actually capture)
+
+`globalprotect set-log --level {debug|dump}` (must run as user, sudo errors with "Unable to run GlobalProtect CLI for system users: 0"). Empirically observed contents at dump level (the higher of the two — LIVEcommunity reports of "passwords appearing in cleartext" are narrow to legacy Save-User-Credential mode, NOT modern SAML flows):
+
+| Log captures at dump | Captured? |
+|---|---|
+| Request URL (`Request https://...`) | yes |
+| User-Agent header | yes |
+| Response HTTP status code | yes |
+| Response content-length | yes |
+| Cookie file write events (PanPUAC `.dat`, encrypted on disk) | yes |
+| Tunnel packet-level metadata (IPv4 headers, send-packet-size) | yes (LOTS — fills 10MB in ~4 min of active VPN use) |
+| **HTTP POST request body** | **NO** |
+| **HTTP response body** | **NO** |
+
+Use dump for ops-level connect diagnostics (which endpoints get hit, status codes, where it fails) — NOT for request/response field-level inspection. For that, see the webhook.site technique below.
+
+**Log rotation hazard**: at dump level, PanGPS rotates `PanGPS.log → PanGPS.log.old` when it hits ~10MB, and keeps only the most recent .old. With active VPN use that's every few minutes — you'll lose the auth-cycle log to rotation before you can read it. Capture independently with `sudo tail -F /opt/paloaltonetworks/globalprotect/PanGPS.log > /tmp/pangp-capture.log &` BEFORE the connect cycle; the tail-F follows the rotation and your file is untouched by pangp.
+
+```bash
+globalprotect set-log --level dump   # run as user, NOT sudo
+sudo tail -F /opt/paloaltonetworks/globalprotect/PanGPS.log > /tmp/pangp-capture.log 2>&1 &
+TAIL=$!
+globalprotect disconnect
+globalprotect connect --portal access.digi.com --username tlilley@digi.com
+# Wait for Connected, then:
+kill "$TAIL"
+sudo grep -nE 'GetHttpResponse: Request|user_agent|status is|content-length' /tmp/pangp-capture.log
+# Always drop back to debug after — dump generates massive disk and CPU pressure on a busy tunnel
+globalprotect set-log --level debug
+```
+
+### Gpoc verbose logging (captures responses but NOT request bodies)
+
+`gpclient -vvv` activates `log::trace!` macros via `clap-verbosity-flag` + `env_logger`. At the gateway-login site (`crates/gpapi/src/gateway/login.rs`):
+- `info!("Perform gateway login, user_agent: ...")` — line ~48
+- `debug!("Gateway login response: {}", res)` — line ~75 (the response only)
+
+The request body `HashMap` built by `build_gateway_login_params` is handed to `reqwest::Client::post(...).form(&params)` without ever being printed. To see what gpoc actually SENT, you need either a custom build that adds tracing OR the pipedream technique below.
+
+### HTTP-mirror diff technique (no TLS instrumentation)
+
+Originally documented as "the pipedream technique" in [yuezk/GlobalProtect-openconnect#574](https://github.com/yuezk/GlobalProtect-openconnect/issues/574). As of 2026-05-19, pipedream rebranded to "String" (post-Workday acquisition) and the simple HTTP-webhook surface is gone. Equivalent free alternatives:
+
+- **webhook.site** — UUID-based URLs `https://webhook.site/<uuid>`; supports subdomain alias `https://<uuid>.webhook.site` (the alias form is what we need because pangp/gpoc's `--portal` accepts hostnames, not paths).
+- **requestcatcher.com** — `<random>.requestcatcher.com` subdomain native; simpler if subdomain aliasing fails.
+
+Both serve valid Let's Encrypt certs so neither client refuses to TLS-handshake.
+
+Procedure with webhook.site:
+
+1. Open https://webhook.site, get a URL like `https://78b44b76-282f-4a54-bcd0-6ed7b713b531.webhook.site/`. Use the **subdomain form** for pangp/gpoc.
+2. Point pangp at the mirror as if it were the portal:
+   ```bash
+   globalprotect disconnect 2>/dev/null
+   globalprotect connect --portal <uuid>.webhook.site --username <user>
+   ```
+   Pangp TLS-handshakes, POSTs prelogin to `<uuid>.webhook.site/global-protect/prelogin.esp`, gets a bogus response, fails — but webhook.site captures the request verbatim (method, URL, headers, body).
+3. Same for gpoc's prelogin (standalone, doesn't need full pipeline):
+   ```bash
+   gpauth <uuid>.webhook.site
+   ```
+4. Diff the two captured POST bodies in webhook.site's UI under "Form values".
+
+No MITM, no SSLKEYLOGFILE, no cert pinning concerns.
+
+**Secret hygiene**: prelogin POSTs don't contain SAML cookies (those arrive later in the flow), but the captures DO include `host-id` (machine UUID) and tenant identifiers. Delete the webhook.site URL after capture; don't share the inbox link.
+
+### Empirical request diff: pangp vs gpoc 2.5.4 prelogin (captured 2026-05-19)
+
+POST `/global-protect/prelogin.esp` body, side-by-side:
+
+| Field | Pangp 6.3.3-638 | Gpoc 2.5.4 | Diff |
+|---|---|---|---|
+| `tmp` | `tmp` | `tmp` | match |
+| `clientVer` | `4100` (wire-protocol version, distinct from release version; constant since PAN-OS 5.x) | `4100` | match |
+| `clientos` | `Linux` | `Linux` | match |
+| `ipv6-support` | `yes` | `yes` | match |
+| `cas-support` | `yes` | `yes` | match |
+| `default-browser` | **`4`** | **`1`** | **gpoc declares "embedded browser only" (1) but actually does external-browser SAML; pangp declares "default browser supported" (4)** |
+| `host-id` | `<32-hex machine UUID>` | *(missing)* | **gpoc omits; pangp sends `/etc/machine-id` (or `dmidecode -s system-uuid` with dashes stripped)** |
+| `os-version` | `Linux <kernel-version>` | *(missing)* | **gpoc omits; sends only when `--os` flag is passed (`gp_params.rs:131-133`)** |
+| `data` | b64 of `{"cas_embedded_browser":"yes"}` (CAS = Cloud Authentication Service) | *(missing)* | **gpoc omits** |
+| User-Agent | `PAN GlobalProtect/6.3.3-638 (Linux <kernel>)` | `PAN GlobalProtect` | different but ruled out as load-bearing — gpoc with UA spoofed to pangp's exact string STILL gets 512 |
+
+### Where the diff lives in gpoc source
+
+`crates/gpapi/src/portal/prelogin.rs:14-23,112-115`:
+
+```rust
+const REQUIRED_PARAMS: &[&str] = &[
+    "host-id", "os-version", "default-browser", "cas-support", ...
+];
+// L112:
+params.insert("default-browser", "1");   // hardcoded; no CLI override
+params.insert("cas-support", "yes");
+// L115:
+params.retain(|k, _| REQUIRED_PARAMS.contains(k));   // silently drops anything else
+```
+
+`crates/gpapi/src/gp_params.rs:111-141`: `to_params()` never inserts `host-id` (declared as required but no code path populates), `data`, or `os-version` unless `--os` is passed.
+
+### Ranked hypotheses for the 512
+
+1. **(MOST LIKELY) Missing `host-id`** — `REQUIRED_PARAMS` declares it; code never sends it; tenants with HIP-enforcement or device-posture config reject prelogin/gateway-login without it. Timing matches: 2026-05-08 outage onset aligns with potential portal-side enforcement bump.
+2. **(SECOND) Missing `data` (CAS metadata)** — Digi's portal version 6.3.3-650 is recent enough that the CAS auth path may be default; without `cas_embedded_browser` declaration, the portal may select a path that's incompatible with what gpoc's gpauth produced.
+3. **(THIRD) `default-browser=1` declaring embedded but doing external SAML** — plausible but no direct evidence the portal validates declaration-vs-execution; community workaround in #574 (`--os Windows`) doesn't change this field.
+4. **Other** — yuezk #574 (your exact symptom, open as of 2026-01-20, 46 comments, no accepted fix). Related: #318, #472 (host-id absence with PAN error 53003), #572 (Reusing Portal's cookie on the Gateway seems broken).
+
+`clientgpversion` is ALSO commented out at `gp_params.rs:135-138` ("Do not include clientgpversion for now") and was an earlier hypothesis, but the prelogin diff above shows the bigger gap is `host-id`/`data`/`default-browser=1`. `clientgpversion` may be a contributing factor but is unlikely to be the sole cause.
+
+### How to verify the hypothesis
+
+Three runtime experiments, in cost order:
+
+1. **Custom gpoc build with `host-id`** — clone yuezk source, patch `gp_params.rs:to_params()` to read `/etc/machine-id` (which on Linux matches the pangp format exactly: 32 hex chars), insert it as `host-id` form param. Build with `cargo build --release`. ~30-60 min if cargo + deps need to be set up; minutes if Rust toolchain present.
+2. **Custom build adding `data=b64({"cas_embedded_browser":"yes"})` + `os-version` + flipping `default-browser=1` → `4`** — if #1 alone doesn't fix it.
+3. **Binary patch (single-byte `1` → `4` for default-browser)** — gpclient binary has `default-browser1cas-support` as a contiguous rodata literal at decimal offset 3776961; byte 3776976 is the literal `'1'` (0x31). Patch to `'4'` (0x34) with `dd conv=notrunc`. Only affects that one bound field; reversible with the inverse patch. Doesn't help with the host-id hypothesis (binary patching can't INSERT new fields, only SUBSTITUTE existing bytes). Useful only if hypothesis #3 turns out to be load-bearing on its own — unlikely per the ranking.
+
+### What does NOT work for TLS decryption
+
+- **SSLKEYLOGFILE on gpoc**: gpoc uses `reqwest` with `native-tls` (OpenSSL) per workspace `Cargo.toml:34`. `native-tls` does not honor `SSLKEYLOGFILE` (see [reqwest #1016](https://github.com/seanmonstar/reqwest/issues/1016) and [#2676](https://github.com/seanmonstar/reqwest/issues/2676)). Would require a custom build swapping to `rustls` + `KeyLogFile`.
+- **SSLKEYLOGFILE on pangp**: proprietary; no documented key-export. `LD_PRELOAD` of a key-extracting OpenSSL is theoretically possible but unreported for PanGPS specifically; PanGPS runs as systemd-managed root.
+- **openconnect as a discriminator**: openconnect 9.12 supports `gp` protocol natively, but era memory shows openconnect already fails on Digi's tenant with the same 512 — it inherits the upstream-incompatibility class.
+
+### Mitmproxy approach (heavyweight fallback)
+
+If pipedream and pangp logs are both inconclusive, mitmproxy with iptables transparent redirect works as long as PAN's portal isn't using certificate pinning beyond standard validation (no public evidence of pinning in either gpoc source or PAN docs). Install mitmproxy CA in both clients' trust stores; iptables PREROUTING redirects outbound 443 to portal IP → mitmproxy local port. Cost: ~30 min setup. Risk: DNS interception on Crostini's veth is awkward; if cert pinning IS present, neither client will connect through the proxy.
+
+Pipedream is strictly better when it works (which it should for clients that just do standard TLS validation).
+
 ## Known related issues upstream
 
 - yuezk/GlobalProtect-openconnect#439 -- same pattern in KASM Docker, closed WONTFIX. Containers are an unsupported topology for the external-browser callback flow.
