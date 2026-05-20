@@ -102,9 +102,9 @@ in
       newUnit="${pangp}/lib/systemd/system/gpd.service"
       liveUnit=/etc/systemd/system/gpd.service
       if [ ! -e "$liveUnit" ] || ! cmp -s "$newUnit" "$liveUnit"; then
-        $DRY_RUN_CMD sudo -n cp "$newUnit" "$liveUnit"
-        $DRY_RUN_CMD sudo -n systemctl daemon-reload
-        $DRY_RUN_CMD sudo -n systemctl restart gpd.service
+        $DRY_RUN_CMD /usr/bin/sudo -n cp "$newUnit" "$liveUnit"
+        $DRY_RUN_CMD /usr/bin/sudo -n systemctl daemon-reload
+        $DRY_RUN_CMD /usr/bin/sudo -n systemctl restart gpd.service
       fi
     ''
   );

@@ -1283,7 +1283,11 @@ homeManagerFlakeSwitchTask() {
   prog  on
   unchg 'No change so reusing latest profile generation'
 
-  cmd   "nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#$config"
+  # --impure: flake.nix references the proprietary pangp tarball by absolute
+  # path (~/crostini/PanGPLinux-*.tgz) which lives outside the flake's git
+  # tree. Pure mode forbids that path access; impure permits it. The tarball
+  # is content-addressed at unpack time so we still get reproducible builds.
+  cmd   "nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#$config --impure"
 }
 
 # neovim
