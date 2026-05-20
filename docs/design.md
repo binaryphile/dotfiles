@@ -22,7 +22,7 @@ Ted's shared user environment. Works on all hosts. NixOS system and Sway design:
 - Git -- identity, aliases, global ignore (now home-manager-managed via `home.file`)
 - Tmux, SSH, Ranger, Liquidprompt -- platform-aware via `contexts/`, deployed via home-manager
 - Claude Code -- settings managed via `home.file`
-- VPN access -- gpoc Rust rewrite, vpn-slice, vpn-connect wrapper (both platforms); plus Crostini-only browser proxy stack
+- VPN access -- dual-client (gpoc Rust rewrite + proprietary pangp), `vpn-mode` toggle, `vpn-connect` auto-dispatch; plus Crostini-only browser proxy stack
 - Phone notifications -- `notify-send` wrapper bridging to ntfy.sh
 - Neovim -- separate `dot_vim` repo
 
@@ -44,9 +44,10 @@ bash/
 contexts/
   mkScriptBin.nix               # Shared helper: build wrapped script binaries with store-path substitutions
   linux-base.nix                # Linux+Crostini shared layer (imports shared.nix); calendar, notify-send wrapper, dotfile symlinks
-  desktop/home.nix              # NixOS desktop (imports linux-base.nix); gpoc, vpn-connect via flake input
+  desktop/home.nix              # NixOS desktop (imports linux-base.nix + pangp.nix); gpoc via flake input, pangp via ./pangp.nix
   nixos -> desktop              # Platform alias (detectPlatform returns "nixos" on NixOS hosts)
-  crostini/home.nix             # Crostini-specific (imports linux-base.nix); vpn-connect (apt gpoc), tinyproxy + PAC for UC-8
+  crostini/home.nix             # Crostini-specific (imports linux-base.nix + pangp.nix); gpoc via apt, pangp via ./pangp.nix; tinyproxy + PAC for UC-8
+  pangp.nix                     # Home-manager module: install pangp pkg, gpa user-service, xdg-mime, optional Debian system-unit activation hook
   debian -> crostini            # Platform alias (detectPlatform returns "debian" on standalone Debian)
   macos/home.nix                # macOS-specific (imports shared.nix directly; skips the linux-base layer)
 gitconfig, gitignore_global     # Git (SSH commit signing enabled on linux)
@@ -54,7 +55,8 @@ tmux.conf                       # Context-dependent symlink
 ssh/config, ssh/authorized_keys  # Tracked; HM-managed client config (symlinked via linux-base.nix)
 ranger/                         # File manager
 liquidprompt/                   # Prompt theme
-scripts/                        # Setup utilities (notify-send, vpn-connect, khal-notify, lib.bash, load-sparkline)
+scripts/                        # Setup utilities (notify-send, vpn-connect, vpn-mode, pangp-enable-default-browser, khal-notify, lib.bash, load-sparkline)
+pangp.nix                       # Derivation packaging PAN's proprietary Linux client (PanGPLinux-*.tgz -> autoPatchelf + HOME-wrap + StateDirectory'd systemd unit)
 docs/                           # use-cases.md, design.md, environment-lifecycle.md, vpn.md, uc-init.md, scaffold.md
                                 # Sensitive docs (security.md, secrets-lifecycle.md, threat-model.md) stored as 1Password secure documents
 ```
@@ -82,7 +84,7 @@ Two stages:
 
 1. System setup. Crostini: verifies ChromeOS shared storage is mounted, then accepts optional hostname argument (`update-env -1 <hostname>`), written to `$CrostiniDir/hostname` for machine identity. First run without hostname is fatal. Creates `$CrostiniDir` only when backing storage exists. All platforms: apt-get upgrade (crostini/debian only).
 2. Clone dotfiles via HTTPS, install bootstrap symlinks (`.bash_profile`, `.bashrc`, `.profile` -> `bash/init.bash`; `~/dotfiles/context` -> active context). Remaining symlinks managed by home-manager via `linux-base.nix`.
-3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Nix installed via the [Determinate Nix installer](https://github.com/DeterminateSystems/nix-installer) -- a pinned release binary downloaded from GitHub, SHA-256 verified before execution. No `curl | sh`. Platform/arch auto-detected (`uname -s`/`uname -m`); supported: x86_64-linux, aarch64-linux, aarch64-darwin (x86_64-darwin dropped by Determinate in v3.13.0). On Linux, installed with `install linux --init none` (explicit planner, no systemd service); on macOS, `install` with default planner (launchd), then `/nix` ownership transferred to the current user via `chownRTask` -- effectively single-user mode, matching the old Lix pattern. After install, `writeNixConfTask` writes a declarative `/etc/nix/nix.conf` (Crostini/standalone only; NixOS manages its own). Content: `experimental-features = nix-command flakes`, `auto-optimise-store = true`, `max-jobs = auto`. Trusts only `cache.nixos.org` -- no third-party caches (see [Security Model](#security-model)). Overwrites whatever the installer left behind (Lix left `cache.lix.systems`; Determinate may add its own settings). Runs under `runas root` via task.bash -- the content is expanded from `nixConfContent` into a temp file in the current shell, then `install`ed to `/etc/nix/nix.conf` under sudo. This avoids passing shell functions across the sudo boundary (bare function names in `cmd` are not visible in the `sudo bash -c` subprocess). Path is injectable for testing. Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. VPN wrapper (`vpn-connect`) included; depends on the apt-installed `gpclient`. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No `--impure` needed. No persistent `home-manager` installation -- it runs transiently via `nix run`.
+3. Install Nix + home-manager + gpoc (crostini/debian/linux/macos -- skipped on NixOS). Nix installed via the [Determinate Nix installer](https://github.com/DeterminateSystems/nix-installer) -- a pinned release binary downloaded from GitHub, SHA-256 verified before execution. No `curl | sh`. Platform/arch auto-detected (`uname -s`/`uname -m`); supported: x86_64-linux, aarch64-linux, aarch64-darwin (x86_64-darwin dropped by Determinate in v3.13.0). On Linux, installed with `install linux --init none` (explicit planner, no systemd service); on macOS, `install` with default planner (launchd), then `/nix` ownership transferred to the current user via `chownRTask` -- effectively single-user mode, matching the old Lix pattern. After install, `writeNixConfTask` writes a declarative `/etc/nix/nix.conf` (Crostini/standalone only; NixOS manages its own). Content: `experimental-features = nix-command flakes`, `auto-optimise-store = true`, `max-jobs = auto`. Trusts only `cache.nixos.org` -- no third-party caches (see [Security Model](#security-model)). Overwrites whatever the installer left behind (Lix left `cache.lix.systems`; Determinate may add its own settings). Runs under `runas root` via task.bash -- the content is expanded from `nixConfContent` into a temp file in the current shell, then `install`ed to `/etc/nix/nix.conf` under sudo. This avoids passing shell functions across the sudo boundary (bare function names in `cmd` are not visible in the `sudo bash -c` subprocess). Path is injectable for testing. Installs gpoc `.deb` from yuezk's GitHub releases (Crostini only -- avoids the upstream flake's multi-minute Rust build). Verifies the pangp tarball is present at the expected path (`verifyPangpTarballTask`) and removes any prior apt-installed `globalprotect` deb (`aptRemoveGlobalprotectTask`, idempotent). Then uses `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini --impure` to apply the full home-manager config via the lockfile-pinned HM CLI exposed from the dotfiles flake. The `--impure` flag is required because `pangp.nix`'s `src` is an absolute path outside the flake's git tree (proprietary tarball, too large to vendor); the tarball is content-addressed at unpack time so reproducibility holds. VPN wrappers (`vpn-connect`, `vpn-mode`) included. Core dev tools (task.bash, mk.bash, tesht) nix-packaged in `bash-tools.nix` with sources pinned as `flake = false` inputs in `flake.nix`; available after home-manager switch. Env vars `TASK_BASH_LIB` and `MK_BASH_LIB` set to nix store paths for automation scripts. No persistent `home-manager` installation -- it runs transiently via `nix run`.
 4. Credential setup (Crostini only, requires hostname): `sshAgentPreflight` verifies the 1Password SSH agent is reachable -- checks the agent socket exists and that the agent responds with keys (fails with instructions to start 1Password and unlock). `deploySigningPub` copies the signing key `.pub` sidecar from the repo to `~/.ssh/id_ed25519_signing.pub` -- this is all `op-ssh-sign` needs to identify the 1Password vault key for commit signing (no private key on disk). `restoreSecrets` restores secrets from local or mount cache; if neither exists, prints instructions for manual creation (no automated 1Password retrieval for secrets). `agentTomlTask` writes `~/.config/1Password/ssh/agent.toml` to restrict the 1Password agent to the current machine's keys. `authPreflight` checks that the key is loaded in the agent, then tests SSH auth to each provider -- distinguishes "key not in agent" from "key not registered" from "unreachable." `runSigningKeyPreflight` verifies the signing `.pub` is deployed and its fingerprint appears in the 1Password agent's key list. After this step, `git push`, SSH clones, and signed commits all work. Headless/remote sessions without 1Password require SSH agent forwarding.
 
 **Stage 2** (projects, dev tool repos):
@@ -106,7 +108,7 @@ Bare `update-env` runs both stages sequentially. `-1`/`-2` flags run individual 
 
 All public repo clones use HTTPS for the initial `task.GitClone` (before SSH keys exist), then migrate to SSH for both fetch and push on every run. Private repos use SSH with `try` wrappers. `task.GitUpdate` uses `git fetch` + `git rebase` (not `git pull`) with `rebase.autoStash=true` set via `GIT_CONFIG_*` env vars in `update-env main()` -- not the `--autostash` flag -- so repos with uncommitted local changes are rebased without losing work. `task.GitUpdate` skips repos that are diverged (ahead AND behind upstream); ahead-only repos (local commits, remote unchanged) are allowed through since rebase is a no-op. Detached HEAD and missing upstream also cause a skip. `stashCloneAndLinkTask` guards `GitUpdate` with `[[ -d .git ]] || return 0` so non-git directories (e.g., a repo that failed to clone because VPN was down) are silently skipped instead of erroring. The `gitUpdate` wrapper (update-env) drops any autostash-labeled stash entry left by a failed stash-pop after rebase -- this covers the case where local and upstream both modified the same file; the pulled version wins. The wrapper locates the specific `stash@{N}` ref via `grep -E ': autostash$'` rather than assuming `stash@{0}`, so user stashes above the autostash entry are not clobbered.
 
-Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> desktop (fallback). `platform` is injectable via the standard DI pattern (lowercase function variable, defaults to `detectPlatform` via `${platform:-detectPlatform}`, overridable by `local` in tests). At startup, `main` validates that `contexts/$Platform` exists for any platform with the `hm` group -- fatal if missing, since both the context symlink and home-manager switch depend on it. `platformTaskGroups` is a pure decision function mapping platform to the set of task groups both stages should run (apt, hostname, gpoc, nix, hm, credential). All platforms with home-manager flake configs (crostini, debian, desktop, macos) get the `hm` group. `contexts/debian` is a symlink to `crostini`, matching the flake alias. Tested purely without mocking stage internals. For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
+Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -> desktop (fallback). `platform` is injectable via the standard DI pattern (lowercase function variable, defaults to `detectPlatform` via `${platform:-detectPlatform}`, overridable by `local` in tests). At startup, `main` validates that `contexts/$Platform` exists for any platform with the `hm` group -- fatal if missing, since both the context symlink and home-manager switch depend on it. `platformTaskGroups` is a pure decision function mapping platform to the set of task groups both stages should run (apt, hostname, gpoc, pangp, nix, hm, credential). All platforms with home-manager flake configs (crostini, debian, desktop, macos) get the `hm` group. `contexts/debian` is a symlink to `crostini`, matching the flake alias. Tested purely without mocking stage internals. For post-deployment maintenance, multi-machine sync, and development workflow, see [environment-lifecycle.md](environment-lifecycle.md).
 
 **What belongs in update-env vs. home-manager:** The split is governed by one structural constraint and two categories:
 
@@ -336,21 +338,58 @@ The cryptographic scoping that Service Accounts provide bounds *which vaults a t
 
 **op-run nix packaging:** `op-run` is built via `mkScriptBin` in `linux-base.nix`. `pkgs._1password-cli` is intentionally absent from its `runtimeInputs` — the NixOS system wrapper for `op` must be used instead of the nix store binary. See the comment in `linux-base.nix` for the security rationale; the system wrapper is managed by nixos-config.
 
-### VPN (UC-7)
+### VPN (UC-7, UC-7a)
 
-GlobalProtect VPN with SAML SSO via yuezk's Rust rewrite of `globalprotect-openconnect` (gpoc). nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
+Two GlobalProtect clients coexist on every Linux platform; UC-7a's `vpn-mode` toggle picks which one is active at any time. The dual-client setup landed 2026-05-19 in response to PAN's CVE-2026-0257 Prisma Access cookie-mint hardening, which broke yuezk's gpoc against the Digi portal indefinitely (tracked at [yuezk/GlobalProtect-openconnect#606](https://github.com/yuezk/GlobalProtect-openconnect/issues/606)). pangp is the working workaround; gpoc remains installed for when upstream lands the fix.
+
+#### Active-client toggle (UC-7a)
+
+State is implicit in `gpd.service`'s systemd state -- no separate state file:
+- `systemctl is-active gpd.service` returns `active` => pangp mode (PAN's daemon owns the tun device, listens on IPC for connect requests)
+- returns inactive => gpoc mode (gpoc launches on-demand via `vpn-connect`; no persistent service)
+
+`scripts/vpn-mode` does the flip: `vpn-mode pangp` starts gpd+gpa services, `vpn-mode gpoc` stops them and kills any in-flight `gpclient connect` process before returning. Bare `vpn-mode` prints the current state. The flip is atomic from the user's perspective: stop succeeds before start runs, so we never have two daemons fighting over the tun device.
+
+#### vpn-connect dispatch (UC-7 entry point)
+
+`scripts/vpn-connect` reads `vpn-mode` and runs the right client. pangp branch: `exec globalprotect connect --portal access.digi.com` (PAN's daemon handles tunnel persistence via its own `Restart=on-failure`). gpoc branch: the existing `gpauth | gpclient connect` pipeline with retry-on-disconnect loop. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp's interface) and `tun0` (gpoc's) independently -- the dispatch is invisible at the widget layer.
+
+#### gpoc packaging
+
+yuezk's Rust rewrite of `globalprotect-openconnect`. nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:
 - **Crostini:** installed via apt by `update-env` stage 1 (`aptInstallGpocTask` downloads the `.deb` from yuezk's GitHub releases and installs with `dpkg`). The upstream flake's Rust compilation takes several minutes and has no binary cache. `crostini/home.nix` references `/usr/bin/gpclient` directly.
-- **NixOS:** flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation)
-- **Standalone linux:** same flake input `globalprotect-openconnect` in `dotfiles/flake.nix`, passed via `extraSpecialArgs` as `gpoc`
+- **NixOS:** flake input `globalprotect-openconnect` in `nixos-config/flake.nix`, passed to home-manager via `extraSpecialArgs` as `gpoc` (pure evaluation).
+- **Standalone linux:** same flake input `globalprotect-openconnect` in `dotfiles/flake.nix`, passed via `extraSpecialArgs` as `gpoc`.
 
-Components:
-- `gpauth` -- performs SAML auth via the user's default browser, captures the cookie
-- `gpclient connect` -- drives openconnect (linked in via FFI) to bring up the GP tunnel
-- `vpn-slice` -- passed as `--script` to gpclient/openconnect for split-tunnel routing and split-horizon DNS
+Components used in the gpoc dispatch branch:
+- `gpauth` -- performs SAML auth via the user's default browser, captures the cookie.
+- `gpclient connect` -- drives openconnect (linked in via FFI) to bring up the GP tunnel.
+- `vpn-slice` -- passed as `--script` to gpclient/openconnect for split-tunnel routing and split-horizon DNS.
 
-Entry point: `vpn-connect` -- a Nix-managed wrapper script built via `mkScriptBin` on both platforms (`contexts/desktop/home.nix` and `contexts/crostini/home.nix`). The derivation substitutes `@vpn-slice@` and `@gpclient@` with absolute store paths because those binaries are invoked under `sudo`, which strips PATH. `gpoc` is also added to the wrapper's runtime PATH for the unsudo'd `gpauth` invocation. On NixOS, `waybar.nix` builds an identical derivation for its systemd service (nix deduplicates the store path).
+#### pangp packaging
 
-The script reconnects in a loop on disconnect; Ctrl-C exits cleanly.
+Proprietary PAN Linux client (`globalprotect`, `PanGPS`, `PanGPA`, plus bundled `libwa*` libraries). No nixpkgs derivation exists. We package it ourselves from PAN's `PanGPLinux-<ver>.tgz` (downloaded once from PAN's customer support portal; the tarball contains arch-specific .debs).
+
+Derivation at `pangp.nix`:
+- `dpkg-deb -x` unpacks the amd64 `.deb` into the build dir.
+- `autoPatchelfHook` rewrites DT_NEEDED entries in PanGPS and the libwa* libs from their hardcoded `/opt/paloaltonetworks/globalprotect/lib*.so` references to absolute nix-store paths under `$out/opt/...`. No /opt symlink needed at runtime.
+- `makeWrapper` wraps the user-facing binaries (`globalprotect`, `PanGPA`) with `export HOME="${HOME:?}/.local/share/globalprotect"; mkdir -p "$HOME"` so pangp's `getenv("HOME") + "/GP_HTML/saml.html"` writes land in a hidden subdirectory rather than polluting top-level `$HOME`.
+- Systemd unit `gpd.service` is recomposed with `WorkingDirectory=/var/lib/globalprotect` + `StateDirectory=globalprotect` + an `ExecStartPre` that symlink-stages read-only files from `$out/opt/.../` into the StateDirectory. PanGPS expects to write state files (HipPolicy.dat, HIP_*_Report.dat, PanGpMPR.dat, pangps.xml, *.log) to its cwd; the nix store is read-only, so the cwd has to be elsewhere and the staged symlinks let PanGPS still find its static config.
+
+Home-manager module at `contexts/pangp.nix`:
+- `home.packages = [ pangp ]` puts the wrapped binaries on `$HOME/.nix-profile/bin/`.
+- `systemd.user.services.gpa` declares the user-side agent unit.
+- `xdg.mimeApps.defaultApplications` pins `x-scheme-handler/globalprotectcallback` to `gp.desktop` (`lib.mkForce` to override the `linux-base.nix` default that points to gpoc's `gpgui.desktop`).
+- `home.activation.pangpSystemUnit` (opt-in via `services.pangp.enableSystemDaemonOnDebian`, set true in `crostini/home.nix`, false in `desktop/home.nix`) `cp`s the derivation's `gpd.service` to `/etc/systemd/system/` on each `home-manager switch`, then `daemon-reload`s and restarts. Required because home-manager can't directly manage system services on non-NixOS hosts; uses `/usr/bin/sudo` absolute path because home-manager's activation env has minimal PATH.
+- On NixOS the activation flag is false; the system-level `configuration.nix` uses `systemd.packages = [ pkgs.pangp ]` to install the unit (overlay-resolved from the flake).
+
+flake.nix wiring: `pangp = import ./pangp.nix { pkgs = linuxPkgs; src = /home/ted/crostini/PanGPLinux-6.3.3-c31.tgz; }`. The src is per-machine (proprietary tarball, doesn't belong in the git tree). Because the path is absolute and outside the flake's git tree, `homeManagerFlakeSwitchTask` runs `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#<config> --impure` -- pure-eval mode would refuse the path access; `--impure` permits it. Content addressing at unpack time keeps reproducibility intact.
+
+update-env wiring: `pangp` group runs on `crostini` and `desktop` platforms (per `platformTaskGroups`). Two tasks: `verifyPangpTarballTask` precondition-checks the tarball is at the expected path (fail-loud with placement instructions if missing); `aptRemoveGlobalprotectTask` removes the deprecated apt-installed `globalprotect` deb if present, idempotent (no-op when already absent). Wired into stage 1 before the nix group so the precondition is asserted before home-manager runs.
+
+#### vpn-connect derivation
+
+`scripts/vpn-connect` is built via `mkScriptBin` on both platforms (`contexts/desktop/home.nix` and `contexts/crostini/home.nix`). The derivation substitutes `@vpn-slice@` and `@gpclient@` with absolute store paths because those binaries are invoked under `sudo` in the gpoc branch (`sudo` strips PATH). The pangp branch calls `globalprotect` which is on `$HOME/.nix-profile/bin/` (no substitution needed -- not invoked under sudo).
 
 #### SAML callback flow
 

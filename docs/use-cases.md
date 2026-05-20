@@ -345,13 +345,41 @@ Operational procedures documented in the 1Password-stored canonical doc set.
   6. Ted reaches corporate resources (git servers, internal services)
 - **Extensions:**
   - 1a. VPN command not available -> re-run deployment (UC-4); resume at step 1
+  - 1b. Active client is broken upstream (e.g., gpoc against post-CVE-2026-0257 Prisma Access) -> switch via UC-7a; resume at step 1
   - 2a. Browser doesn't open -> check URL scheme handler (see [docs/vpn.md](vpn.md)); resume at step 1
   - 3a. SAML times out -> re-authenticate; resume at step 1
   - 4a. Auth callback not dispatched -> URL scheme handler misconfigured (see [docs/vpn.md](vpn.md)); resume at step 1
   - 5a. Reconnect loop hammers a dead gateway -> Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
 - **Success Guarantee:** VPN tunnel up with split-tunnel routing for corporate subnets, internal hostnames resolved, normal traffic stays on LAN
-- **Technology:** globalprotect-openconnect (gpoc), vpn-slice, vpn-connect wrapper. gpoc sourced per platform: apt on Crostini, flake input on NixOS (via nixos-config) and standalone linux (via dotfiles). See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md) for the detailed flow.
+- **Technology:** Two GlobalProtect clients coexist (yuezk gpoc and proprietary pangp); `vpn-connect` reads UC-7a's selected mode and dispatches to the right one. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
+
+---
+
+### UC-7a: Switch the Active VPN Client
+
+- **Primary Actor:** Ted
+- **Secondary Actors:** systemd (the toggle target)
+- **Goal:** Flip between the OSS gpoc and the proprietary pangp without uninstalling either, so when one client is broken upstream the other can take over
+- **Scope:** Local client selection on a Linux host with both clients installed
+- **Level:** User goal
+- **Trigger:** Active client fails persistently (e.g., gpoc returns HTTP 512 since the CVE-2026-0257 Prisma Access cookie-mint hardening on 2026-05-08; pangp still works), or the broken upstream lands a fix and Ted wants to switch back
+- **Preconditions:** Both clients installed (UC-4 deployed pangp via the nix derivation; gpoc separately via apt or upstream flake input)
+- **Stakeholders:**
+  - Ted -- pick which client owns the tun device with one short command; preserve the other for when it stops being broken; never collide (two daemons grabbing the same tun)
+  - UC-7 -- depends on this for the dispatch-by-mode behavior of `vpn-connect`
+- **Main Success Scenario:**
+  1. Ted runs the toggle command with the target client name
+  2. System stops the currently-active client's services and kills any in-flight tunnel from that client
+  3. System starts the target client's services (or leaves them stopped if the target client runs on-demand)
+  4. Subsequent `vpn-connect` invocations dispatch to the new active client
+- **Extensions:**
+  - 1a. Toggle command not available -> re-run deployment (UC-4); resume at step 1
+  - 2a. Currently-active client refuses to stop cleanly -> abort with the underlying systemctl error visible; do NOT start the target client (preserves single-active invariant); fail
+  - 4a. New active client also broken -> flip back via this UC; resume at step 1 with the original target
+- **Minimal Guarantee:** The toggle is atomic from the user's perspective -- either succeeds and the target is active, or fails with neither in a partial state
+- **Success Guarantee:** Exactly one VPN client's services are running; widgets (panel, sway probes) detect the tun device the active client owns without needing to know which client it is
+- **Technology:** `vpn-mode` script reading `systemctl is-active gpd.service` as the implicit state; `gpd.service` running = pangp mode, stopped = gpoc mode (gpoc launches on-demand via `vpn-connect`, no persistent service). See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
 
 ---
 
