@@ -8,10 +8,22 @@ set -euo pipefail
 # with "Default browser is not enabled". See docs/vpn.md for the full
 # two-sided-handshake explanation.
 
-readonly XML=/opt/paloaltonetworks/globalprotect/pangps.xml
+# pangps.xml lives at /var/lib/globalprotect/ for the nix-managed install
+# (WorkingDirectory + StateDirectory of gpd.service) and at /opt/paloalto
+# networks/globalprotect/ for the legacy apt-managed install. Probe the
+# nix path first; fall back to the apt path; error if neither exists.
+readonly NixXml=/var/lib/globalprotect/pangps.xml
+readonly AptXml=/opt/paloaltonetworks/globalprotect/pangps.xml
 readonly Marker='<default-browser>yes</default-browser>'
 
-[[ -f $XML ]] || { echo "error: $XML not found; is the globalprotect package installed?" >&2; exit 1; }
+if   [[ -f $NixXml ]]; then XML=$NixXml
+elif [[ -f $AptXml ]]; then XML=$AptXml
+else
+  echo "error: pangps.xml not found at $NixXml or $AptXml" >&2
+  echo "is pangp installed and has gpd.service been started at least once?" >&2
+  exit 1
+fi
+readonly XML
 
 if sudo grep -qF "$Marker" "$XML"; then
   echo "already enabled (found $Marker in $XML); skipping edit."

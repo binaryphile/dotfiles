@@ -11,6 +11,23 @@ How `vpn-connect` works on Crostini, why the SAML callback flow is fragile, and 
 
 The Nix derivation substitutes absolute store paths for `@vpn-slice@` and `@gpclient@` because the script invokes them under `sudo`, which strips PATH.
 
+## Dual-client architecture (gpoc + pangp + vpn-mode)
+
+Since the 2026-05-08 CVE-2026-0257 cookie-mint hardening on PAN Prisma Access broke gpoc against the Digi portal (see "Symptom: gateway login returns HTTP 512" below), both clients live on the same machine and a toggle picks the active one. The toggle is implicit in `gpd.service`'s systemd state — there's no separate state file.
+
+```
+vpn-mode pangp   # start gpd+gpa (PAN proprietary client owns the tun device)
+vpn-mode gpoc    # stop gpd+gpa + kill any in-flight gpoc tunnel
+vpn-mode         # print current mode ('pangp' or 'gpoc')
+```
+
+`vpn-connect` reads `vpn-mode` and dispatches: `globalprotect connect --portal access.digi.com` for pangp, or the existing `gpauth | gpclient` retry loop for gpoc. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp) and `tun0` (gpoc) state UP independently — no widget changes needed across the toggle.
+
+Packaging:
+- gpoc — apt-installed (yuezk's upstream nix derivation has a Rust build that's heavy enough to want to skip), installed by `update-env`'s gpoc group.
+- pangp — nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` home-manager module. The source tarball `PanGPLinux-<ver>.tgz` from PAN's customer portal must live at `~/crostini/` (Crostini) or the equivalent NixOS path (edit flake.nix's `pangp` let-binding).
+- The home-manager activation hook keeps `/etc/systemd/system/gpd.service` in sync with the nix-store unit on every `home-manager switch` (requires sudo NOPASSWD; Crostini has it).
+
 ### Invocation patterns
 
 **Integrated (simpler)**: gpclient drives SAML directly.
@@ -97,9 +114,9 @@ flowchart TD
 
 ## Diagnosing failures
 
-**Symptom: gateway login returns HTTP 512 AFTER SAML cookie delivered (active, SC-80940)**
+**Symptom: gateway login returns HTTP 512 AFTER SAML cookie delivered**
 
-Pattern as of 2026-05-18:
+Pattern (observable since 2026-05-08):
 
 ```
 [INFO  gpclient::connect] Reading cookie from standard input
@@ -112,9 +129,18 @@ Pattern as of 2026-05-18:
 Error: Gateway login error: <none>
 ```
 
-The SAML callback flow works correctly (cookie delivered to the in-container TCP listener). The failure is at the GATEWAY LOGIN step that follows. The error body text is PAN's verbatim string from the gateway. "Invalid username or password" is misleading in a SAML/cookie context — the literal interpretation is "gateway rejected the SAML cookie the portal just issued."
+**Root cause** (confirmed 2026-05-19): [CVE-2026-0257](https://security.paloaltonetworks.com/CVE-2026-0257) — PAN-OS GlobalProtect Authentication Bypass. PAN's mitigation: "the firewall regenerates cookies using improved methods." Prisma Access tenants got the coordinated pre-disclosure rollout ~5-7 days before public announcement — matches the 2026-05-08 onset. Community tracking at [yuezk/GlobalProtect-openconnect#606](https://github.com/yuezk/GlobalProtect-openconnect/issues/606).
 
-Under investigation. Hypotheses NOT yet confirmed: portal/gateway version mismatch (client UA reports `6.3.0-33`, portal is `6.3.3-650`); HIP-check enforcement; account/group-policy change; tenant-side auth pipeline change. IT ticket SC-80940 open.
+**Affects**: every open-source GP client (gpoc, openconnect, NetworkManager-openconnect) against PAN Prisma Access cloud gateways (`*.gpcloudservice.com`). Official pangp client succeeds in the same conditions.
+
+**Workaround** (current): switch to pangp via `vpn-mode pangp`, then `vpn-connect`. pangp is nix-managed (see "Dual-client architecture" above). When yuezk's fix lands, `vpn-mode gpoc` flips back.
+
+**What we tried that did NOT fix it** (so don't repeat the experiments):
+- Patching gpoc to send the 3 prelogin fields pangp sends and gpoc omits (`host-id` = raw `/etc/machine-id`, `data` = base64 of `{"cas_embedded_browser":"yes"}`, `default-browser=4` instead of `1`). Field set now byte-matches pangp's, still 512.
+- Forcing `.http1_only()` on reqwest's Client — no-op because PAN cloud doesn't ALPN-advertise h2, gpoc was already h1.
+- Adding `clientgpversion=6.3.0-33` at gateway-login (the commented-out branch in `gp_params.rs`).
+
+**What we don't have yet**: gateway-login wire from pangp (mitmproxy iptables-NAT capture works for portal prelogin but stalls at gateway-login because pangp's bundled libwa* trust store rejects mitmproxy's CA partway through). Getting it requires either binary-patching `libwaapi.so` or running pangp on a Linux host without Crostini's eBPF restrictions.
 
 **Symptom: gpauth fails immediately with `{"failure":"No such file or directory (os error 2)"}`**
 
@@ -146,18 +172,37 @@ If gpauth advances past `accept()` and removes `/tmp/gpcallback.port`, the in-co
 
 Probably SIGPIPE. The downstream side of `gpauth | sudo gpclient ...` (e.g., sudo prompting for a password and timing out, or gpclient hitting an early error) closes the read end of the pipe. When gpauth next writes, it gets SIGPIPE and dies. To diagnose, run `gpauth` standalone (no pipe) and capture stdout/stderr to files.
 
-## Official PAN GlobalProtect CLI (pangp) — for discriminator testing
+## Official PAN GlobalProtect CLI (pangp) — current workaround for CVE-2026-0257
 
-When debugging server-side-vs-client-side rejection (e.g., SC-80940), install the official PAN GP CLI from the vendor bundle and try the same connect against the same portal/gateway. If pangp connects where yuezk gpoc 512s, the issue is gpoc-specific; if pangp fails identically, it's account/tenant/server side.
+Until yuezk lands the fix for the gpoc 512 (see "Symptom: gateway login returns HTTP 512" above), pangp is the working VPN client. It's nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` and toggled in/out via `vpn-mode`.
 
-### Install
+### Install (Crostini, nix-managed)
+
+Prerequisite: the PAN tarball must be present at `~/crostini/PanGPLinux-6.3.3-c31.tgz` (downloaded once from PAN's customer support portal; `update-env`'s `verifyPangpTarballTask` fails loud if missing).
 
 ```bash
-tar xzf ~/crostini/PanGPLinux-6.3.3-c31.tgz -C ~/crostini --one-top-level=extracted --skip-old-files
-sudo apt install -y ~/crostini/extracted/GlobalProtect_deb-6.3.3.1-638.deb
+update-env -1     # runs the pangp group: verify tarball, remove apt deb, then home-manager deploys nix-store pangp
 ```
 
-Installs to `/opt/paloaltonetworks/globalprotect`, registers systemd units `gpd.service` (system) and `gpa.service` (user), installs `/usr/bin/globalprotect` symlink, installs `/usr/share/applications/gp.desktop` with `Exec=/usr/bin/globalprotect defaultbrowser %u` and `MimeType=x-scheme-handler/globalprotectcallback`.
+Stages of the deploy:
+1. `aptRemoveGlobalprotectTask` — uninstalls the deprecated apt-shipped globalprotect deb if it's present (idempotent).
+2. `homeManagerFlakeSwitchTask` runs `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini --impure`. The `--impure` is required because `pangp.nix`'s `src` is an absolute path outside the flake's git tree (proprietary tarball, not vendored).
+3. Activation hook `home.activation.pangpSystemUnit` copies `${pangp}/lib/systemd/system/gpd.service` to `/etc/systemd/system/gpd.service`, runs `daemon-reload`, restarts the service. Uses `/usr/bin/sudo` (absolute path) because home-manager's activation env has minimal PATH.
+
+Result: `gpd.service` runs PanGPS from the nix store, `WorkingDirectory=/var/lib/globalprotect` (writable, systemd-`StateDirectory`-managed), `ExecStartPre` symlinks read-only config files into the StateDirectory. PanGPA runs as a home-manager user-service, with `HOME` wrapped to `$HOME/.local/share/globalprotect` so it doesn't pollute the top-level home dir with `GP_HTML/` and `.GlobalProtect/`.
+
+### Install (NixOS work machine)
+
+Drop the tarball at a known path (e.g., `/etc/nixos/pangp/PanGPLinux-6.3.3-c31.tgz`), edit `~/dotfiles/flake.nix`'s `pangp` let-binding to point there, then in `configuration.nix`:
+
+```nix
+{ pkgs, ... }: {
+  systemd.packages = [ pkgs.pangp ];           # ships gpd.service
+  systemd.services.gpd.wantedBy = [ "multi-user.target" ];
+}
+```
+
+(`pkgs.pangp` needs an overlay — see `~/dotfiles/contexts/pangp.nix` header for the overlay hint.) Then `nixos-rebuild switch` + `home-manager switch --flake ~/dotfiles#desktop`.
 
 ### Critical: default-browser handshake
 
@@ -169,21 +214,14 @@ Error: Default browser is not enabled
 ```
 
 The handshake is two-sided:
-- **Client side**: add `<default-browser>yes</default-browser>` under `<Settings>` in `/opt/paloaltonetworks/globalprotect/pangps.xml`, then restart the services.
+- **Client side**: add `<default-browser>yes</default-browser>` under `<Settings>` in `pangps.xml` (`/var/lib/globalprotect/pangps.xml` for the nix-managed install, `/opt/paloaltonetworks/globalprotect/pangps.xml` for the legacy apt one), then restart the services.
 - **Portal side** (your PAN admin): `Network > GlobalProtect > Portals > [config] > Agent > [config] > App > Use Default Browser for SAML Authentication = Yes`.
 
 Strings in `/opt/paloaltonetworks/globalprotect/PanGPS` confirm the portal pushes the toggle (`Portal's saml default browser support = %s`, `Prelogin use-default-browser = %s`). The literal "Default browser is not enabled" error fires when the portal asks for it and the client hasn't opted in.
 
-Client-side fix:
+Client-side fix: `pangp-enable-default-browser` (in `~/dotfiles/scripts/`, installed by `update-env`). The script auto-detects the active pangps.xml path (`/var/lib/globalprotect/pangps.xml` for the nix-managed install, `/opt/paloaltonetworks/globalprotect/pangps.xml` for the legacy apt one), backs it up, inserts the marker, and restarts the services.
 
-```bash
-sudo cp /opt/paloaltonetworks/globalprotect/pangps.xml /opt/paloaltonetworks/globalprotect/pangps.xml.bak
-sudo sed -i 's|<agent-user-override/>|<agent-user-override/>\n\t\t<default-browser>yes</default-browser>|' /opt/paloaltonetworks/globalprotect/pangps.xml
-sudo systemctl restart gpd.service
-systemctl --user restart gpa.service
-```
-
-Verify: `grep default-browser /opt/paloaltonetworks/globalprotect/pangps.xml` should show the element inside `<Settings>`.
+Verify: `grep default-browser /var/lib/globalprotect/pangps.xml` (or the apt path) should show the element inside `<Settings>`.
 
 ### xdg-mime ordering trap (in any test script)
 
@@ -204,10 +242,15 @@ Differences from gpoc invocation:
 
 ### Uninstall (full rollback)
 
+The nix-managed install is removed by editing the home-manager config (`imports = [ ../pangp.nix ]` line in `contexts/crostini/home.nix` or `contexts/desktop/home.nix`) and re-running `home-manager switch`. That removes the package from `~/.nix-profile`. Two things home-manager does NOT clean up that you'll need to do manually:
+
 ```bash
-sudo apt remove globalprotect           # runs prerm + postrm; clears /opt, systemd units, /usr/bin/globalprotect, /usr/share/applications/gp.desktop, user dirs, certs
-# revert the home.nix mkForce override that pinned globalprotectcallback to gp.desktop
+sudo rm /etc/systemd/system/gpd.service   # the activation hook deployed it; home-manager doesn't track /etc
+sudo rm -rf /var/lib/globalprotect        # systemd StateDirectory leftovers (HipPolicy.dat, logs, etc.)
+rm -rf ~/.local/share/globalprotect       # user-side wrapped HOME (PanGPA.log, GP_HTML/, .GlobalProtect/)
 ```
+
+To temporarily disable pangp without uninstalling — i.e., switch back to using gpoc — use `vpn-mode gpoc` instead.
 
 ## Diff-the-requests instrumentation (debugging "gpoc fails / pangp works")
 
@@ -230,11 +273,11 @@ When the OSS yuezk gpoc client returns a server-side error (e.g., HTTP 512 at ga
 
 Use dump for ops-level connect diagnostics (which endpoints get hit, status codes, where it fails) — NOT for request/response field-level inspection. For that, see the webhook.site technique below.
 
-**Log rotation hazard**: at dump level, PanGPS rotates `PanGPS.log → PanGPS.log.old` when it hits ~10MB, and keeps only the most recent .old. With active VPN use that's every few minutes — you'll lose the auth-cycle log to rotation before you can read it. Capture independently with `sudo tail -F /opt/paloaltonetworks/globalprotect/PanGPS.log > /tmp/pangp-capture.log &` BEFORE the connect cycle; the tail-F follows the rotation and your file is untouched by pangp.
+**Log rotation hazard**: at dump level, PanGPS rotates `PanGPS.log → PanGPS.log.old` when it hits ~10MB, and keeps only the most recent .old. With active VPN use that's every few minutes — you'll lose the auth-cycle log to rotation before you can read it. Capture independently with `sudo tail -F /var/lib/globalprotect/PanGPS.log > /tmp/pangp-capture.log &` BEFORE the connect cycle; the tail-F follows the rotation and your file is untouched by pangp.
 
 ```bash
 globalprotect set-log --level dump   # run as user, NOT sudo
-sudo tail -F /opt/paloaltonetworks/globalprotect/PanGPS.log > /tmp/pangp-capture.log 2>&1 &
+sudo tail -F /var/lib/globalprotect/PanGPS.log > /tmp/pangp-capture.log 2>&1 &
 TAIL=$!
 globalprotect disconnect
 globalprotect connect --portal access.digi.com --username tlilley@digi.com
