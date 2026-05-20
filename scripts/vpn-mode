@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# vpn-mode -- switch between the OSS gpoc and proprietary pangp VPN clients.
+#
+# Only one can hold the tun device at a time, so this script flips PAN's
+# gpd.service (system) + gpa.service (user) on/off as the toggle. State is
+# implicit in those services' active status -- no separate state file:
+#   active   = pangp mode (PAN's gpd daemon owns routing/tun, listens on IPC)
+#   inactive = gpoc mode  (yuezk client launches on-demand via vpn-connect)
+#
+# Usage:
+#   vpn-mode pangp   start gpd+gpa services (PAN client takes over)
+#   vpn-mode gpoc    stop gpd+gpa services + kill any in-flight gpoc tunnel
+#   vpn-mode         print current mode (one word: 'pangp' or 'gpoc')
+
+set -euo pipefail
+
+case ${1:-} in
+  '')
+    if systemctl is-active --quiet gpd.service; then
+      echo pangp
+    else
+      echo gpoc
+    fi
+    ;;
+  pangp)
+    sudo systemctl start gpd.service
+    systemctl --user start gpa.service
+    echo 'vpn-mode: pangp'
+    ;;
+  gpoc)
+    # Kill any running gpoc tunnel (gpclient holds tun0) before stopping
+    # pangp -- otherwise the next vpn-connect could collide with the
+    # released-but-not-cleaned tun device.
+    pkill -f 'gpclient connect' 2>/dev/null || true
+    sudo systemctl stop gpd.service
+    systemctl --user stop gpa.service 2>/dev/null || true
+    echo 'vpn-mode: gpoc'
+    ;;
+  *)
+    echo "vpn-mode: unknown subcommand '${1}'" >&2
+    echo 'usage: vpn-mode [pangp|gpoc]' >&2
+    exit 1
+    ;;
+esac

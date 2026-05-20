@@ -14,6 +14,7 @@ let
 
   # vpn-connect script wrapped with vpn-slice and gpclient absolute paths
   # baked in (sudo strips PATH so absolute paths are required).
+  # The script dispatches by `vpn-mode` (pangp vs gpoc) at runtime.
   vpn-connect = mkScriptBin {
     name = "vpn-connect";
     src = ../../scripts/vpn-connect;
@@ -21,6 +22,15 @@ let
       "vpn-slice" = "${pkgs.vpn-slice}/bin/vpn-slice";
       "gpclient" = gpclient;
     };
+  };
+
+  # vpn-mode toggles gpd.service (PAN's system daemon) on/off, which is
+  # how vpn-connect distinguishes pangp vs gpoc mode. Plain bash; no
+  # substitutions (systemctl, sudo, pkill all from system PATH).
+  vpn-mode = mkScriptBin {
+    name = "vpn-mode";
+    src = ../../scripts/vpn-mode;
+    substitutions = {};
   };
 
   # URL scheme handlers for ChromeOS-host->container dispatch. Built with
@@ -125,6 +135,7 @@ in
     wl-clipboard
     xmlstarlet
     vpn-connect
+    vpn-mode
   ];
 
   home.file = {

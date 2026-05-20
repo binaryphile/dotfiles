@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-# vpn-connect - connect to Digi work VPN with split tunnel
+# vpn-connect -- connect to Digi work VPN, dispatching to whichever client
+# `vpn-mode` reports as currently active.
 #
-# SAML auth happens in your default browser via gpauth, then gpclient
-# (from globalprotect-openconnect) runs the tunnel with vpn-slice for
-# split-horizon DNS. Auto-reconnects on session expiry. Ctrl-C exits cleanly.
+# pangp mode: PAN's gpd.service is running and owns the tun device. Issue
+# `globalprotect connect --portal access.digi.com`; pangp's daemon handles
+# the rest (SAML via PanGPA's URL-handler, cookie lifecycle, tunnel keepalive).
+#
+# gpoc mode: yuezk OSS client. SAML happens in the default browser via
+# gpauth, then gpclient runs the tunnel with vpn-slice for split DNS.
+# Auto-reconnects on session expiry. Ctrl-C exits cleanly.
 
 Interrupted=false
 
@@ -18,7 +23,8 @@ onInterrupt() {
   Interrupted=true
 }
 
-connect() {
+# gpoc path: existing gpauth + gpclient pipeline with retry-on-disconnect.
+gpocConnect() {
   gpauth access.digi.com --browser xdg-open |
     sudo @gpclient@ connect access.digi.com \
       --cookie-on-stdin \
@@ -28,16 +34,32 @@ connect() {
       --script '@vpn-slice@ 10.0.0.0/8 172.26.0.0/16 stash.digi.com nexus.digi.com dm1.devdevicecloud.com gitlab.drm.ninja 3.16.193.243'
 }
 
-main() {
+gpocLoop() {
   trap onInterrupt INT
-
   while true; do
-    connect && rc=$? || rc=$?
+    gpocConnect && rc=$? || rc=$?
     $Interrupted && break
     (( rc != 0 )) && { echo "VPN error (exit $rc). Not reconnecting." >&2; break; }
     echo "VPN disconnected (exit $rc). Reconnecting..." >&2
     sleep 2
   done
+}
+
+# pangp path: trigger one-shot connect via the PAN CLI; gpd.service does
+# the rest. No retry loop -- gpd.service's own Restart=on-failure handles
+# daemon-level recovery and PanGPA handles re-auth via its IPC.
+pangpConnect() {
+  exec globalprotect connect --portal access.digi.com
+}
+
+main() {
+  case $(vpn-mode) in
+    pangp) pangpConnect ;;
+    gpoc)  gpocLoop ;;
+    *)
+      fatal "vpn-mode returned unknown state; run 'vpn-mode pangp' or 'vpn-mode gpoc' first"
+      ;;
+  esac
 }
 
 return 2>/dev/null
