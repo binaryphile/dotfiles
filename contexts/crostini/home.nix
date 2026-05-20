@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, pangp, ... }:
 
 let
   linkHome = relPath:
@@ -102,7 +102,12 @@ let
   '';
 in
 {
-  imports = [ ../linux-base.nix ../claude.nix ];
+  imports = [ ../linux-base.nix ../claude.nix ../pangp.nix ];
+
+  # Crostini (Debian-based, not NixOS): drive the gpd.service system unit
+  # from home-manager via the activation hook in ../pangp.nix. Requires
+  # sudo NOPASSWD (Crostini has /etc/sudoers.d/10-cros-nopasswd).
+  services.pangp.enableSystemDaemonOnDebian = true;
 
   home.username = "ted";
   home.homeDirectory = "/home/ted";
@@ -238,13 +243,9 @@ in
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      # globalprotectcallback handler is declared in linux-base.nix
-      # (shared across all Linux platforms) and pinned to gpgui.desktop.
-      # Overridden here to gp.desktop for the pangp discriminator test
-      # (SC-80940 / tasks.dotfiles). home-manager merges
-      # defaultApplications via list-concat, so lib.mkForce is required
-      # to replace the base value rather than co-register both handlers.
-      "x-scheme-handler/globalprotectcallback" = lib.mkForce [ "gp.desktop" ];
+      # globalprotectcallback handler is now declared in ../pangp.nix
+      # (the home-manager module) and pinned to gp.desktop. Don't repeat
+      # the mkForce here; both would conflict.
       "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
       "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
       # onepassword:// is Okta's SSO redirect target after auth. ChromeOS

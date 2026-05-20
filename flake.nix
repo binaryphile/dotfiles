@@ -68,6 +68,19 @@
 
     gpoc = globalprotect-openconnect.packages.${linuxSystem}.default;
 
+    # PAN GlobalProtect (proprietary) -- workaround client for the gpoc
+    # CVE-2026-0257 breakage (see pangp.nix header for context).
+    # The .tgz source is per-machine: the path below is the Crostini
+    # location; edit on the NixOS work machine to wherever the tarball
+    # lives there (e.g., /etc/nixos/pangp/PanGPLinux-6.3.3-c31.tgz).
+    # If the path doesn't exist, nix eval still succeeds; the build of
+    # `pangp` will fail at unpack time, which is the right shape -- a
+    # user without the tarball doesn't get pangp wired into their config.
+    pangp = import ./pangp.nix {
+      pkgs = linuxPkgs;
+      src = /home/ted/crostini/PanGPLinux-6.3.3-c31.tgz;
+    };
+
     commonSpecialArgs = {
       inherit bashTools;
       shellcheckFork   = shellcheck-fork.packages.${linuxSystem}.default;
@@ -81,7 +94,7 @@
     homeConfigurations.crostini = home-manager.lib.homeManagerConfiguration {
       pkgs = linuxPkgs;
       modules = [ ./contexts/crostini/home.nix ];
-      extraSpecialArgs = commonSpecialArgs;
+      extraSpecialArgs = commonSpecialArgs // { inherit pangp; };
     };
 
     # Debian uses crostini config -- both are Debian-based, same package set.
@@ -91,7 +104,7 @@
     homeConfigurations.desktop = home-manager.lib.homeManagerConfiguration {
       pkgs = linuxPkgs;
       modules = [ ./contexts/desktop/home.nix ];
-      extraSpecialArgs = commonSpecialArgs // { inherit gpoc; };
+      extraSpecialArgs = commonSpecialArgs // { inherit gpoc pangp; };
     };
 
     homeConfigurations.macos = home-manager.lib.homeManagerConfiguration {

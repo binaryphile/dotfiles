@@ -1,4 +1,4 @@
-{ config, lib, pkgs, dotfiles, gpoc, ... }:
+{ config, lib, pkgs, dotfiles, gpoc, pangp, ... }:
 
 let
   mkScriptBin = import ../mkScriptBin.nix { inherit pkgs; };
@@ -14,7 +14,12 @@ let
   };
 in
 {
-  imports = [ ../linux-base.nix ../claude.nix ];
+  imports = [ ../linux-base.nix ../claude.nix ../pangp.nix ];
+
+  # NixOS desktop: gpd.service is enabled from system-level
+  # configuration.nix via `systemd.packages = [ pkgs.pangp ]`.
+  # Leave the home-manager activation hook disabled here.
+  services.pangp.enableSystemDaemonOnDebian = false;
 
   home.username = lib.mkDefault "ted";
   home.homeDirectory = lib.mkDefault "/home/ted";
