@@ -84,15 +84,18 @@ main() {
 
 # platformTaskGroups -- pure decision function mapping platform to the set of
 # task groups both stages should run. No side effects.
-# Groups: apt, hostname, gpoc, nix, hm, credential.
+# Groups: apt, hostname, gpoc, pangp, nix, hm, credential.
 # nix = install nix itself. hm = apply home-manager flake config.
 # hm is separate from nix because not all nix platforms have flake configs
 # in this repo (linux needs nixos-config's flake, macos needs darwin pkgs).
+# pangp = preconditions for the nix-managed proprietary PAN client (tarball
+# present + apt deb removed if a prior install left one behind).
 platformTaskGroups() {
   local platform=$1
   local groups=()
   case $platform in crostini|debian )   groups+=(apt);; esac
   case $platform in crostini )          groups+=(hostname gpoc);; esac
+  case $platform in crostini|desktop )  groups+=(pangp);; esac
   case $platform in crostini|debian|desktop|macos ) groups+=(nix);; esac
   case $platform in crostini|debian|macos ) groups+=(hm);; esac
   case $platform in crostini )          groups+=(credential);; esac
@@ -178,6 +181,12 @@ stage1() {
   if hasGroup "$groupList" gpoc; then
     section gpoc
     aptInstallGpocTask
+  fi
+
+  if hasGroup "$groupList" pangp; then
+    section pangp
+    verifyPangpTarballTask
+    aptRemoveGlobalprotectTask
   fi
 
   if hasGroup "$groupList" nix; then
@@ -562,6 +571,53 @@ aptInstallGpocTask() {
     rm -rf "$tmp"
   }
   cmd aptInstallGpoc
+}
+
+# verifyPangpTarballTask asserts the PanGPLinux-<ver>.tgz tarball is at the
+# path baked into flake.nix's `pangp` let-binding. The tarball can't be
+# auto-downloaded (PAN's customer support portal requires auth), so this
+# is a precondition check: fail loud with placement instructions if the
+# user hasn't seeded it. Home-manager's pangp build relies on this file.
+verifyPangpTarballTask() {
+  local tarball="$CrostiniDir/PanGPLinux-6.3.3-c31.tgz"
+
+  desc 'verify pangp tarball is present for nix-managed install'
+  prog on
+  pangpTarballPresent() { [[ -r "$tarball" ]]; }
+  ok pangpTarballPresent
+
+  failMissing() {
+    cat <<EOF >&2
+pangp.nix expects the PAN GlobalProtect tarball at:
+    $tarball
+Download it from your PAN customer support portal (the
+PanGPLinux-6.3.3-c31.tgz file or newer; update flake.nix's pangp src=
+path if the version differs), drop it at the path above, and re-run
+update-env.
+EOF
+    return 1
+  }
+  cmd failMissing
+}
+
+# aptRemoveGlobalprotectTask removes the deprecated apt-installed
+# GlobalProtect package (`globalprotect`, NOT to be confused with the OSS
+# `globalprotect-openconnect`/gpoc). The nix-managed install via pangp.nix
+# replaces it; running both in parallel risks the apt-shipped gpd.service
+# fighting the home-manager-deployed one. Predicate-gated so it's a no-op
+# on hosts that never had the apt deb.
+aptRemoveGlobalprotectTask() {
+  desc 'remove deprecated apt-installed globalprotect (nix derivation replaces it)'
+  prog on
+  globalprotectAbsent() {
+    ! dpkg-query -W -f='${Status}\n' globalprotect 2>/dev/null | grep -q '^install ok installed$'
+  }
+  ok globalprotectAbsent
+
+  aptRemoveGlobalprotect() {
+    sudo apt-get remove -y globalprotect
+  }
+  cmd aptRemoveGlobalprotect
 }
 
 bitbucketCloneAndLinkTask() {

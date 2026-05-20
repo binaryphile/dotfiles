@@ -334,7 +334,7 @@ test_platformTaskGroups() {
   local -A case1=(
     [name]='crostini gets all groups'
     [platform]=crostini
-    [wantGroupList]=$'apt\nhostname\ngpoc\nnix\nhm\ncredential'
+    [wantGroupList]=$'apt\nhostname\ngpoc\npangp\nnix\nhm\ncredential'
   )
   local -A case2=(
     [name]='debian gets apt nix hm'
@@ -342,9 +342,9 @@ test_platformTaskGroups() {
     [wantGroupList]=$'apt\nnix\nhm'
   )
   local -A case3=(
-    [name]='desktop gets nix hm'
+    [name]='desktop gets pangp nix (no hm: NixOS handles home-manager elsewhere)'
     [platform]=desktop
-    [wantGroupList]=$'nix\nhm'
+    [wantGroupList]=$'pangp\nnix'
   )
   local -A case4=(
     [name]='macos gets nix hm'
