@@ -49,3 +49,4 @@ node_modules/
 *.swo
 .jira
 *-server-log.md
+.claude/
