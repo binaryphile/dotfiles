@@ -63,6 +63,21 @@ let
     terminal = false;
   };
 
+  # text/html mime handler for pangp's SAML form file. Pinned as the default
+  # via xdg.mimeApps so xdg-open (called by PanGPA) routes the local file
+  # path through saml-host-browser, which serves it via darkhttpd and hands
+  # the URL to host Chrome via garcon-url-handler. See docs/vpn.md and
+  # design.md's "SAML host-browser shim" section.
+  samlHostBrowserDesktop = pkgs.makeDesktopItem {
+    name = "saml-host-browser";
+    desktopName = "SAML host browser (via darkhttpd + garcon)";
+    comment = "Translate pangp's local saml.html into a darkhttpd URL, route to ChromeOS host Chrome.";
+    exec = "${config.home.homeDirectory}/.local/bin/saml-host-browser %f";
+    mimeTypes = [ "text/html" "application/xhtml+xml" ];
+    terminal = false;
+    noDisplay = true;
+  };
+
   # tinyproxy listens on container loopback. ChromeOS host Chrome reaches
   # it via garcon's container->host localhost forwarding. Selectively used
   # by Chrome via the PAC file below -- only VPN-bound hosts traverse it.
@@ -149,6 +164,10 @@ in
     # a tmux dependency in linux-base.nix (not a live symlink).
     ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
     ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
+    # pangp SAML form -> host Chrome shim. Live symlink so edits in the
+    # repo take effect on next xdg-open invocation. See docs/vpn.md
+    # "Critical: SAML browser routing on Crostini".
+    ".local/bin/saml-host-browser".source    = linkDotfile "scripts/saml-host-browser";
 
     # crostini-procfs-doctor lives in jeeves (not dotfiles) — first cross-repo
     # path-dep in this flake. linkHome (not linkDotfile) because target is
@@ -165,6 +184,17 @@ in
       "${onepasswordDesktop}/share/applications/onepassword.desktop";
     ".local/share/applications/gpgui.desktop".source =
       "${gpguiDesktop}/share/applications/gpgui.desktop";
+    ".local/share/applications/saml-host-browser.desktop".source =
+      "${samlHostBrowserDesktop}/share/applications/saml-host-browser.desktop";
+
+    # saml-bundle is the darkhttpd-visible path for pangp's SAML form. PanGPA
+    # writes ~/.local/share/globalprotect/GP_HTML/saml.html at runtime; this
+    # symlink exposes that directory under the existing proxy-pac-server
+    # serve root at http://127.0.0.1:8120/saml-bundle/. The target may not
+    # exist at activation time (pangp creates it on first connect); a
+    # dangling symlink is harmless.
+    ".local/share/proxy-pac/saml-bundle".source =
+      linkHome ".local/share/globalprotect/GP_HTML";
   };
 
   # One-time migration: surrender any pre-existing manual symlink at the
@@ -259,6 +289,17 @@ in
       # the mkForce here; both would conflict.
       "x-scheme-handler/http"  = [ "garcon_host_browser.desktop" ];
       "x-scheme-handler/https" = [ "garcon_host_browser.desktop" ];
+      # pangp's SAML POST-binding writes a local saml.html and calls
+      # xdg-open on it. Pin text/html to the saml-host-browser shim so
+      # the file goes through darkhttpd -> host Chrome via garcon-url-
+      # handler rather than falling through to a terminal vim. The shim
+      # script path-filters on ~/.local/share/globalprotect/GP_HTML/* --
+      # SAML files go via darkhttpd; other text/html paths fall through
+      # to firefox (if installed) or to a host-Chrome file:// dispatch.
+      # Without the filter, every local .html xdg-open would 404 from
+      # darkhttpd (which only serves saml-bundle/).
+      "text/html"             = [ "saml-host-browser.desktop" ];
+      "application/xhtml+xml" = [ "saml-host-browser.desktop" ];
       # onepassword:// is Okta's SSO redirect target after auth. ChromeOS
       # Chrome dispatches the URI back into the container via garcon; the
       # in-container 1Password's running instance receives it via Electron's

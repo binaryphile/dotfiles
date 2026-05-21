@@ -187,6 +187,9 @@ stage1() {
     section pangp
     verifyPangpTarballTask
     aptRemoveGlobalprotectTask
+    extractGlobalprotectDebToOptTask
+    installPangpSystemDesktopTask
+    enablePangpDefaultBrowserTask
   fi
 
   if hasGroup "$groupList" nix; then
@@ -618,6 +621,100 @@ aptRemoveGlobalprotectTask() {
     sudo apt-get remove -y globalprotect
   }
   cmd aptRemoveGlobalprotect
+}
+
+# extractGlobalprotectDebToOptTask unpacks the PanGPLinux tarball's amd64
+# .deb into the real /opt/paloaltonetworks/globalprotect/, providing the
+# UNPATCHED PanGPS + PanGPA binaries that pangp's systemd units invoke.
+# PanGPS performs a self-integrity check at daemon startup; the nix-store
+# binaries are autoPatchelf'd (DT_NEEDED rewrites), fail their hash check,
+# and then reject every incoming PanGPA IPC connection. The .deb subtree
+# avoids this by preserving the original signed binaries. See pangp.nix's
+# header comment and docs/design.md "PanGPS self-integrity".
+#
+# Idempotency: discriminator checks for the unpatched PanGPS at /opt
+# (presence is sufficient -- version sync with the tarball is handled by
+# verifyPangpTarballTask which bumps with the flake.nix `pangp` src=).
+# Requires sudo NOPASSWD on Crostini for the install into /opt.
+extractGlobalprotectDebToOptTask() {
+  local tarball="$CrostiniDir/PanGPLinux-6.3.3-c31.tgz"
+  local deb="GlobalProtect_deb-6.3.3.1-638.deb"
+  local optDir="/opt/paloaltonetworks/globalprotect"
+
+  desc 'extract .deb subtree to /opt/paloaltonetworks/globalprotect (unpatched binaries for PanGPS self-check)'
+  prog on
+  optExtracted() {
+    [[ -x "$optDir/PanGPS" && -x "$optDir/PanGPA" ]]
+  }
+  ok optExtracted
+
+  extractDeb() {
+    local tmp=$(mktemp -d)
+    trap "rm -rf '$tmp'" RETURN
+    tar xzf "$tarball" -C "$tmp"
+    [[ -f "$tmp/$deb" ]] || { echo "expected $deb inside $tarball; not found" >&2; return 1; }
+    dpkg-deb -x "$tmp/$deb" "$tmp/extracted"
+    sudo mkdir -p "$optDir"
+    sudo cp -a "$tmp/extracted/opt/paloaltonetworks/globalprotect/." "$optDir/"
+  }
+  cmd extractDeb
+}
+
+# installPangpSystemDesktopTask resolves the globalprotectcallback://
+# scheme-handler conflict between the apt-shipped gpgui.desktop and
+# pangp's gp.desktop. ChromeOS host Chrome dispatches the scheme from
+# /usr/share/applications/mimeinfo.cache, NOT from user-level
+# ~/.local/share/applications/. So the apt gpgui.desktop wins on the
+# host side and routes every SAML callback to gpoc's `gpclient launch-
+# gui`, which has no peer in pangp mode -- the cookie never reaches
+# PanGPS. See docs/design.md "Crostini garcon discovery gotcha".
+#
+# Fix: disable the apt gpgui.desktop (mv to .disabled so apt reinstall
+# would restore it) and copy nix-profile's gp.desktop to the system
+# applications dir so ChromeOS sees it. The user-level symlinks for
+# both stay in place; the system-level overrides are what ChromeOS
+# consults for callback dispatch.
+installPangpSystemDesktopTask() {
+  local sysApps=/usr/share/applications
+  local gpguiSys=$sysApps/gpgui.desktop
+  local gpDesktopUser=$HOME/.nix-profile/share/applications/gp.desktop
+  local gpDesktopSys=$sysApps/gp.desktop
+
+  desc 'install gp.desktop at /usr/share/applications and disable apt gpgui.desktop (pangp callback routing)'
+  prog on
+  pangpDesktopActive() {
+    [[ ! -f "$gpguiSys" && -f "$gpDesktopSys" ]]
+  }
+  ok pangpDesktopActive
+
+  installPangpDesktop() {
+    if [[ -f "$gpguiSys" ]]; then
+      sudo mv "$gpguiSys" "$gpguiSys.disabled"
+    fi
+    [[ -f "$gpDesktopUser" ]] || { echo "$gpDesktopUser missing; ensure pangp home-manager module has applied" >&2; return 1; }
+    sudo cp "$gpDesktopUser" "$gpDesktopSys"
+    sudo update-desktop-database "$sysApps"
+  }
+  cmd installPangpDesktop
+}
+
+# enablePangpDefaultBrowserTask flips the <default-browser> setting in
+# pangps.xml so PanGPS asks the OS to launch a browser for SAML auth
+# (vs the embedded WebKit form, which fails Okta's modern policy). The
+# script auto-detects the active pangps.xml (the /opt path now that the
+# .deb is extracted there); idempotent on re-runs.
+enablePangpDefaultBrowserTask() {
+  desc 'enable <default-browser>yes</default-browser> in pangps.xml'
+  prog on
+  defaultBrowserEnabled() {
+    sudo grep -q '<default-browser>yes</default-browser>' /opt/paloaltonetworks/globalprotect/pangps.xml 2>/dev/null
+  }
+  ok defaultBrowserEnabled
+
+  enablePangpDefaultBrowser() {
+    sudo "$HOME/dotfiles/scripts/pangp-enable-default-browser"
+  }
+  cmd enablePangpDefaultBrowser
 }
 
 bitbucketCloneAndLinkTask() {

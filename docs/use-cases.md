@@ -338,7 +338,7 @@ Operational procedures documented in the 1Password-stored canonical doc set.
   - UC-8 -- depends on this; VPN must be up before host-browser proxy access works
 - **Main Success Scenario:**
   1. Ted runs the VPN connect command
-  2. Browser opens a SAML auth page
+  2. Browser opens a SAML auth page (host Chrome on Crostini via the saml-host-browser shim; container browser otherwise)
   3. Ted completes SSO authentication
   4. System captures the auth token and establishes the tunnel
   5. Tunnel stays up with automatic reconnect; Ctrl-C exits
@@ -347,12 +347,15 @@ Operational procedures documented in the 1Password-stored canonical doc set.
   - 1a. VPN command not available -> re-run deployment (UC-4); resume at step 1
   - 1b. Active client is broken upstream (e.g., gpoc against post-CVE-2026-0257 Prisma Access) -> switch via UC-7a; resume at step 1
   - 2a. Browser doesn't open -> check URL scheme handler (see [docs/vpn.md](vpn.md)); resume at step 1
+  - 2b. (pangp/Crostini) SAML form opens in a terminal vim or in-container firefox instead of host Chrome -> `text/html` mime isn't pinned to `saml-host-browser.desktop`; re-run deployment; resume at step 1
   - 3a. SAML times out -> re-authenticate; resume at step 1
   - 4a. Auth callback not dispatched -> URL scheme handler misconfigured (see [docs/vpn.md](vpn.md)); resume at step 1
+  - 4b. (pangp/Crostini) `/tmp/gpcallback.log` shows `gpclient::launch_gui Failed to feed auth data to the CLI` -> system `/usr/share/applications/gpgui.desktop` is still claiming the callback scheme over `gp.desktop`; re-run `update-env`'s system-desktop task; resume at step 1
+  - 4c. PanGPS rejects PanGPA with `Connected by non-PanGPA. Close socket.` -> daemon and agent live in different directories; co-locate both at `/opt/paloaltonetworks/globalprotect/` (see [docs/vpn.md: PanGPS co-location workaround](vpn.md)); resume at step 1
   - 5a. Reconnect loop hammers a dead gateway -> Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
-- **Success Guarantee:** VPN tunnel up with split-tunnel routing for corporate subnets, internal hostnames resolved, normal traffic stays on LAN
-- **Technology:** Two GlobalProtect clients coexist (yuezk gpoc and proprietary pangp); `vpn-connect` reads UC-7a's selected mode and dispatches to the right one. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
+- **Success Guarantee:** VPN tunnel up. gpoc mode preserves split-tunnel routing; pangp pushes full-tunnel via `gpd0` (all traffic via Prisma Access), with internal DNS handling split-horizon hostnames.
+- **Technology:** Two GlobalProtect clients coexist (yuezk gpoc and proprietary pangp); `vpn-connect` reads UC-7a's selected mode and dispatches to the right one. SAML on Crostini in pangp mode uses the `saml-host-browser` shim to route the local `saml.html` through the existing `darkhttpd` (proxy-pac-server) to ChromeOS host Chrome via `garcon-url-handler`; the callback comes back through `gp.desktop`. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
 
 ---
 

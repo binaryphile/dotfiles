@@ -14,11 +14,43 @@
 #
 # Runtime layout: pangp's bundled libwa* libraries dlopen each other via
 # absolute paths under /opt/paloaltonetworks/globalprotect/. The .deb
-# installs there, and the binaries are built assuming that path. To stay
-# nix-hermetic without binary-patching every DT_NEEDED entry, we keep the
-# /opt/... layout INSIDE $out and ALSO require the NixOS system to symlink
-# /opt/paloaltonetworks/globalprotect -> $out/opt/paloaltonetworks/globalprotect
-# (via system.activationScripts; see contexts/pangp.nix).
+# installs there, and the binaries are built assuming that path. The
+# original design kept the /opt/... layout INSIDE $out and used
+# autoPatchelfHook to rewrite DT_NEEDED entries to nix-store paths,
+# planning to skip the /opt symlink entirely.
+#
+# That design is broken: PanGPS performs an IPC-peer co-location check
+# at PanGPA connect time. It compares the directory of /proc/<peer>/exe
+# against the directory of its own /proc/self/exe; if they differ, it
+# logs
+#   Error( 312): Connected by process not from GP folder, app: <peer>
+#   Error( 212): Connected by non-PanGPA. Close socket.
+# and rejects. The error text is misleading -- "GP folder" is *PanGPS's
+# own directory*, not a hardcoded path; the same rejection fires when
+# PanGPS runs from /tmp/gp/.../PanGPS even if the peer's path looks
+# canonical. The hash of the binary doesn't matter -- a byte-flipped
+# PanGPS (with different SHA-384) in the same directory as PanGPA still
+# accepts the connection. (Verified empirically 2026-05-20: byte-flipped
+# /opt/.../PanGPS accepted /opt/.../PanGPA; pristine /tmp/gp/.../PanGPS
+# rejected /opt/.../PanGPA. See the byte-flip and directory-mismatch
+# experiments documented in docs/design.md.)
+#
+# Practical consequence for nix packaging: autoPatchelfHook's DT_NEEDED
+# rewrites are NOT the cause of the rejection per se -- the cause is
+# that the autoPatchelf'd PanGPS lives in /nix/store/.../opt/... while
+# PanGPA's /opt symlink (or absence thereof) places the peer at a
+# different directory. The wedge stays masked as long as a matching pair
+# of binaries exists in the same directory; the apt-shipped .deb at
+# /opt was that pair until `apt purge globalprotect`.
+#
+# Working architecture (see docs/design.md "pangp packaging" and
+# docs/vpn.md "PanGPS co-location workaround"): place both PanGPS and
+# PanGPA into the same /opt/paloaltonetworks/globalprotect/ directory
+# (extracted from the .deb by update-env's extractGlobalprotectDebToOptTask),
+# and point the systemd units' ExecStart at those /opt paths. The
+# Nix-managed systemd unit + scripts stay; only the proprietary binaries
+# run from /opt. autoPatchelfHook is preserved here for tooling that may
+# still consume the in-store layout (e.g. the bin/PanGPA wrapper).
 #
 # Cert validation note: pangp's libwa* stack statically links OpenSSL and
 # uses bundled CA roots. The system trust store at /etc/ssl/certs is NOT
@@ -34,6 +66,18 @@
 , # Architecture suffix used inside the tarball's deb filenames. The amd64
   # build is bare; aarch64/arm have explicit suffixes.
   arch ? "amd64"
+, # Runtime base directory where PanGPS and PanGPA actually live at
+  # service-start time. Must match the directory that the .deb is
+  # extracted to (Crostini/Debian: /opt/paloaltonetworks/globalprotect,
+  # populated by update-env's extractGlobalprotectDebToOptTask). NixOS
+  # hosts that don't have a /opt extract should override to a path that
+  # exists at switch time -- typically the store layout
+  # "$out/opt/paloaltonetworks/globalprotect" if you accept that
+  # NixOS-only PanGPS WON'T pass the co-location check until a peer
+  # PanGPA also lives there (in practice: NixOS deployment of pangp
+  # needs the .deb extracted into the same directory at install time,
+  # same as Crostini). See header comment for rationale.
+  runtimeBase ? "/opt/paloaltonetworks/globalprotect"
 }:
 
 let
@@ -186,9 +230,18 @@ rm -f /var/run/PanGPS.pid 2>/dev/null || true
 PREPARE_EOF
     chmod +x $out/libexec/gpd-prepare
 
-    # Now compose gpd.service: substitute /opt paths to the nix store
-    # (binary paths only) and override WorkingDirectory + add
-    # StateDirectory + ExecStartPre.
+    # Now compose gpd.service. ExecStart points at the /opt PanGPS
+    # (staged by update-env's extractGlobalprotectDebToOptTask) so the
+    # daemon co-locates with PanGPA (also at /opt). PanGPS performs an
+    # IPC peer co-location check; if PanGPS and PanGPA live in different
+    # directories, every PanGPA connection is rejected. See header
+    # comment above and docs/design.md "PanGPS co-location check".
+    #
+    # ExecStartPre still runs $out/libexec/gpd-prepare to symlink the
+    # nix-store-shipped read-only files (sign/, license.cfg, etc.) into
+    # /var/lib/globalprotect. With the /opt extract in place those files
+    # are duplicated -- harmless and the staging keeps gpd.service
+    # cwd-equivalent across redeploys.
     mkdir -p $out/lib/systemd/system
     cat > $out/lib/systemd/system/gpd.service <<UNIT_EOF
 [Unit]
@@ -197,7 +250,7 @@ Description=GlobalProtect VPN client daemon (PanGPS)
 [Service]
 Type=simple
 ExecStartPre=$out/libexec/gpd-prepare
-ExecStart=$out/opt/paloaltonetworks/globalprotect/PanGPS
+ExecStart=${runtimeBase}/PanGPS
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=/var/lib/globalprotect
@@ -218,6 +271,12 @@ UNIT_EOF
 
     runHook postInstall
   '';
+
+  # Expose runtimeBase so the home-manager module (contexts/pangp.nix)
+  # can use the same path in its systemd.user.services.gpa ExecStart
+  # without duplicating the literal. PanGPS and PanGPA must co-locate;
+  # both ExecStart lines need to agree on the directory.
+  passthru = { inherit runtimeBase; };
 
   meta = with pkgs.lib; {
     description = "Palo Alto Networks GlobalProtect VPN client (proprietary Linux build)";

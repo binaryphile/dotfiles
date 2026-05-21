@@ -372,9 +372,16 @@ Proprietary PAN Linux client (`globalprotect`, `PanGPS`, `PanGPA`, plus bundled 
 
 Derivation at `pangp.nix`:
 - `dpkg-deb -x` unpacks the amd64 `.deb` into the build dir.
-- `autoPatchelfHook` rewrites DT_NEEDED entries in PanGPS and the libwa* libs from their hardcoded `/opt/paloaltonetworks/globalprotect/lib*.so` references to absolute nix-store paths under `$out/opt/...`. No /opt symlink needed at runtime.
+- `autoPatchelfHook` rewrites DT_NEEDED entries in PanGPS and the libwa* libs from their hardcoded `/opt/paloaltonetworks/globalprotect/lib*.so` references to absolute nix-store paths under `$out/opt/...`. This was intended to skip the /opt symlink entirely. **It doesn't work for the IPC-control plane** — see "PanGPS self-integrity" below; in practice the daemon and agent run from the unpatched `.deb` extracted into `/opt`, not from the autoPatchelf'd `$out/opt/...`.
 - `makeWrapper` wraps the user-facing binaries (`globalprotect`, `PanGPA`) with `export HOME="${HOME:?}/.local/share/globalprotect"; mkdir -p "$HOME"` so pangp's `getenv("HOME") + "/GP_HTML/saml.html"` writes land in a hidden subdirectory rather than polluting top-level `$HOME`.
 - Systemd unit `gpd.service` is recomposed with `WorkingDirectory=/var/lib/globalprotect` + `StateDirectory=globalprotect` + an `ExecStartPre` that symlink-stages read-only files from `$out/opt/.../` into the StateDirectory. PanGPS expects to write state files (HipPolicy.dat, HIP_*_Report.dat, PanGpMPR.dat, pangps.xml, *.log) to its cwd; the nix store is read-only, so the cwd has to be elsewhere and the staged symlinks let PanGPS still find its static config.
+
+PanGPS co-location check (the load-bearing constraint):
+- PanGPS performs an IPC peer-validation at PanGPA connect time. It reads `dirname(realpath(/proc/<peer-pid>/exe))` and compares against `dirname(realpath(/proc/self/exe))`; if the dirs differ, it rejects with `Error( 312): Connected by process not from GP folder, app: <peer>` and `Error( 212): Connected by non-PanGPA. Close socket.`. The "GP folder" in the error message is PanGPS's own directory, **not** a hardcoded `/opt` prefix.
+- The hash of the PanGPS binary does NOT factor into this rejection. Confirmed by experiment 2026-05-20: a byte-flipped `/opt/.../PanGPS` (different SHA-384 from the pristine .deb) accepted PanGPA from `/opt/...` normally; a pristine PanGPS copied to `/tmp/gp/paloaltonetworks/globalprotect/PanGPS` rejected PanGPA from `/opt/...` with the same error. The gate is co-location, not signature verification.
+- Practical implication for the Nix packaging: autoPatchelfHook's DT_NEEDED rewrites are a red herring. The actual cause of the wedge was that PanGPS lived under `$out/opt/paloaltonetworks/globalprotect/` (a nix-store path) while PanGPA was started via the `$out/bin/PanGPA` wrapper that re-exec'd the in-store binary — `/proc/<pangpa>/exe` resolves to `$out/opt/paloaltonetworks/globalprotect/PanGPA` (same dir as PanGPS, modulo realpath canonicalization). The rejection happened because of [interaction with the apt-shipped `/opt` install]: the .deb-installed PanGPA was at `/opt/.../PanGPA`, not the nix-store path, so when the user-systemd gpa.service spawned that PanGPA, its dir mismatched the nix-store PanGPS's dir.
+- The wedge stays invisible as long as PanGPS and PanGPA are in the same directory. The apt-shipped `.deb` provided that for both binaries at `/opt`; `apt purge globalprotect` unmasked it for the nix-managed install.
+- **Working configuration**: place both binaries in the same `/opt/paloaltonetworks/globalprotect/` directory (extracted from the .deb at install time; `update-env`'s `extractGlobalprotectDebToOptTask`); systemd overrides point `ExecStart` at `/opt/.../PanGPS` (system unit) and `/opt/.../PanGPA start` (user unit, with `HOME` wrapping replicated inline because the makeWrapper script is no longer in the exec path). The Nix-managed systemd unit + scripts stay; only the proprietary binaries run from `/opt`. autoPatchelfHook is preserved for tooling that may still consume the in-store layout.
 
 Home-manager module at `contexts/pangp.nix`:
 - `home.packages = [ pangp ]` puts the wrapped binaries on `$HOME/.nix-profile/bin/`.
@@ -393,22 +400,54 @@ update-env wiring: `pangp` group runs on `crostini` and `desktop` platforms (per
 
 #### SAML callback flow
 
-The callback path is non-obvious and the source of past failures. Full step-by-step description lives in [docs/vpn.md](vpn.md). Summary:
+The callback path is non-obvious and the source of past failures. Two distinct flows exist depending on which client is active. Full step-by-step description lives in [docs/vpn.md](vpn.md). Summary:
 
+**gpoc (HTTP-Redirect GET binding):**
 1. `gpauth` opens a one-shot HTTP server to serve the SAML form HTML
 2. `gpauth` opens a separate raw TCP listener on another port and writes that port to `/tmp/gpcallback.port`
 3. Browser does SAML, the IdP returns a `globalprotectcallback://<base64>` URL
-4. The OS dispatches that URL scheme to `gpclient launch-gui %u` via the registered `.desktop` handler
+4. The OS dispatches that URL scheme to `gpclient launch-gui %u` via the registered `gpgui.desktop` handler
 5. `gpclient launch-gui` reads the port file, opens a TCP socket to localhost, writes the auth data
 6. `gpauth` accepts, reads the cookie, prints to stdout (piped to `gpclient connect --cookie-on-stdin`)
 
-The URL scheme handler is registered via home-manager's `xdg.desktopEntries.gpgui` plus `xdg.mimeApps`, both in `contexts/crostini/home.nix`.
+**pangp (HTTP-POST binding):**
+1. PanGPS asks PanGPA to launch the default browser for SAML (`<default-browser>yes</default-browser>` in `pangps.xml`)
+2. PanGPA's `CPanDefaultBrowserLinux` writes the SAML form as a local file to `~/.local/share/globalprotect/GP_HTML/saml.html` (the form auto-submits a POST to the IdP via inline `<script>`)
+3. PanGPA invokes `xdg-open <saml.html>`
+4. xdg-mime resolves `text/html` to `saml-host-browser.desktop` (the Crostini shim — see below)
+5. The shim constructs `http://127.0.0.1:8120/saml-bundle/saml.html` and exec's `garcon-url-handler`
+6. host Chrome receives the URL, fetches via the existing darkhttpd, the form's auto-submit POSTs to the IdP
+7. IdP returns a redirect to `globalprotectcallback://<base64>`
+8. ChromeOS dispatches the scheme back into the container via `gp.desktop`
+9. gp.desktop's Exec runs `globalprotect defaultbrowser <url>`; the CLI delivers the cookie to PanGPA, which forwards to PanGPS
+10. PanGPS completes gateway login; tunnel up on `gpd0`
+
+The URL scheme handlers (`gpgui.desktop`, `gp.desktop`) are registered via home-manager's `xdg.desktopEntries` plus `xdg.mimeApps`, both in `contexts/crostini/home.nix` and `contexts/pangp.nix`.
 
 #### Crostini garcon discovery gotcha
 
 home-manager's `xdg.desktopEntries` installs to `~/.nix-profile/share/applications/`. **Garcon (the ChromeOS<->container bridge) only scans `~/.local/share/applications/`** for desktop files when propagating MIME registrations to the host, not arbitrary `XDG_DATA_DIRS` entries. Without an extra symlink into the standard XDG dir, host ChromeOS Chrome never learns about the `globalprotectcallback://` handler, the SAML callback URL is silently dropped, and `gpauth` hangs forever on `accept()`.
 
-The fix: a `home.file.".local/share/applications/gpgui.desktop".source` symlink (via `mkOutOfStoreSymlink`) into `~/.nix-profile/share/applications/gpgui.desktop`, defined in `crostini/home.nix`.
+The fix: a `home.file.".local/share/applications/<name>.desktop".source` symlink (via `mkOutOfStoreSymlink`) into `~/.nix-profile/share/applications/<name>.desktop`, defined in `crostini/home.nix`. Applied to `gpgui.desktop` (gpoc) and `gp.desktop` (pangp). The mode is selected by which `.desktop` is the active default for `x-scheme-handler/globalprotectcallback` (pinned via `xdg.mimeApps.defaultApplications`).
+
+There is a second discovery layer that's important on Crostini specifically: **ChromeOS host Chrome dispatches `globalprotectcallback://` based on the SYSTEM `/usr/share/applications/` mimeinfo cache, not the user-level `~/.local/share/applications/` cache.** The apt-installed gpoc package ships `/usr/share/applications/gpgui.desktop` claiming the scheme; in pangp mode this routes every callback to gpoc's `gpclient launch-gui` (with `Failed to feed auth data to the CLI` in `/tmp/gpcallback.log` since gpoc isn't running), and the cookie never reaches PanGPS. The pangp-mode fix is to disable the system gpgui.desktop and install gp.desktop at the system level (`update-env`'s `installPangpSystemDesktopTask`).
+
+#### SAML host-browser shim (Crostini, pangp mode)
+
+pangp expects the default browser to handle a local `saml.html` file (HTTP-POST binding: the SAMLRequest is a large base64 blob embedded as a hidden form field, too long for URL-query). On Crostini, host Chrome cannot read container files — `garcon_host_browser.desktop` registers only URL schemes (`http`, `https`, `ftp`, `mailto`), no file mime types. xdg-open's default text/html chain falls through to `garcon --client --terminal -e vim <file>` when no graphical container browser is on PATH (no firefox-esr by policy; nix firefox not on gpa.service's minimal PATH).
+
+`scripts/saml-host-browser` is a one-line shim that converts the file path to an HTTP URL served by the existing `proxy-pac-server.service` darkhttpd, and hands the URL to `garcon-url-handler`:
+
+```bash
+exec /usr/bin/garcon-url-handler "http://127.0.0.1:8120/saml-bundle/$(basename "$1")"
+```
+
+The `saml-bundle` path on the darkhttpd serve root resolves via a `home.file` symlink:
+```
+~/.local/share/proxy-pac/saml-bundle -> ~/.local/share/globalprotect/GP_HTML
+```
+
+The `.desktop` entry (`saml-host-browser.desktop`) is pinned as the `text/html` and `application/xhtml+xml` default in `xdg.mimeApps.defaultApplications`. PanGPA's wrapped HOME would otherwise hide `~/.config/mimeapps.list` from xdg-open's lookup; `contexts/pangp.nix`'s `systemd.user.services.gpa` override explicitly sets `XDG_CONFIG_HOME=%h/.config` and `XDG_DATA_HOME=%h/.local/share` to re-point the resolution at the real `$HOME` directories.
 
 #### Split-tunnel routing
 

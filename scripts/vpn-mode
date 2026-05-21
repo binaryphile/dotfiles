@@ -8,12 +8,48 @@
 #   active   = pangp mode (PAN's gpd daemon owns routing/tun, listens on IPC)
 #   inactive = gpoc mode  (yuezk client launches on-demand via vpn-connect)
 #
+# Crostini-specific: the globalprotectcallback:// scheme handler also
+# needs to flip between gp.desktop (pangp) and gpgui.desktop (gpoc).
+# ChromeOS host Chrome dispatches the callback from the SYSTEM
+# /usr/share/applications/ mimeinfo cache, not the user-level cache.
+# The apt-shipped gpoc package installs gpgui.desktop at the system
+# level; pangp mode needs gp.desktop installed there instead. We
+# atomically swap by renaming whichever .desktop is "off" to a
+# .disabled suffix. See docs/vpn.md "Callback-handler conflict".
+#
 # Usage:
 #   vpn-mode pangp   start gpd+gpa services (PAN client takes over)
 #   vpn-mode gpoc    stop gpd+gpa services + kill any in-flight gpoc tunnel
 #   vpn-mode         print current mode (one word: 'pangp' or 'gpoc')
 
 set -euo pipefail
+
+sysApps=/usr/share/applications
+gpguiSys=$sysApps/gpgui.desktop
+gpSys=$sysApps/gp.desktop
+gpUser=$HOME/.nix-profile/share/applications/gp.desktop
+
+# swapCallbackHandler <target-mode>
+#   pangp: gpgui.desktop -> .disabled; install gp.desktop from nix-profile
+#   gpoc:  gp.desktop    -> .disabled; restore gpgui.desktop from .disabled
+# Idempotent: skips moves that are already in the desired state.
+swapCallbackHandler() {
+  local target=$1
+  case $target in
+    pangp)
+      [[ -f $gpguiSys ]] && sudo mv "$gpguiSys" "$gpguiSys.disabled"
+      if [[ ! -f $gpSys ]]; then
+        [[ -f $gpUser ]] || { echo "vpn-mode: $gpUser missing (run update-env first)" >&2; return 1; }
+        sudo cp "$gpUser" "$gpSys"
+      fi
+      ;;
+    gpoc)
+      [[ -f $gpSys ]] && sudo rm "$gpSys"
+      [[ -f $gpguiSys.disabled ]] && sudo mv "$gpguiSys.disabled" "$gpguiSys"
+      ;;
+  esac
+  sudo update-desktop-database "$sysApps"
+}
 
 case ${1:-} in
   '')
@@ -24,6 +60,7 @@ case ${1:-} in
     fi
     ;;
   pangp)
+    swapCallbackHandler pangp
     sudo systemctl start gpd.service
     systemctl --user start gpa.service
     echo 'vpn-mode: pangp'
@@ -35,6 +72,7 @@ case ${1:-} in
     pkill -f 'gpclient connect' 2>/dev/null || true
     sudo systemctl stop gpd.service
     systemctl --user stop gpa.service 2>/dev/null || true
+    swapCallbackHandler gpoc
     echo 'vpn-mode: gpoc'
     ;;
   *)

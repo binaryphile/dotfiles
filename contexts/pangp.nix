@@ -55,6 +55,25 @@ in
   # $pangp/lib/systemd/user/gpa.service, but home-manager re-derives user
   # units from the systemd.user.services attrset, so we restate it here
   # rather than systemd.user.packages (which doesn't auto-enable).
+  #
+  # ExecStart points at the /opt PanGPA, not the nix-store $pangp/bin/
+  # PanGPA wrapper, because PanGPS performs an IPC peer co-location
+  # check: dirname(realpath(/proc/<peer>/exe)) must equal
+  # dirname(realpath(/proc/self/exe)). If they differ -- e.g., PanGPS
+  # runs from $out/opt/... while PanGPA's /proc/exe resolves to /opt/...
+  # -- PanGPS rejects with "Connected by process not from GP folder".
+  # The /opt subtree is staged by `update-env`'s
+  # extractGlobalprotectDebToOptTask so both binaries co-locate there.
+  # See pangp.nix's header comment and docs/design.md "PanGPS co-
+  # location check".
+  #
+  # HOME is wrapped (per the original derivation rationale) to keep
+  # GP_HTML/ and .GlobalProtect/ off the top-level $HOME. XDG_CONFIG_HOME
+  # and XDG_DATA_HOME are pinned to the real $HOME directories so that
+  # xdg-open (spawned by PanGPA for SAML browser launch) finds
+  # mimeapps.list and .desktop files in their canonical user locations
+  # rather than under the wrapped HOME (where they don't exist). Without
+  # this, xdg-open falls through to garcon's terminal vim handler.
   systemd.user.services.gpa = {
     Unit = {
       Description = "GlobalProtect VPN client agent (PanGPA, user-side)";
@@ -63,14 +82,16 @@ in
 
     Service = {
       Type = "simple";
-      # $pangp/bin/PanGPA is the HOME-wrapped binary -- it redirects pangp's
-      # state writes (GP_HTML/, .GlobalProtect/, etc.) into
-      # $HOME/.local/share/globalprotect/ so they don't pollute $HOME.
-      # See pangp.nix's makeWrapper invocation for the wrapper script.
-      ExecStart = "${pangp}/bin/PanGPA start";
+      Environment = [
+        "HOME=%h/.local/share/globalprotect"
+        "XDG_CONFIG_HOME=%h/.config"
+        "XDG_DATA_HOME=%h/.local/share"
+      ];
+      ExecStartPre = "/bin/mkdir -p %h/.local/share/globalprotect";
+      ExecStart = "${pangp.passthru.runtimeBase}/PanGPA start";
       Restart = "on-failure";
       RestartSec = 1;
-      WorkingDirectory = "${pangp}/opt/paloaltonetworks/globalprotect";
+      WorkingDirectory = pangp.passthru.runtimeBase;
     };
 
     Install.WantedBy = [ "default.target" ];
@@ -97,12 +118,26 @@ in
   # restart triggers only when the unit content actually differs (cmp -s
   # gate). If the unit didn't change between switches, we skip the
   # restart so we don't drop the user's active VPN session.
+  #
+  # Cleanup: prior versions of this module had users manually drop
+  # systemd override.conf files (system + user) to point ExecStart at
+  # /opt. The HM-managed units now have those settings baked in, so
+  # the overrides are redundant. Atomic cleanup with the new unit
+  # deployment avoids a window where a service restart would pick up
+  # the new (correct) unit without the override (still correct) or vice
+  # versa.
   home.activation.pangpSystemUnit = lib.mkIf cfg.enableSystemDaemonOnDebian (
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       newUnit="${pangp}/lib/systemd/system/gpd.service"
       liveUnit=/etc/systemd/system/gpd.service
+      sysOverride=/etc/systemd/system/gpd.service.d/override.conf
+      userOverride=$HOME/.config/systemd/user/gpa.service.d/override.conf
       if [ ! -e "$liveUnit" ] || ! cmp -s "$newUnit" "$liveUnit"; then
         $DRY_RUN_CMD /usr/bin/sudo -n cp "$newUnit" "$liveUnit"
+        # Remove the transitional override.conf files. HM-deployed units
+        # now carry equivalent settings (ExecStart=/opt/.../, XDG env).
+        [ -f "$sysOverride" ] && $DRY_RUN_CMD /usr/bin/sudo -n rm "$sysOverride"
+        [ -f "$userOverride" ] && $DRY_RUN_CMD rm "$userOverride"
         $DRY_RUN_CMD /usr/bin/sudo -n systemctl daemon-reload
         $DRY_RUN_CMD /usr/bin/sudo -n systemctl restart gpd.service
       fi

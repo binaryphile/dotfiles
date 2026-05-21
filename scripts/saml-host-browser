@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# saml-host-browser -- pangp SAML form -> ChromeOS host Chrome shim.
+#
+# Why: pangp's CPanDefaultBrowserLinux writes the SAML form as a local
+# file at ~/.local/share/globalprotect/GP_HTML/saml.html (HTTP-POST
+# binding; the SAMLRequest is a large base64 blob, too long for URL-
+# query, must come back as a form field). It then calls xdg-open on
+# that file path.
+#
+# On Crostini, host Chrome cannot open container-local files --
+# garcon_host_browser.desktop registers only URL schemes (http, https,
+# ftp, mailto). xdg-open's default text/html chain then falls through
+# to `garcon --client --terminal -e vim <file>` when no in-container
+# graphical browser is on PATH (firefox-esr removed by policy; nix
+# firefox not on gpa.service's minimal PATH).
+#
+# This shim wires the file path through the existing darkhttpd
+# (proxy-pac-server.service, port 8120) by way of the saml-bundle
+# symlink that home-manager creates at
+# ~/.local/share/proxy-pac/saml-bundle -> ~/.local/share/globalprotect/GP_HTML.
+# garcon-url-handler hands the resulting URL to host Chrome via the
+# standard Crostini bridge -- the same path everything else uses.
+#
+# Wired as the text/html mime default via saml-host-browser.desktop;
+# see docs/vpn.md "Critical: SAML browser routing on Crostini".
+#
+# Path filter: only files under ~/.local/share/globalprotect/GP_HTML/
+# get the darkhttpd URL transform. Anything else falls through to
+# xdg-open's normal chain by explicit re-dispatch via the next-best
+# .desktop -- in practice host Chrome via garcon for HTTPS URLs, or a
+# graphical browser for general text/html if one is installed. This
+# avoids the "every local .html file 404s from darkhttpd" footgun
+# that hijacking text/html system-wide would otherwise create.
+
+set -euo pipefail
+file=${1:?missing file argument}
+samlRoot=$HOME/.local/share/globalprotect/GP_HTML
+
+# Canonicalize so symlinks/relpaths resolve into samlRoot if applicable.
+real=$(readlink -f -- "$file" 2>/dev/null) || real=$file
+
+case $real in
+  "$samlRoot"/*)
+    exec /usr/bin/garcon-url-handler "http://127.0.0.1:8120/saml-bundle/$(basename -- "$real")"
+    ;;
+  *)
+    # Generic text/html file -- dispatch to firefox if available, else
+    # fall back to a host Chrome file:// URL (will fail, but at least
+    # surfaces an obvious "can't open container file in host Chrome"
+    # rather than serving the pangp SAML URL with a 404 inside).
+    if command -v firefox >/dev/null 2>&1; then
+      exec firefox -- "$file"
+    fi
+    exec /usr/bin/garcon-url-handler "file://$real"
+    ;;
+esac

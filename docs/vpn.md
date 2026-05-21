@@ -191,6 +191,138 @@ Stages of the deploy:
 
 Result: `gpd.service` runs PanGPS from the nix store, `WorkingDirectory=/var/lib/globalprotect` (writable, systemd-`StateDirectory`-managed), `ExecStartPre` symlinks read-only config files into the StateDirectory. PanGPA runs as a home-manager user-service, with `HOME` wrapped to `$HOME/.local/share/globalprotect` so it doesn't pollute the top-level home dir with `GP_HTML/` and `.GlobalProtect/`.
 
+### Critical: PanGPS co-location workaround (run binaries from /opt)
+
+Running PanGPS and PanGPA out of the nix store fails because the two binaries end up in different directories: PanGPS at `$out/opt/paloaltonetworks/globalprotect/PanGPS` (nix-store), and PanGPA at `/opt/paloaltonetworks/globalprotect/PanGPA` (whatever the apt-shipped install put there, or the user systemd unit's ExecStart). PanGPS performs an IPC peer-validation at PanGPA connect time — it reads `dirname(realpath(/proc/<peer>/exe))` and compares against `dirname(realpath(/proc/self/exe))`. If the dirs differ, it rejects with:
+
+```
+Error( 312): Connected by process not from GP folder, app: /opt/paloaltonetworks/globalprotect/PanGPA
+Error( 212): Connected by non-PanGPA. Close socket.
+```
+
+The "not from GP folder" text is misleading — the "GP folder" is *PanGPS's own directory*, not a hardcoded `/opt` prefix. Confirmed by experiment 2026-05-20:
+- pristine PanGPS at `/opt/.../PanGPS` + pristine PanGPA at `/opt/.../PanGPA` → accepted (same dir)
+- byte-flipped PanGPS at `/opt/.../PanGPS` (different SHA-384) + pristine PanGPA at `/opt/.../PanGPA` → still accepted (same dir; hash doesn't matter)
+- pristine PanGPS copied to `/tmp/gp/paloaltonetworks/globalprotect/PanGPS` + pristine PanGPA at `/opt/.../PanGPA` → rejected with the same error (different dirs)
+
+The wedge stays invisible while the apt-installed `.deb` ships matching binaries in the same dir (`/opt/...`); `apt purge globalprotect` unmasks it for the nix-managed install.
+
+**Fix**: extract the `.deb` `/opt` subtree into the real `/opt` so both binaries co-locate there, then point the systemd units at them. The "unpatched" nature of the binaries is incidental (any matching pair in the same dir works); using the .deb extract is just the cleanest source.
+
+```bash
+# Extract the unpatched .deb subtree
+TMPDIR=$(mktemp -d)
+tar xzf ~/crostini/PanGPLinux-6.3.3-c31.tgz -C "$TMPDIR"
+sudo mkdir -p /opt/paloaltonetworks/globalprotect
+dpkg-deb -x "$TMPDIR/GlobalProtect_deb-6.3.3.1-638.deb" "$TMPDIR/extracted"
+sudo cp -a "$TMPDIR/extracted/opt/paloaltonetworks/globalprotect/." /opt/paloaltonetworks/globalprotect/
+
+# System unit override — point ExecStart at /opt PanGPS
+sudo mkdir -p /etc/systemd/system/gpd.service.d
+sudo tee /etc/systemd/system/gpd.service.d/override.conf <<'EOF'
+[Service]
+ExecStartPre=
+ExecStart=
+ExecStart=/opt/paloaltonetworks/globalprotect/PanGPS
+WorkingDirectory=/var/lib/globalprotect
+EOF
+
+# User unit override — point ExecStart at /opt PanGPA, replicate HOME wrap inline.
+# XDG_{CONFIG,DATA}_HOME pin to the real $HOME so xdg-open (spawned by PanGPA
+# for SAML browser launch) finds mimeapps.list and .desktop files in their
+# canonical user locations even though HOME is wrapped to a subdirectory.
+mkdir -p ~/.config/systemd/user/gpa.service.d
+cat > ~/.config/systemd/user/gpa.service.d/override.conf <<'EOF'
+[Service]
+ExecStart=
+Environment=HOME=%h/.local/share/globalprotect
+Environment=XDG_CONFIG_HOME=%h/.config
+Environment=XDG_DATA_HOME=%h/.local/share
+ExecStartPre=/bin/mkdir -p %h/.local/share/globalprotect
+ExecStart=/opt/paloaltonetworks/globalprotect/PanGPA start
+WorkingDirectory=/opt/paloaltonetworks/globalprotect
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart gpd.service
+systemctl --user daemon-reload
+systemctl --user restart gpa.service
+```
+
+Verify success in the active log (when PanGPS runs from `/opt`, its log lives at `/opt/paloaltonetworks/globalprotect/PanGPS.log`, not `/var/lib/globalprotect/PanGPS.log` which is the nix-store symlink — same content as the in-store log only when PanGPS runs from the nix store):
+
+```bash
+sudo tail /opt/paloaltonetworks/globalprotect/PanGPS.log
+# look for: Info ( 71): PanGPA is managed by systemd.
+# look for: Info ( 102): Start ServerThread
+# absence of: Error( 212): Connected by non-PanGPA
+```
+
+This is a manual fix today; folding it into the home-manager activation hook is tracked separately. The Nix-managed systemd unit + scripts stay as they are; only the proprietary binaries themselves come from the `.deb` extract.
+
+### Critical: SAML browser routing on Crostini (host Chrome via darkhttpd shim)
+
+pangp's `CPanDefaultBrowserLinux` writes the SAML form as a local `saml.html` file to `~/.local/share/globalprotect/GP_HTML/` (HTTP-POST binding — the SAMLRequest is too long for URL-query, must come back as a form field). It then calls `xdg-open` on the file path. Two problems on Crostini:
+
+1. **Host Chrome can't open local container files.** The `garcon_host_browser.desktop` handler is registered only for URL schemes (`http`, `https`, `ftp`, `mailto`); local file paths can't cross the Crostini boundary.
+2. **xdg-open's default text/html chain falls through to the terminal vim handler** when no graphical browser is found (firefox-esr post-purge, nix firefox not on the gpa.service PATH). Cf. `garcon --client --terminal -e vim <file>` in the strace.
+
+**Shim**: a one-line wrapper script that converts the file path to an HTTP URL on the existing `darkhttpd` (proxy-pac-server, already serving `127.0.0.1:8120`) and hands the URL to `garcon-url-handler` — which routes to host Chrome via the standard Crostini bridge.
+
+```bash
+# Wrapper at ~/.local/bin/saml-host-browser:
+#!/usr/bin/env bash
+exec /usr/bin/garcon-url-handler "http://127.0.0.1:8120/saml-bundle/$(basename "$1")"
+
+# .desktop at ~/.local/share/applications/saml-host-browser.desktop:
+[Desktop Entry]
+Type=Application
+Name=SAML host browser (via darkhttpd + garcon)
+NoDisplay=true
+Exec=/home/ted/.local/bin/saml-host-browser %f
+MimeType=text/html;application/xhtml+xml;
+
+# Symlink GP_HTML into the darkhttpd serve root so the URL resolves:
+ln -sfn ~/.local/share/globalprotect/GP_HTML ~/.local/share/proxy-pac/saml-bundle
+
+# Pin text/html to the shim (xdg-mime writes ~/.config/mimeapps.list):
+xdg-mime default saml-host-browser.desktop text/html
+xdg-mime default saml-host-browser.desktop application/xhtml+xml
+```
+
+End-to-end flow with the shim in place:
+
+1. PanGPA writes `~/.local/share/globalprotect/GP_HTML/saml.html`
+2. PanGPA invokes `xdg-open <saml.html>`
+3. xdg-mime resolves `text/html` → `saml-host-browser.desktop` (pinned)
+4. `.desktop` Exec runs `saml-host-browser <saml.html>`
+5. shim constructs `http://127.0.0.1:8120/saml-bundle/saml.html` and exec's `garcon-url-handler`
+6. host Chrome receives the URL, fetches via darkhttpd, the form's auto-submit POSTs to the IdP
+7. IdP returns a redirect to `globalprotectcallback://<base64>`
+8. host Chrome dispatches the scheme back into the container (see callback-handler conflict below)
+9. container's `gp.desktop` Exec calls nix-store `globalprotect defaultbrowser <url>`
+10. the CLI delivers the cookie to PanGPA, which forwards to PanGPS
+11. PanGPS completes gateway login; tunnel up on `gpd0`
+
+### Callback-handler conflict: system gpgui.desktop vs gp.desktop
+
+On Crostini, ChromeOS host Chrome consults the system `/usr/share/applications/` mimeinfo cache for scheme handlers — **not** the user-level `~/.local/share/applications/` cache. Two MimeType=`x-scheme-handler/globalprotectcallback` registrations exist by default:
+
+- `/usr/share/applications/gpgui.desktop` — shipped by the apt-installed `globalprotect-openconnect` package; Exec=`/usr/bin/gpclient launch-gui %u` (gpoc).
+- `~/.local/share/applications/gp.desktop` — symlinked from `~/.nix-profile/share/applications/gp.desktop` by home-manager; Exec=`/nix/store/.../bin/globalprotect defaultbrowser %u` (pangp).
+
+ChromeOS prefers the system one and dispatches every callback to gpoc's `gpclient launch-gui`. Symptom: `/tmp/gpcallback.log` shows `gpclient::launch_gui Failed to feed auth data to the CLI: No such file or directory (os error 2)` — gpoc has no peer running (we're in pangp mode), and the cookie never reaches PanGPS.
+
+**Fix**: disable the system gpgui.desktop while pangp is the active mode, and install gp.desktop at the system level so ChromeOS sees it:
+
+```bash
+sudo mv /usr/share/applications/gpgui.desktop /usr/share/applications/gpgui.desktop.disabled
+sudo cp ~/.nix-profile/share/applications/gp.desktop /usr/share/applications/gp.desktop
+sudo update-desktop-database /usr/share/applications/
+```
+
+This is asymmetric with the `vpn-mode` toggle: gpoc-mode reverses the move. Folding the toggle into `vpn-mode` is tracked separately.
+
 ### Install (NixOS work machine)
 
 Drop the tarball at a known path (e.g., `/etc/nixos/pangp/PanGPLinux-6.3.3-c31.tgz`), edit `~/dotfiles/flake.nix`'s `pangp` let-binding to point there, then in `configuration.nix`:
