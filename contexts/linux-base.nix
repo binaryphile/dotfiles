@@ -1,11 +1,13 @@
-{ config, pkgs, ... }:
+{ config, pkgs, contextName, ... }:
 
 let
-  # Live symlink to a path under $HOME, preserving edit-in-place semantics
-  # for files we want to edit at the source rather than via home-manager
-  # rebuilds.
-  linkHome = relPath: config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/${relPath}";
-  linkDotfile = path: linkHome "dotfiles/${path}";
+  # Path to this context's directory inside the flake source (e.g.,
+  # ./crostini, ./desktop). Files that vary per-context are resolved
+  # against this prefix so symlink chains stay within the tracked tree
+  # and survive flake source materialization (the top-level `context/`
+  # selector symlink is gitignored and would otherwise dangle inside
+  # the nix store).
+  ctxDir = ./. + "/${contextName}";
 
   mkScriptBin = import ./mkScriptBin.nix { inherit pkgs; };
 
@@ -109,23 +111,33 @@ in
     fi
   '';
 
-  # Dotfile symlinks migrated from update-env. mkOutOfStoreSymlink keeps
-  # them as live symlinks into ~/dotfiles so edits take effect immediately,
-  # matching update-env's task.Ln semantics. Bootstrap-critical files
-  # (.bash*, nixpkgs config, home-manager config) stay in update-env so
-  # they exist before home-manager runs.
+  # Stable-config dotfile symlinks. Direct store-path sources -- nix snapshots
+  # the file into the store at evaluation, so the runtime symlink is read-only:
+  # accidental writes through ~/X cannot mutate the working tree, and the
+  # configuration is reproducible from any clean checkout. Active-development
+  # artifacts (currently: three Crostini scripts in ~/.local/bin/) use
+  # mkOutOfStoreSymlink instead; see docs/design.md "Nix/bash boundary" for the
+  # decision rule. Bootstrap-critical files (.bash*, nixpkgs config,
+  # home-manager config) stay in update-env so they exist before home-manager
+  # runs.
+  #
+  # Context-switched files (gitconfig, tmux.conf, ssh/config,
+  # liquidpromptrc) are sourced via ctxDir so the chain stays inside the
+  # tracked tree -- routing through the top-level `~/dotfiles/<file>`
+  # selector symlink would dangle in the store because `context/` is
+  # gitignored and absent from the flake source snapshot.
   home.file = {
-    ".gitconfig".source = linkDotfile "gitconfig";
-    ".gitignore_global".source = linkDotfile "gitignore_global";
-    ".tmux.conf".source = linkDotfile "tmux.conf";
-    ".config/liquidprompt/liquid.theme".source = linkDotfile "liquidprompt/liquid.theme";
-    ".config/liquidpromptrc".source = linkDotfile "liquidprompt/liquidpromptrc";
-    ".ssh/config".source = linkDotfile "ssh/config";
-    ".ssh/authorized_keys".source = linkDotfile "ssh/authorized_keys";
-    ".ssh/id_ed25519_signing.pub".source = linkDotfile "ssh/id_ed25519_signing.pub";
-    ".config/ranger/rc.conf".source = linkDotfile "ranger/rc.conf";
-    ".config/ranger/rifle.conf".source = linkDotfile "ranger/rifle.conf";
-    ".config/ranger/scope.sh".source = linkDotfile "ranger/scope.sh";
+    ".gitconfig".source = ctxDir + "/gitconfig";
+    ".gitignore_global".source = ./../gitignore_global;
+    ".tmux.conf".source = ctxDir + "/tmux.conf";
+    ".config/liquidprompt/liquid.theme".source = ./../liquidprompt/liquid.theme;
+    ".config/liquidpromptrc".source = ctxDir + "/liquidprompt/liquidpromptrc";
+    ".ssh/config".source = ctxDir + "/ssh/config";
+    ".ssh/authorized_keys".source = ./../ssh/authorized_keys;
+    ".ssh/id_ed25519_signing.pub".source = ./../ssh/id_ed25519_signing.pub;
+    ".config/ranger/rc.conf".source = ./../ranger/rc.conf;
+    ".config/ranger/rifle.conf".source = ./../ranger/rifle.conf;
+    ".config/ranger/scope.sh".source = ./../ranger/scope.sh;
   };
 
   xdg.mimeApps = {

@@ -94,7 +94,7 @@
     homeConfigurations.crostini = home-manager.lib.homeManagerConfiguration {
       pkgs = linuxPkgs;
       modules = [ ./contexts/crostini/home.nix ];
-      extraSpecialArgs = commonSpecialArgs // { inherit pangp; };
+      extraSpecialArgs = commonSpecialArgs // { inherit pangp; contextName = "crostini"; };
     };
 
     # Debian uses crostini config -- both are Debian-based, same package set.
@@ -104,7 +104,7 @@
     homeConfigurations.desktop = home-manager.lib.homeManagerConfiguration {
       pkgs = linuxPkgs;
       modules = [ ./contexts/desktop/home.nix ];
-      extraSpecialArgs = commonSpecialArgs // { inherit gpoc pangp; };
+      extraSpecialArgs = commonSpecialArgs // { inherit gpoc pangp; contextName = "desktop"; };
     };
 
     homeConfigurations.macos = home-manager.lib.homeManagerConfiguration {

@@ -1,9 +1,13 @@
 { config, pkgs, lib, pangp, ... }:
 
 let
+  # Live symlink to a path under $HOME via mkOutOfStoreSymlink. Used for
+  # active-development artifacts where edit-in-place semantics matter
+  # (scripts iterated frequently, cross-repo source paths). Stable config
+  # files should use direct store-path sources instead; see linux-base.nix
+  # home.file block and docs/design.md "Nix/bash boundary".
   linkHome = relPath:
     config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/${relPath}";
-  linkDotfile = path: linkHome "dotfiles/${path}";
 
   mkScriptBin = import ../mkScriptBin.nix { inherit pkgs; };
 
@@ -162,17 +166,18 @@ in
     # security advisory watcher. Live symlinks via mkOutOfStoreSymlink so
     # edits in the repo take effect immediately. Panel is nix-packaged as
     # a tmux dependency in linux-base.nix (not a live symlink).
-    ".local/bin/vpn".source                  = linkDotfile "scripts/vpn";
-    ".local/bin/digi-security-watch".source  = linkDotfile "scripts/digi-security-watch";
+    ".local/bin/vpn".source                  = linkHome "dotfiles/scripts/vpn";
+    ".local/bin/digi-security-watch".source  = linkHome "dotfiles/scripts/digi-security-watch";
     # pangp SAML form -> host Chrome shim. Live symlink so edits in the
     # repo take effect on next xdg-open invocation. See docs/vpn.md
     # "Critical: SAML browser routing on Crostini".
-    ".local/bin/saml-host-browser".source    = linkDotfile "scripts/saml-host-browser";
+    ".local/bin/saml-host-browser".source    = linkHome "dotfiles/scripts/saml-host-browser";
 
-    # crostini-procfs-doctor lives in jeeves (not dotfiles) — first cross-repo
-    # path-dep in this flake. linkHome (not linkDotfile) because target is
-    # outside ~/dotfiles/. mkOutOfStoreSymlink does NOT validate target at
-    # eval; precondition is that ~/projects/jeeves is cloned.
+    # crostini-procfs-doctor lives in jeeves (not dotfiles) -- first cross-repo
+    # path-dep in this flake. Target is outside ~/dotfiles/, so the relPath
+    # passed to linkHome does NOT have the "dotfiles/" prefix.
+    # mkOutOfStoreSymlink does NOT validate target at eval; precondition is
+    # that ~/projects/jeeves is cloned.
     ".local/bin/crostini-procfs-doctor".source =
       linkHome "projects/jeeves/guides/scripts/crostini-procfs-doctor";
 
