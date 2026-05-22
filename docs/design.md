@@ -126,15 +126,45 @@ Idempotent. Platform detection: macos -> crostini -> nixos/$HOSTNAME -> debian -
 | `home-manager` (`home.file`) | vpn, digi-security-watch scripts; proxy PAC; gpgui desktop entry | 2 symlinks + 1 generated + 1 symlink (`crostini/home.nix`) | Crostini-only scripts, generated config, and gpoc URL scheme handler. Panel is nix-packaged as a tmux dependency in `linux-base.nix`, not a `home.file` symlink. |
 | `home-manager` (`programs.*`) | direnv, bat, firefox, khal, vdirsyncer | 5 modules | Declarative program config via HM modules -- not `home.file` but the same dependency tree. |
 
-*Decision test for new files:* (1) Is it needed before HM runs? -> `update-env`. (2) Does its source live outside `~/dotfiles`? -> `update-env`. (3) Otherwise -> `home.file` with `mkOutOfStoreSymlink` for edit-in-place, or a `programs.*` module if one exists.
+**Flake source snapshot semantics.** When a flake is evaluated, Nix snapshots the tracked source tree into the store. Paths excluded from the flake source (including gitignored paths in this repository) do not exist during evaluation or activation. Any `source = ...` path, or any symlink chain reachable from it, must resolve entirely within the materialized flake snapshot.
 
-The `home.file` blocks use `mkOutOfStoreSymlink` to preserve edit-in-place semantics -- symlinks point at the live source files in `~/dotfiles/`, not into the nix store, so editing the source is immediately visible without `home-manager switch`.
+*Decision test for new files:*
+
+1. Needed before HM runs? -> `update-env`.
+2. Source lives outside `~/dotfiles`? -> `update-env`, or `home.file` with `mkOutOfStoreSymlink` to the external path.
+3. Source lives inside `~/dotfiles`?
+   - Stable config: direct source (`./../X` for files shared across contexts; `ctxDir + "/X"` for per-context variants).
+   - Active-development artifact: `linkHome` / `mkOutOfStoreSymlink`.
+   - Program with an existing HM module: prefer `programs.*`.
+
+**`home.file` source-style policy.** Entries fall into two categories:
+
+- **Stable configuration** (gitconfig, tmux.conf, ssh/config, liquidprompt theme, ranger rc, etc. -- the bulk of `linux-base.nix`'s `home.file` block) is declared with `source = <tracked flake path>`. Nix snapshots the file into the store at evaluation, the runtime symlink is read-only, accidental writes through `~/X` cannot mutate the working tree, and the configuration is reproducible from any clean checkout.
+- **Active-development artifacts** (currently: the three Crostini scripts under `~/.local/bin/`) are declared via the `linkHome` helper, which wraps `mkOutOfStoreSymlink`. The runtime symlink points back at the live working tree, so edits propagate without a `home-manager switch` -- the policy applies where edit-propagation without rebuild is operationally valuable.
+
+Decision rule for new entries: would you expect to iterate on this file frequently while tuning the environment? Yes -> `mkOutOfStoreSymlink` (via `linkHome`). No -> direct store-path source.
+
+The pattern is checkable by `grep -rn 'mkOutOfStoreSymlink' contexts/` -- every match is a deliberately mutable entry.
+
+**Context-switched files and the `ctxDir` mechanism.** Four files vary per context: `gitconfig`, `tmux.conf`, `liquidprompt/liquidpromptrc`, `ssh/config`. They cannot be sourced through the top-level `~/dotfiles/<file>` symlinks, because those chain through `~/dotfiles/context/<file>`, and the `context` selector symlink is gitignored -- absent from the flake source snapshot in the nix store, so the chain dangles inside the store and activation fails with `path '...source/context/<file>' does not exist`. The fix is to route per-context paths through a `ctxDir = ./. + "/${contextName}"` prefix in `linux-base.nix`: `source = ctxDir + "/gitconfig"` resolves to `contexts/${contextName}/gitconfig`, which is tracked and therefore included in the flake source snapshot. Symlink chains inside the tracked tree are safe; the failure mode occurs only when resolution enters a path excluded from the snapshot (such as the gitignored `context/` selector). `contextName` is supplied via `extraSpecialArgs` in `flake.nix` per `homeConfigurations.<name>` (e.g. `{ contextName = "crostini"; }`). Generalization: flake-path imports may only traverse paths present in the materialized flake snapshot. Context-selection indirections that depend on gitignored or runtime-only paths therefore cannot be used as `home.file` sources -- a tracked selector symlink would be fine; only the excluded-from-snapshot case fails.
+
+```mermaid
+flowchart TD
+    N["naive: source = ./../gitconfig"] --> N1["flake snapshot:<br/>gitconfig (tracked symlink)"]
+    N1 -.->|"target: context/gitconfig"| N2["context/<br/>(gitignored, absent from snapshot)"]
+
+    F["fix: source = ctxDir + '/gitconfig'<br/>(ctxDir = ./. + '/' + contextName)"] --> F1["flake snapshot:<br/>contexts/${contextName}/gitconfig"]
+    F1 -->|"tracked symlink"| F2["contexts/desktop/gitconfig<br/>(real file in snapshot)"]
+
+    style N2 fill:#ffcccc,stroke:#cc0000
+    style F2 fill:#ccffcc,stroke:#00aa00
+```
 
 #### Managed config deployment
 
 Config files deployed by update-env or home-manager are read-only at the destination. The correct change path is: edit the source in `~/dotfiles`, commit, push, then run `update-env` (or `home-manager switch`) on each machine to converge. Direct edits to deployed files are overwritten on the next run.
 
-Home-manager files use `mkOutOfStoreSymlink` where edit-in-place semantics are needed during active development (e.g., bash modules being iterated on). Otherwise, files are deployed as copies or store-path symlinks that prevent direct mutation. The `home.file` blocks with `force: true` (Claude settings, gpgui desktop entry) are cases where a program may overwrite the file and HM restores it on switch.
+The `home.file` blocks with `force: true` (Claude settings, gpgui desktop entry) are cases where a program may overwrite the file and HM restores it on switch. They're distinct from the stable/active-development split above -- both flavors can be `force: true`.
 
 Files requiring runtime mutation (e.g., CLAUDE.md, which stage 2 appends to) must not be managed by HM's store-copy mechanism -- they are owned by update-env instead (see `claudeBaseCopyTask`). `claudeBaseCopyTask` uses an `ok` test that rejects symlinks (`[[ -f ]] && ! [[ -L ]]`), so if home-manager has re-created a store symlink at `~/.claude/CLAUDE.md`, the task replaces it with a writable copy.
 
