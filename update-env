@@ -350,6 +350,8 @@ stage2() {
   #  |   +-> shellcheck        - ShellCheck fork (dynamic plugins) |
   #  |   +-> shellcheck-convention-plugin - SC9001-SC9004 plugin   |
   #  |   +-> jeeves            - project guides (bitbucket)        |
+  #  |   +-> fluentfp          - Go FP library (sofdevsim go.mod   |
+  #  |                           replace target: ../fluentfp)      |
   #  |   +-> sofdevsim-2026    - software dev simulation           |
   #  |   +-> blog              - binaryphile.github.io             |
   #  |   +-> tandem-protocol   - Claude slash commands (codeberg)  |
@@ -372,12 +374,22 @@ stage2() {
   try task.Ln nix-wrapper ~/projects/jeeves/bin/node
   try task.Ln nix-wrapper ~/projects/jeeves/bin/npx
 
+  section fluentfp
+  try githubCloneAndLinkTask fluentfp
+
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
   try obsidianSnippetsTask ~/projects/sofdevsim-2026/.obsidian/snippets
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/go
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/node
   try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/npx
+
+  section finances
+  try githubCloneAndLinkTask finances
+  try obsidianSnippetsTask ~/projects/finances/.obsidian/snippets
+  desc  'set git hooksPath to .githooks (privacy-firewall pre-commit)'
+  ok    "[[ $(git -C ~/projects/finances config core.hooksPath) == .githooks ]]"
+  cmd   "git -C ~/projects/finances config core.hooksPath .githooks"
 
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
