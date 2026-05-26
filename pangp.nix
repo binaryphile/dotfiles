@@ -205,6 +205,10 @@ pkgs.stdenv.mkDerivation {
 # into /var/lib/globalprotect (systemd's StateDirectory for gpd.service)
 # so PanGPS finds its static config alongside its writable state files.
 set -eu
+# systemd's default PATH for services doesn't include coreutils; prepend
+# it explicitly so mkdir/ln/basename/rm resolve. Without this the unit
+# fails ExecStartPre with "mkdir: command not found" (calumny 2026-05-26).
+export PATH="${pkgs.coreutils}/bin:\$PATH"
 PANGP_RO=$out/opt/paloaltonetworks/globalprotect
 STATE_DIR=\$STATE_DIRECTORY
 [ -n "\$STATE_DIR" ] || STATE_DIR=/var/lib/globalprotect
