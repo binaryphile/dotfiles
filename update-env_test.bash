@@ -868,6 +868,107 @@ test_deploySigningPub_skipsWhenSidecarMissing() {
   [[ ! -f $dir/dst/signing.pub ]] || { echo "dst created despite missing sidecar"; return 1; }
 }
 
+# extractGlobalprotectDebToOptTask tests use a REAL ELF fixture (copying
+# /bin/true via coreutils' dispatcher) so patchelf --print-interpreter
+# returns a real nix-store path. Shell-script stand-ins would always
+# error out on patchelf and force re-stage on every test run.
+
+test_extractGlobalprotectDebToOptTask_copies_from_marker_fresh() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: fake $HOME with markers; pangp-source with REAL ELF binaries
+  # + libwa symlink chain for the cp -a preservation assertion; empty
+  # pangpDest to exercise the fresh-deploy branch.
+  mkdir -p $dir/home/.local/share/pangp
+  local fakeStore=$dir/pangp-store/opt/paloaltonetworks/globalprotect
+  mkdir -p $fakeStore
+  echo $fakeStore >$dir/home/.local/share/pangp/source
+  local fakeDest=$dir/opt-target/paloaltonetworks/globalprotect
+  echo $fakeDest >$dir/home/.local/share/pangp/dest
+
+  # real ELF fixture: copy /bin/true. patchelf --print-interpreter on
+  # this returns a real nix-store ld-linux path that satisfies the
+  # patched-prefix idempotence check.
+  cp "$(command -v patchelf)" $fakeStore/PanGPS
+  cp "$(command -v patchelf)" $fakeStore/PanGPA
+
+  # libwa symlink chain — assert cp -a preserves it
+  echo 'fake libwaheap content' >$fakeStore/libwaheap.so.4.3.3608.0
+  ( cd $fakeStore && ln -s libwaheap.so.4.3.3608.0 libwaheap.so.4 )
+  ( cd $fakeStore && ln -s libwaheap.so.4 libwaheap.so )
+
+  # act: inject HOME + function-redef sudo as no-op for filesystem ops
+  local HOME=$dir/home
+  sudo() { "$@"; }  # tesht subshell confines
+  extractGlobalprotectDebToOptTask >/dev/null 2>&1
+  local rc=$?
+
+  # assert: convergence + symlink preservation + idempotence-check truth
+  local err=0
+  (( rc == 0 )) || { echo "task returned $rc"; err=1; }
+  [[ -f $fakeDest/PanGPS ]] || { echo "PanGPS not staged"; err=1; }
+  [[ -f $fakeDest/PanGPA ]] || { echo "PanGPA not staged"; err=1; }
+  [[ -L $fakeDest/libwaheap.so ]] || { echo "libwaheap.so symlink lost (cp -a regression)"; err=1; }
+  [[ -L $fakeDest/libwaheap.so.4 ]] || { echo "libwaheap.so.4 symlink lost"; err=1; }
+
+  local interp
+  interp=$(patchelf --print-interpreter $fakeDest/PanGPS 2>&1)
+  [[ $interp == /nix/store/* ]] || { echo "interpreter not nix-store: $interp"; err=1; }
+
+  return $err
+}
+
+test_extractGlobalprotectDebToOptTask_idempotent_when_already_patched() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: source AND dest already populated with real ELF binaries.
+  # Idempotence: task should detect already-patched dest and no-op.
+  mkdir -p $dir/home/.local/share/pangp
+  local fakeStore=$dir/pangp-store/opt/paloaltonetworks/globalprotect
+  local fakeDest=$dir/opt-target/paloaltonetworks/globalprotect
+  mkdir -p $fakeStore $fakeDest
+  echo $fakeStore >$dir/home/.local/share/pangp/source
+  echo $fakeDest >$dir/home/.local/share/pangp/dest
+  cp "$(command -v patchelf)" $fakeStore/PanGPS
+  cp "$(command -v patchelf)" $fakeStore/PanGPA
+  cp $fakeStore/PanGPS $fakeDest/PanGPS
+  cp $fakeStore/PanGPA $fakeDest/PanGPA
+
+  local HOME=$dir/home
+  sudo() { "$@"; }
+
+  # capture pre-state mtime; if task no-ops, mtime stays the same
+  local mtimeBefore mtimeAfter
+  mtimeBefore=$(stat -c '%Y' $fakeDest/PanGPS)
+  sleep 1
+  extractGlobalprotectDebToOptTask >/dev/null 2>&1
+  mtimeAfter=$(stat -c '%Y' $fakeDest/PanGPS)
+
+  (( mtimeBefore == mtimeAfter )) || { echo "task re-staged despite already-patched dest"; return 1; }
+  return 0
+}
+
+test_extractGlobalprotectDebToOptTask_fails_without_marker() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: $HOME without marker files
+  mkdir -p $dir/home/.local/share/pangp
+  local HOME=$dir/home
+
+  # act
+  local stderr
+  stderr=$(extractGlobalprotectDebToOptTask 2>&1)
+  local rc=$?
+
+  # assert: non-zero return; informative stderr
+  (( rc != 0 )) || { echo "expected non-zero rc with absent markers"; return 1; }
+  [[ $stderr == *"marker"* ]] || { echo "stderr missing 'marker' guidance: $stderr"; return 1; }
+  return 0
+}
+
 test_platformTaskGroups_unknownPlatformGetsNothing() {
   local got
   got=$(platformTaskGroups unknownplatform)

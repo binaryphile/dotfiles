@@ -684,8 +684,6 @@ extractGlobalprotectDebToOptTask() {
   # should start with (for the patched-interpreter idempotence check).
   pangpStorePrefix=${pangpSource%/opt/paloaltonetworks/globalprotect}
 
-  prog on
-
   # Idempotence: deployed PanGPS interpreter must already be the nix-
   # store-patched one (not stub-ld). If wrong/missing/stale, re-stage.
   optExtractedAndPatched() {
