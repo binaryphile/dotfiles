@@ -357,6 +357,139 @@ openssl dgst -sha384 -verify /opt/paloaltonetworks/globalprotect/sign/gp-public.
 # expect: Verified OK
 ```
 
+##### NixOS deployment gaps (operational debt enumeration, 2026-05-27)
+
+`programs.nix-ld` solves the loader problem, but pangp's runtime stack
+expects further FHS-shaped infrastructure that NixOS doesn't ship by
+default. Each item below was discovered empirically during the pangp
+integrity-check remediation session (cycle #6456) and is being tracked
+under tasks.dotfiles #6547 for declarative resolution.
+
+**Gap 1: `update-env`'s pangp group not enabled on NixOS.**
+`platformTaskGroups` includes `pangp` only for `crostini|desktop`. On
+NixOS hosts (`Platform=nixos`), `update-env -2` skips:
+`verifyPangpTarballTask`, `aptRemoveGlobalprotectTask`,
+`extractGlobalprotectDebToOptTask`, `installPangpSystemDesktopTask`,
+`enablePangpDefaultBrowserTask`. Each task either needs to run manually
+or be NixOS-aware. Manual workarounds:
+
+```bash
+# /opt staging:
+systemctl --user stop gpa.service
+sudo systemctl stop gpd.service
+sudo cp -a "$(< ~/.local/share/pangp/source)/." "$(< ~/.local/share/pangp/dest)/"
+sudo systemctl start gpd.service
+systemctl --user start gpa.service
+
+# default-browser flag (PanGPA otherwise rejects SAML with "Default browser is not enabled"):
+sudo ~/dotfiles/scripts/pangp-enable-default-browser
+sudo systemctl restart gpd.service
+systemctl --user restart gpa.service
+```
+
+**Gap 2: `gpa.service` systemd-user env is stripped on NixOS.**
+PanGPA spawns `xdg-open '<saml.html>' >/dev/null 2>&1 &` to launch the
+SAML browser. On NixOS, the user-systemd-manager-spawned service
+inherits a minimal env: `PATH=/nix/store/.../systemd-260.1/bin/` plus
+`DISPLAY=:0` only. No `WAYLAND_DISPLAY`, no
+`DBUS_SESSION_BUS_ADDRESS`, no `XDG_RUNTIME_DIR`, and crucially no
+`xdg-open` on PATH. The shell exits successfully (because of the `&`)
+but nothing actually opens. Symptom: `vpn-connect` hangs at
+"Retrieving configuration..." with no browser window appearing;
+`PanGPA.log` shows `tryLaunchBrowser: xdg-open command executed
+successfully`, but `/proc/<PanGPA-pid>/environ` reveals the stripped
+env.
+
+Manual workaround (drop-in override):
+
+```bash
+mkdir -p ~/.config/systemd/user/gpa.service.d
+cat > ~/.config/systemd/user/gpa.service.d/99-session-env.conf <<'CONF'
+[Service]
+Environment=PATH=/run/current-system/sw/bin:/etc/profiles/per-user/$USER/bin:/home/$USER/.nix-profile/bin
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+CONF
+systemctl --user daemon-reload
+systemctl --user restart gpa.service
+```
+
+Declarative fix: add equivalent `Environment=` lines to
+`contexts/pangp.nix`'s `systemd.user.services.gpa.Service.Environment`.
+
+**Gap 3: PanGPS binary hardcodes FHS system-utility paths.**
+`strings /opt/paloaltonetworks/globalprotect/PanGPS` reveals direct
+absolute-path invocations: `/sbin/ip route get`, `/sbin/ip route add`,
+`/sbin/ip route delete`, `/sbin/route add`, `/sbin/route del`,
+`/sbin/ifconfig`, `/usr/bin/openssl`, `/usr/bin/grep`, `/bin/ps`,
+`/usr/sbin/dmidecode`. PanGPS forks these to configure the tunnel
+(routing, interface setup) and to gather host info. On NixOS none of
+these paths exist by default. Symptom: portal SAML auth succeeds, but
+tunnel-up fails with `Error(725): failed to generate remote host
+<gateway-ip> access route` and `Error(2109): Failed to find route for
+<gateway-ip>`; `gpd0` interface stays DOWN.
+
+Manual workaround (system-level symlinks; pollutes /sbin, /usr/bin,
+/usr/sbin):
+
+```bash
+sudo bash <<'CONF'
+mkdir -p /sbin /usr/sbin /usr/bin /bin
+ln -sf /run/current-system/sw/bin/ip          /sbin/ip
+ln -sf /run/current-system/sw/bin/dmidecode   /usr/sbin/dmidecode
+ln -sf /run/current-system/sw/bin/grep        /usr/bin/grep
+# openssl: use the active nix-store path (verify with `readlink -f $(command -v openssl)`)
+ln -sf $(command -v openssl)                  /usr/bin/openssl
+ln -sf $(command -v ps)                       /bin/ps
+CONF
+```
+
+`/sbin/route` and `/sbin/ifconfig` are net-tools binaries; NixOS doesn't
+ship them by default. Adding them to `environment.systemPackages` (the
+`net-tools` package) creates them at `/run/current-system/sw/bin/`, but
+PanGPS's hardcoded `/sbin/route` would still need symlinking. PanGPS
+appears to prefer `/sbin/ip route` over `/sbin/route` when both are
+unavailable.
+
+Declarative fix: use `BindReadOnlyPaths=` in `gpd.service` (via
+pangp.nix) to mount the actual nix-store binaries into the expected
+FHS paths within the service's mount namespace. Service-scoped,
+doesn't pollute system /sbin. Approximate shape:
+
+```nix
+# gpd.service Service section:
+BindReadOnlyPaths = [
+  "${pkgs.iproute2}/bin/ip:/sbin/ip"
+  "${pkgs.openssl}/bin/openssl:/usr/bin/openssl"
+  "${pkgs.gnugrep}/bin/grep:/usr/bin/grep"
+  "${pkgs.procps}/bin/ps:/bin/ps"
+  "${pkgs.dmidecode}/bin/dmidecode:/usr/sbin/dmidecode"
+];
+```
+
+**Gap 4: `vpn-mode`'s `swapCallbackHandler` is Crostini-specific.**
+Hardcodes `$HOME/.nix-profile/share/applications/gp.desktop` (NixOS
+puts it at `/etc/profiles/per-user/$USER/share/applications/`) AND
+manipulates `/usr/share/applications/` (read-only nix-store on NixOS).
+The whole swap concept addresses a ChromeOS-host-vs-container
+scheme-handler issue that doesn't exist on NixOS. Symptom:
+`vpn-mode pangp` exits 1 with "gp.desktop missing (run update-env
+first)". Workaround: skip `vpn-mode pangp` and call `vpn-connect`
+directly. Declarative fix: `swapCallbackHandler` should be a no-op
+when `/etc/NIXOS` exists.
+
+**Open layer (not yet diagnosed)**: even after Gaps 1-3 are
+manually addressed and the FHS symlinks are in place, `vpn-connect`
+may still fail with `Error: Cannot connect to GlobalProtect Portal`
+and PanGPS.log shows `Failed to pre-login to the portal access.digi.com
+with return value 0(0)`. Network path to portal is healthy (`curl
+https://access.digi.com/` returns expected 403). Root cause not yet
+established — possibly state corruption from prior failed connect
+attempts, or stale PanPUAC_*.dat cache file under
+`~/.local/share/globalprotect/.GlobalProtect/`. To be investigated
+separately.
+
 Crostini: no change. Pristine bytes in `$out` are picked up by the
 extract task; Crostini's native loader runs them.
 
