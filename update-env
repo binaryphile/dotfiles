@@ -680,17 +680,18 @@ extractGlobalprotectDebToOptTask() {
     return 1
   fi
 
-  # Idempotence: deployed PanGPS interpreter must be a nix-store-patched
-  # one (not the NixOS /lib64/ld-linux-x86-64.so.2 stub-ld). The patched
-  # interpreter lives in glibc's nix-store path (NOT pangp's store path
-  # -- glibc is a separate derivation), so we match against /nix/store/*
-  # rather than against pangp's specific store prefix. If interpreter is
-  # missing or stub-ld, re-stage.
-  optExtractedAndPatched() {
+  # Idempotence: deployed binaries must be byte-identical to the
+  # nix-store source. cmp -s is robust regardless of whether bytes are
+  # autoPatchelf'd or pristine -- the prior interpreter-prefix proxy
+  # broke when pangp.nix switched to pristine binaries (the patched
+  # binary in /opt still had a /nix/store interpreter and the check
+  # falsely passed, skipping re-extraction).
+  optMatchesSource() {
     [[ -x "$pangpDest/PanGPS" && -x "$pangpDest/PanGPA" ]] && \
-      [[ "$(patchelf --print-interpreter "$pangpDest/PanGPS" 2>/dev/null)" == /nix/store/* ]]
+      cmp -s "$pangpDest/PanGPS" "$pangpSource/PanGPS" && \
+      cmp -s "$pangpDest/PanGPA" "$pangpSource/PanGPA"
   }
-  ok optExtractedAndPatched
+  ok optMatchesSource
 
   extractFromNixStore() {
     # Backup current dest content for one-week observation window. Only
