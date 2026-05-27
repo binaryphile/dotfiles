@@ -119,4 +119,4 @@ See [`op-run/README.md`](../op-run/README.md) for the full op-run flow.
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
-| UC-11 Use a Credentialed Tool | v1 implemented | Architecture documented in 1Password-stored canonical doc set. |
+| UC-11 Use a Credentialed Tool | v1 implemented | Architecture documented in canonical doc set in ~/projects/jeeves/security/. |

@@ -4,4 +4,4 @@ Credentialed-tool launcher. Wraps `op run` to resolve secrets from 1Password at 
 
 The launcher itself is `scripts/op-run`. It is packaged via `mkScriptBin` in `contexts/linux-base.nix` and ends up on PATH after `home-manager switch`.
 
-Architecture, deployment procedures, failure modes, and operational details are documented in the 1Password-stored canonical doc set (security.md, threat-model.md, secrets-lifecycle.md).
+Architecture, deployment procedures, failure modes, and operational details are documented in the canonical doc set in ~/projects/jeeves/security/ (security.md, threat-model.md, secrets-lifecycle.md).

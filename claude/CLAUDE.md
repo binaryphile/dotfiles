@@ -31,9 +31,12 @@ Two directories. Read the relevant guide before speculating or searching the web
 
 # Security Docs
 
-`docs/security.md`, `docs/secrets-lifecycle.md`, and `docs/threat-model.md` are
-sensitive documents stored in 1Password. They are not readable by agents. When
-changing credential handling or trust boundaries, tell Ted to review them.
+`~/projects/jeeves/security/security.md`,
+`~/projects/jeeves/security/secrets-lifecycle.md`, and
+`~/projects/jeeves/security/threat-model.md` are the canonical security
+architecture docs (private repo, version-controlled). Readable by agents.
+When changing credential handling or trust boundaries, amend these docs as
+part of the cycle (docs-first per the tandem protocol).
 
 # Secrets
 

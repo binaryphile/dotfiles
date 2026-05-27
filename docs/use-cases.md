@@ -161,7 +161,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Success Guarantee:** Shell, git, editor, tmux, dev tools, project repos, packages, dotfile symlinks in place; SSH auth working; Obsidian CSS snippets synced to all active project vaults; Era memory server binary built and service running; remaining manual steps documented.
 - **Technology:** update-env (bash), 1Password, home-manager, Nix. See [design.md Deployment](design.md#deployment-uc-4).
 
-**Credential model (UC-4 family):** documented in the 1Password-stored canonical doc set.
+**Credential model (UC-4 family):** documented in the canonical doc set in ~/projects/jeeves/security/.
 
 ---
 
@@ -196,7 +196,7 @@ Ted's AI agent (Claude Code). Modifies packages, configs, dotfiles, and docs. Ha
 - **Trigger:** New machine provisioned, or existing machine rebuilt/reimaged
 - **Postcondition:** Machine authorized; SSH agent serving keys; programmatic access available
 
-Architecture and operational procedures documented in the 1Password-stored canonical doc set.
+Architecture and operational procedures documented in the canonical doc set in ~/projects/jeeves/security/.
 
 ---
 
@@ -207,7 +207,7 @@ Architecture and operational procedures documented in the 1Password-stored canon
 - **Trigger:** New service credential needed, token rotated, credential retired
 - **Postcondition:** Credential available to enrolled machines that need it
 
-Operational procedures documented in the 1Password-stored canonical doc set.
+Operational procedures documented in the canonical doc set in ~/projects/jeeves/security/.
 
 ---
 
@@ -504,7 +504,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Trigger:** Ted starts a tool that requires credentials (e.g., Claude Code with MCP servers)
 - **Postcondition:** Tool running with declared credentials in its process environment
 
-Architecture, threat model, and operational procedures documented in the 1Password-stored canonical doc set (security.md, threat-model.md, secrets-lifecycle.md).
+Architecture, threat model, and operational procedures documented in the canonical doc set in ~/projects/jeeves/security/ (security.md, threat-model.md, secrets-lifecycle.md).
 
 ---
 
