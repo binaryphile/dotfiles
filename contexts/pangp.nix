@@ -51,6 +51,31 @@ in
   config = {
   home.packages = [ pangp ];
 
+  # Expose pangp's deployment source + canonical destination to update-env
+  # so it can source autoPatchelf'd binaries at deploy time instead of
+  # re-extracting the un-patched .deb. Cross-platform: home-manager runs
+  # on both Crostini (Debian + Nix) and NixOS hosts. Auto-updated on every
+  # home-manager switch; if pangp's nix-store rev rotates, marker content
+  # updates with it.
+  #
+  # Two markers (not one) because:
+  # - source: where the patched binaries live in nix-store
+  # - dest: the canonical runtime path (uses pangp.passthru.runtimeBase
+  #   so any future pangp.nix runtimeBase change propagates here without
+  #   re-touching update-env)
+  #
+  # `.outPath` is explicit (vs bare `"${pangp}"` derivation→string
+  # coercion) to make the producer code defensible against unusual
+  # pangp value shapes.
+  #
+  # Consumer: ~/dotfiles/update-env's extractGlobalprotectDebToOptTask
+  # reads these via `$(< ~/.local/share/pangp/source)` and stages the
+  # source content into the dest path. See docs/vpn.md "NixOS adaptation
+  # (calumny pattern)" subsection.
+  home.file.".local/share/pangp/source".text =
+    "${pangp.outPath}${pangp.passthru.runtimeBase}";
+  home.file.".local/share/pangp/dest".text = pangp.passthru.runtimeBase;
+
   # User systemd unit. The derivation ships gpa.service at
   # $pangp/lib/systemd/user/gpa.service, but home-manager re-derives user
   # units from the systemd.user.services attrset, so we restate it here
