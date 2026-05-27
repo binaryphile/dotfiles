@@ -416,6 +416,12 @@ stage2() {
     ~/projects/era/bin/validate-attestation   ~/.local/bin/validate-attestation
     ~/projects/era/bin/validate-plan          ~/.local/bin/validate-plan
   END
+
+  lib.Glob ~/projects/era/commands/* |
+    keepIf isFile |
+    map path '$path ~/.claude/commands/$(basename $path)' |
+    each task.Ln
+
   try eraMcpCleanupTask
   try eraServiceCleanupTask
   try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era.service
