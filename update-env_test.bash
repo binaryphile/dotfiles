@@ -687,6 +687,56 @@ test_deploySigningPub_converges() {
   return $rc
 }
 
+# Phase A hostname-keyed sidecar lookup: when signingPub_src is not injected,
+# deploySigningPub should prefer ~/dotfiles/ssh/id_ed25519_signing_<hostname>.pub
+# (per-host) over the unscoped ~/dotfiles/ssh/id_ed25519_signing.pub (legacy).
+test_deploySigningPub_prefersHostnameKeyedSidecar() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: fake ~/dotfiles/ssh/ with both unscoped (legacy) and hostname-keyed
+  mkdir -p $dir/dotfiles/ssh $dir/.ssh
+  echo 'ssh-ed25519 AAAA legacy-shared' >$dir/dotfiles/ssh/id_ed25519_signing.pub
+  echo 'ssh-ed25519 AAAA calumny-specific' >$dir/dotfiles/ssh/id_ed25519_signing_calumny.pub
+
+  # override $HOME and lib.MachineHostname so deploySigningPub's default-path
+  # logic resolves into our tmpdir. tesht subshells confine the overrides.
+  local HOME=$dir
+  lib.MachineHostname() { echo calumny; }
+
+  # act: no signingPub_src -- exercise the default-path hostname lookup
+  local signingPub_dst=$dir/.ssh/id_ed25519_signing.pub
+  deploySigningPub >/dev/null 2>&1
+
+  # assert: hostname-keyed sidecar was selected, not the legacy unscoped one
+  local rc=0
+  diff -q $dir/dotfiles/ssh/id_ed25519_signing_calumny.pub $signingPub_dst >/dev/null 2>&1 || { echo "did not pick hostname-keyed sidecar"; rc=1; }
+  ! diff -q $dir/dotfiles/ssh/id_ed25519_signing.pub $signingPub_dst >/dev/null 2>&1 || { echo "legacy sidecar was used despite hostname-keyed available"; rc=1; }
+
+  return $rc
+}
+
+# Fallback to legacy unscoped sidecar when no hostname-keyed sidecar exists.
+test_deploySigningPub_fallsBackToUnscoped() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  # arrange: only unscoped sidecar present (legacy host pre-migration)
+  mkdir -p $dir/dotfiles/ssh $dir/.ssh
+  echo 'ssh-ed25519 AAAA legacy-shared' >$dir/dotfiles/ssh/id_ed25519_signing.pub
+
+  local HOME=$dir
+  lib.MachineHostname() { echo calliope; }
+
+  local signingPub_dst=$dir/.ssh/id_ed25519_signing.pub
+  deploySigningPub >/dev/null 2>&1
+
+  local rc=0
+  diff -q $dir/dotfiles/ssh/id_ed25519_signing.pub $signingPub_dst >/dev/null 2>&1 || { echo "did not fall back to unscoped sidecar"; rc=1; }
+
+  return $rc
+}
+
 test_claudeEraConfigTask_converges() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN

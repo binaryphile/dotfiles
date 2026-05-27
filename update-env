@@ -1469,8 +1469,22 @@ sshAgentPreflight() {
 # deploySigningPub -- copy the signing key .pub sidecar from the repo to
 # ~/.ssh/id_ed25519_signing.pub. This is all op-ssh-sign needs to identify
 # which 1Password vault key to use for commit signing. No private key on disk.
+#
+# Source prefers the hostname-keyed sidecar (id_ed25519_signing_<hostname>.pub)
+# if it exists, falling back to the unscoped sidecar for legacy hosts that
+# haven't migrated to per-machine signing keys yet. Hostname-keyed lookup
+# matches opSigningKeyItem's per-host case-branch pattern.
 deploySigningPub() {
-  local repoPub=${signingPub_src:-$HOME/dotfiles/ssh/id_ed25519_signing.pub}
+  local repoPub=${signingPub_src:-}
+  if [[ -z $repoPub ]]; then
+    local hostname
+    hostname=$(lib.MachineHostname 2>/dev/null) || hostname=
+    if [[ -n $hostname && -f $HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub ]]; then
+      repoPub=$HOME/dotfiles/ssh/id_ed25519_signing_${hostname}.pub
+    else
+      repoPub=$HOME/dotfiles/ssh/id_ed25519_signing.pub
+    fi
+  fi
   local dst=${signingPub_dst:-$HOME/.ssh/id_ed25519_signing.pub}
 
   [[ -f $repoPub ]] || { echo "No signing key .pub sidecar in repo"; return 0; }
