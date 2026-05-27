@@ -623,41 +623,95 @@ aptRemoveGlobalprotectTask() {
   cmd aptRemoveGlobalprotect
 }
 
-# extractGlobalprotectDebToOptTask unpacks the PanGPLinux tarball's amd64
-# .deb into the real /opt/paloaltonetworks/globalprotect/, providing the
-# UNPATCHED PanGPS + PanGPA binaries that pangp's systemd units invoke.
-# PanGPS performs a self-integrity check at daemon startup; the nix-store
-# binaries are autoPatchelf'd (DT_NEEDED rewrites), fail their hash check,
-# and then reject every incoming PanGPA IPC connection. The .deb subtree
-# avoids this by preserving the original signed binaries. See pangp.nix's
-# header comment and docs/design.md "PanGPS self-integrity".
+# extractGlobalprotectDebToOptTask stages pangp's autoPatchelf'd binaries
+# from nix-store into the runtime base (pangp.passthru.runtimeBase, which
+# is /opt/paloaltonetworks/globalprotect by convention). Both PanGPS and
+# PanGPA land co-located there; both are patched (interpreter -> nix-store
+# glibc, which exists at that path on NixOS AND Crostini after Nix install).
 #
-# Idempotency: discriminator checks for the unpatched PanGPS at /opt
-# (presence is sufficient -- version sync with the tarball is handled by
-# verifyPangpTarballTask which bumps with the flake.nix `pangp` src=).
+# PanGPS performs an IPC peer co-location check at PanGPA connect time:
+# dirname(realpath(/proc/<peer>/exe)) must equal dirname(realpath(/proc/
+# self/exe)). Staging both binaries at the same runtime base satisfies
+# this; cp -a preserves the libwa symlink chain.
+#
+# The earlier strategy (extract .deb to /opt, leave binaries unpatched)
+# works on Debian-flavored hosts (Crostini) where /lib64/ld-linux-x86-64
+# .so.2 is a real glibc loader. On bare NixOS that path is a stub-ld
+# that deliberately fails. See docs/vpn.md "NixOS adaptation".
+#
+# Markers (deployed by contexts/pangp.nix):
+#   ~/.local/share/pangp/source -> $out/opt/paloaltonetworks/globalprotect
+#   ~/.local/share/pangp/dest   -> runtimeBase (e.g., /opt/...)
+#
+# Idempotency: deployed PanGPS interpreter must start with the recorded
+# nix-store prefix. If not (stub-ld, missing, or stale rev), re-stage.
+#
+# Marker absence is FATAL — home-manager must have activated to deploy
+# them before this task runs. See docs/vpn.md for the bootstrap sequence.
+#
 # Requires sudo NOPASSWD on Crostini for the install into /opt.
 extractGlobalprotectDebToOptTask() {
-  local tarball="$CrostiniDir/PanGPLinux-6.3.3-c31.tgz"
-  local deb="GlobalProtect_deb-6.3.3.1-638.deb"
-  local optDir="/opt/paloaltonetworks/globalprotect"
+  local srcMarker=$HOME/.local/share/pangp/source
+  local destMarker=$HOME/.local/share/pangp/dest
 
-  desc 'extract .deb subtree to /opt/paloaltonetworks/globalprotect (unpatched binaries for PanGPS self-check)'
+  desc 'stage pangp patched binaries from nix-store into runtimeBase'
+
+  # Marker presence is a HARD prerequisite — home-manager must have
+  # activated to deploy them. Fatal if absent; operator runs
+  # `home-manager switch` first.
+  if [[ ! -r $srcMarker || ! -r $destMarker ]]; then
+    echo "pangp marker files not deployed at $srcMarker / $destMarker; run home-manager switch first" >&2
+    return 1
+  fi
+
+  local pangpSource pangpDest pangpStorePrefix
+  pangpSource=$(< "$srcMarker")
+  pangpDest=$(< "$destMarker")
+
+  # Defensive: markers may exist but be empty (interrupted home-manager
+  # activation) or point at a path that no longer exists (nix-store GC
+  # fired between marker deploy and task run).
+  if [[ -z $pangpSource || -z $pangpDest ]]; then
+    echo "pangp marker files are empty; re-run home-manager switch" >&2
+    return 1
+  fi
+  if [[ ! -d $pangpSource ]]; then
+    echo "pangp source path '$pangpSource' does not exist (nix-store GC?); re-run home-manager switch" >&2
+    return 1
+  fi
+
+  # The nix-store prefix is what the deployed binaries' interpreter
+  # should start with (for the patched-interpreter idempotence check).
+  pangpStorePrefix=${pangpSource%/opt/paloaltonetworks/globalprotect}
+
   prog on
-  optExtracted() {
-    [[ -x "$optDir/PanGPS" && -x "$optDir/PanGPA" ]]
-  }
-  ok optExtracted
 
-  extractDeb() {
-    local tmp=$(mktemp -d)
-    trap "rm -rf '$tmp'" RETURN
-    tar xzf "$tarball" -C "$tmp"
-    [[ -f "$tmp/$deb" ]] || { echo "expected $deb inside $tarball; not found" >&2; return 1; }
-    dpkg-deb -x "$tmp/$deb" "$tmp/extracted"
-    sudo mkdir -p "$optDir"
-    sudo cp -a "$tmp/extracted/opt/paloaltonetworks/globalprotect/." "$optDir/"
+  # Idempotence: deployed PanGPS interpreter must already be the nix-
+  # store-patched one (not stub-ld). If wrong/missing/stale, re-stage.
+  optExtractedAndPatched() {
+    [[ -x "$pangpDest/PanGPS" && -x "$pangpDest/PanGPA" ]] && \
+      [[ "$(patchelf --print-interpreter "$pangpDest/PanGPS" 2>/dev/null)" == "$pangpStorePrefix"* ]]
   }
-  cmd extractDeb
+  ok optExtractedAndPatched
+
+  extractFromNixStore() {
+    # Backup current dest content for one-week observation window. Only
+    # backs up if the dir has real content AND no backup exists yet.
+    # Single-snapshot rationale: source of truth is the immutable nix-
+    # store; the dest snapshot is a rollback safety net for the deploy
+    # operation, not a per-deploy history.
+    if [[ -e "$pangpDest/PanGPS" && ! -e "$pangpDest.pre-pangp-store-extract" ]]; then
+      sudo cp -a "$pangpDest" "$pangpDest.pre-pangp-store-extract"
+    fi
+    sudo mkdir -p "$pangpDest"
+    # cp -a preserves symlinks. libwa* libraries ship as a symlink
+    # chain (libwaapi.so -> libwaapi.so.4 -> libwaapi.so.4.3.3608.0);
+    # -a preserves the chain. -aL would dereference symlinks producing
+    # byte-identical regular files per chain — works for dlopen but
+    # changes filesystem semantics for no benefit.
+    sudo cp -a "$pangpSource/." "$pangpDest/"
+  }
+  cmd extractFromNixStore
 }
 
 # installPangpSystemDesktopTask resolves the globalprotectcallback://
