@@ -12,6 +12,14 @@ let
     };
     runtimeInputs = [ gpoc ];
   };
+
+  # vpn-mode toggles gpd.service on/off; vpn-connect dispatches on it.
+  # Plain bash, no substitutions (systemctl/sudo from system PATH).
+  vpn-mode = mkScriptBin {
+    name = "vpn-mode";
+    src = ../../scripts/vpn-mode;
+    substitutions = {};
+  };
 in
 {
   imports = [ ../linux-base.nix ../claude.nix ../pangp.nix ];
@@ -30,5 +38,5 @@ in
     asciinema
     asciinema-agg
     wl-clipboard
-  ] ++ [ gpoc vpn-connect ];
+  ] ++ [ gpoc vpn-connect vpn-mode ];
 }
