@@ -22,6 +22,7 @@ ssh=${ssh:-ssh}
 curl=${curl:-curl}
 jq=${jq:-jq}
 ip=${ip:-ip}
+grep=${grep:-grep}
 
 if [[ -z ${State:-} ]]; then
   echo "probe-lib.bash: \$State is not set -- caller must set it to a writable directory before sourcing this library" >&2
@@ -78,8 +79,8 @@ readState() {
 # around on disconnect; pangp leaves gpd0 around between connect cycles).
 # tun0 = gpoc (openconnect); gpd0 = official pangp client.
 vpnUp() {
-  $ip -o link show tun0 2>/dev/null | grep -q 'state UP' \
-    || $ip -o link show gpd0 2>/dev/null | grep -q 'state UP'
+  $ip -o link show tun0 2>/dev/null | $grep -q 'state UP' \
+    || $ip -o link show gpd0 2>/dev/null | $grep -q 'state UP'
 }
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
@@ -108,7 +109,7 @@ sshHost() {
   local err rc
   err=$($ssh -T -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
     "git@$host" 2>&1) && rc=$? || rc=$?
-  if (( rc == 0 || rc == 1 )) || grep -q 'shell request failed' <<<"$err"; then
+  if (( rc == 0 || rc == 1 )) || $grep -q 'shell request failed' <<<"$err"; then
     echo ok
   else
     echo fail
