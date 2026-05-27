@@ -637,6 +637,27 @@ test_agentTomlTask_converges() {
   return $rc
 }
 
+# Phase A migrated-host coverage: calumny's per-machine vault is in the Digi work
+# account. The helpers' calumny case branches must produce an agent.toml that
+# references vault=calumny, account=digi.1password.com, and the per-host item names.
+test_agentTomlTask_calumny() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  local agentToml_hostname=calumny
+  local agentToml_path=$dir/agent.toml
+  agentTomlTask >/dev/null 2>&1
+
+  local rc=0
+  [[ -f $dir/agent.toml ]] || { echo "target not created"; rc=1; }
+  grep -q '"calumny"' $dir/agent.toml          || { echo "calumny vault missing";              rc=1; }
+  grep -q '"calumny SSH Key"' $dir/agent.toml  || { echo "calumny auth item missing";         rc=1; }
+  grep -q '"calumny signing SSH Key"' $dir/agent.toml || { echo "calumny signing item missing"; rc=1; }
+  grep -q '"digi.1password.com"' $dir/agent.toml || { echo "digi account missing";            rc=1; }
+
+  return $rc
+}
+
 test_deploySigningPub_converges() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
