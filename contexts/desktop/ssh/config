@@ -1,17 +1,5 @@
 UseRoaming no
 
-# Calumny pre-transition: the on-disk ~/.ssh/id_ed25519 is registered with
-# Codeberg as the "calumny" key. The 1Password agent only offers personal-
-# vault keys (calliope, calderon) which Codeberg doesn't accept under
-# binaryphile, so without this override pushes fail with too-many-auth-
-# failures. Drop the IdentityAgent for codeberg.org and force the on-disk
-# key. Remove this stanza once calumny's auth key is moved into a vault
-# the agent serves here.
-Host codeberg.org
-IdentityAgent none
-IdentitiesOnly yes
-IdentityFile ~/.ssh/id_ed25519
-
 Host *
 IdentityAgent ~/.1password/agent.sock
 UserKnownHostsFile ~/.ssh/new_known_hosts ~/.ssh/known_hosts
