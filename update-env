@@ -1744,22 +1744,29 @@ opAuthKeyItem() { echo "$1 SSH Key"; }
 
 opSigningKeyItem() {
   case $1 in
-    calumny) echo "calumny signing SSH Key" ;;
-    *)       echo "calliope signing SSH Key" ;;  # legacy shared; calliope/calderon pending their Phase A migration
+    calliope) echo "calliope signing SSH Key" ;;  # currently the shared identity in personal Private vault; per-host migration pending
+    calderon) echo "calliope signing SSH Key" ;;  # currently uses calliope's shared identity; per-host migration pending
+    caltrop)  echo "calliope signing SSH Key" ;;  # currently uses calliope's shared identity; per-host migration pending
+    *)        echo "$1 signing SSH Key" ;;        # per-host (default: migrated hosts and new hosts)
   esac
 }
 
 opVault() {
   case $1 in
-    calumny) echo "calumny" ;;
-    *)       echo "Private" ;;  # legacy; calliope/calderon pending their Phase A migration
+    calliope) echo "Private" ;;   # legacy; pending per-host migration
+    calderon) echo "Private" ;;   # legacy; pending per-host migration
+    caltrop)  echo "Private" ;;   # legacy; pending per-host migration
+    *)        echo "$1" ;;        # per-host (default: migrated hosts and new hosts)
   esac
 }
 
 opAccount() {
   case $1 in
-    calumny) echo "digi.1password.com" ;;
-    *)       echo "my.1password.com" ;;  # personal account default
+    calumny)  echo "digi.1password.com" ;;  # work account
+    calliope) echo "my.1password.com" ;;    # personal account
+    calderon) echo "my.1password.com" ;;    # personal account
+    caltrop)  echo "my.1password.com" ;;    # personal account
+    *)        echo "my.1password.com" ;;    # personal account default for new hosts
   esac
 }
 

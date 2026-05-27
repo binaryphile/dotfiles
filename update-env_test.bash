@@ -658,6 +658,28 @@ test_agentTomlTask_calumny() {
   return $rc
 }
 
+# Phase A legacy-host coverage: calliope/calderon are on the personal account and
+# still use the shared `calliope signing SSH Key` identity until their per-host
+# migration. The case branches must produce agent.toml entries that reference
+# vault=Private, account=my.1password.com, and the legacy shared signing item.
+test_agentTomlTask_calliopeLegacy() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  local agentToml_hostname=calliope
+  local agentToml_path=$dir/agent.toml
+  agentTomlTask >/dev/null 2>&1
+
+  local rc=0
+  [[ -f $dir/agent.toml ]] || { echo "target not created"; rc=1; }
+  grep -q '"Private"' $dir/agent.toml                  || { echo "Private vault missing";       rc=1; }
+  grep -q '"calliope SSH Key"' $dir/agent.toml         || { echo "calliope auth item missing";  rc=1; }
+  grep -q '"calliope signing SSH Key"' $dir/agent.toml || { echo "legacy shared signing missing"; rc=1; }
+  grep -q '"my.1password.com"' $dir/agent.toml         || { echo "personal account missing";    rc=1; }
+
+  return $rc
+}
+
 test_deploySigningPub_converges() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
