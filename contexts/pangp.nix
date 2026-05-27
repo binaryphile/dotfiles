@@ -112,7 +112,11 @@ in
         "XDG_CONFIG_HOME=%h/.config"
         "XDG_DATA_HOME=%h/.local/share"
       ];
-      ExecStartPre = "/bin/mkdir -p %h/.local/share/globalprotect";
+      # NixOS lacks /bin/mkdir (only /bin/sh); systemd-exec'd path must be
+      # absolute and exist. Use nix-store coreutils for cross-platform safety
+      # (works on NixOS and Crostini-with-Nix; the Crostini /bin/mkdir path
+      # would also work there but the nix-store path is uniform).
+      ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p %h/.local/share/globalprotect";
       ExecStart = "${pangp.passthru.runtimeBase}/PanGPA start";
       Restart = "on-failure";
       RestartSec = 1;
