@@ -324,6 +324,24 @@ longer applies `autoPatchelfHook`, so the bytes it produces (and that
 `update-env` copies to /opt) are now pristine .deb bytes that PanGPS
 will accept.
 
+**Platform caveat (NixOS deploy)**: `update-env`'s
+`platformTaskGroups` does NOT include the `pangp` group when
+`Platform=nixos`. On NixOS hosts (calumny), `update-env -2` will not
+run `extractGlobalprotectDebToOptTask` automatically; the /opt
+re-staging must be invoked manually after each `mk update-dotfiles`:
+
+```bash
+systemctl --user stop gpa.service
+sudo systemctl stop gpd.service
+sudo cp -a "$(< ~/.local/share/pangp/source)/." "$(< ~/.local/share/pangp/dest)/"
+sudo systemctl start gpd.service
+systemctl --user start gpa.service
+```
+
+(`Text file busy` if services aren't stopped first — PanGPS/PanGPA
+mmap their executable images.) Wiring NixOS into the `pangp` group
+declaratively is tracked at tasks.dotfiles #6547.
+
 Verification on a NixOS host post-deploy:
 
 ```bash
