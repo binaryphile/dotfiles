@@ -664,7 +664,7 @@ extractGlobalprotectDebToOptTask() {
     return 1
   fi
 
-  local pangpSource pangpDest pangpStorePrefix
+  local pangpSource pangpDest
   pangpSource=$(< "$srcMarker")
   pangpDest=$(< "$destMarker")
 
@@ -680,15 +680,15 @@ extractGlobalprotectDebToOptTask() {
     return 1
   fi
 
-  # The nix-store prefix is what the deployed binaries' interpreter
-  # should start with (for the patched-interpreter idempotence check).
-  pangpStorePrefix=${pangpSource%/opt/paloaltonetworks/globalprotect}
-
-  # Idempotence: deployed PanGPS interpreter must already be the nix-
-  # store-patched one (not stub-ld). If wrong/missing/stale, re-stage.
+  # Idempotence: deployed PanGPS interpreter must be a nix-store-patched
+  # one (not the NixOS /lib64/ld-linux-x86-64.so.2 stub-ld). The patched
+  # interpreter lives in glibc's nix-store path (NOT pangp's store path
+  # -- glibc is a separate derivation), so we match against /nix/store/*
+  # rather than against pangp's specific store prefix. If interpreter is
+  # missing or stub-ld, re-stage.
   optExtractedAndPatched() {
     [[ -x "$pangpDest/PanGPS" && -x "$pangpDest/PanGPA" ]] && \
-      [[ "$(patchelf --print-interpreter "$pangpDest/PanGPS" 2>/dev/null)" == "$pangpStorePrefix"* ]]
+      [[ "$(patchelf --print-interpreter "$pangpDest/PanGPS" 2>/dev/null)" == /nix/store/* ]]
   }
   ok optExtractedAndPatched
 
