@@ -14,43 +14,39 @@
 #
 # Runtime layout: pangp's bundled libwa* libraries dlopen each other via
 # absolute paths under /opt/paloaltonetworks/globalprotect/. The .deb
-# installs there, and the binaries are built assuming that path. The
-# original design kept the /opt/... layout INSIDE $out and used
-# autoPatchelfHook to rewrite DT_NEEDED entries to nix-store paths,
-# planning to skip the /opt symlink entirely.
+# installs there, and the binaries are built assuming that path.
 #
-# That design is broken: PanGPS performs an IPC-peer co-location check
-# at PanGPA connect time. It compares the directory of /proc/<peer>/exe
-# against the directory of its own /proc/self/exe; if they differ, it
-# logs
-#   Error( 312): Connected by process not from GP folder, app: <peer>
-#   Error( 212): Connected by non-PanGPA. Close socket.
-# and rejects. The error text is misleading -- "GP folder" is *PanGPS's
-# own directory*, not a hardcoded path; the same rejection fires when
-# PanGPS runs from /tmp/gp/.../PanGPS even if the peer's path looks
-# canonical. The hash of the binary doesn't matter -- a byte-flipped
-# PanGPS (with different SHA-384) in the same directory as PanGPA still
-# accepts the connection. (Verified empirically 2026-05-20: byte-flipped
-# /opt/.../PanGPS accepted /opt/.../PanGPA; pristine /tmp/gp/.../PanGPS
-# rejected /opt/.../PanGPA. See the byte-flip and directory-mismatch
-# experiments documented in docs/design.md.)
+# Two PanGPS-enforced constraints govern packaging:
 #
-# Practical consequence for nix packaging: autoPatchelfHook's DT_NEEDED
-# rewrites are NOT the cause of the rejection per se -- the cause is
-# that the autoPatchelf'd PanGPS lives in /nix/store/.../opt/... while
-# PanGPA's /opt symlink (or absence thereof) places the peer at a
-# different directory. The wedge stays masked as long as a matching pair
-# of binaries exists in the same directory; the apt-shipped .deb at
-# /opt was that pair until `apt purge globalprotect`.
+# 1. App Integrity check (asymmetric, the load-bearing constraint).
+#    PanGPS verifies PanGPA's binary at every IPC connection: it reads
+#    /proc/<peer>/exe, SHA-384's the file content, and RSA-verifies the
+#    signature in /opt/.../sign/PanGPA-sha384.sig against
+#    /opt/.../sign/gp-public.pem. Any modification to PanGPA -- including
+#    autoPatchelfHook's ELF-interpreter rewrite -- breaks the signature
+#    and PanGPS closes the socket with Error(1322). PanGPS does NOT
+#    self-verify; modified PanGPS bytes run fine.
+#
+# 2. Co-location check (secondary). PanGPS also requires
+#    dirname(realpath(/proc/<peer>/exe)) == dirname(realpath(/proc/self/exe)).
+#    On mismatch it emits Error(312) "not from GP folder". Error(312) is
+#    ALSO emitted as a fallback whenever IsConnectedByPanGPA returns false
+#    -- including from sig-check failure -- which makes the text misleading
+#    when the real failure was (1) above.
+#
+# The earlier byte-flip experiment (2026-05-20) tested PanGPS-flipping and
+# concluded "hashes don't matter" -- the PanGPA-flipping case wasn't
+# tested. Re-verified empirically 2026-05-27 (see era memory 99b0337bc6fe):
+# pristine PanGPA passes openssl verify; autoPatchelf'd PanGPA fails.
 #
 # Working architecture (see docs/design.md "pangp packaging" and
-# docs/vpn.md "PanGPS co-location workaround"): place both PanGPS and
-# PanGPA into the same /opt/paloaltonetworks/globalprotect/ directory
-# (extracted from the .deb by update-env's extractGlobalprotectDebToOptTask),
-# and point the systemd units' ExecStart at those /opt paths. The
-# Nix-managed systemd unit + scripts stay; only the proprietary binaries
-# run from /opt. autoPatchelfHook is preserved here for tooling that may
-# still consume the in-store layout (e.g. the bin/PanGPA wrapper).
+# docs/vpn.md "Critical: PanGPS App Integrity check"): keep both PanGPS
+# and PanGPA bit-for-bit identical to the .deb-shipped versions, deploy
+# them co-located at /opt/paloaltonetworks/globalprotect/ via update-env's
+# extractGlobalprotectDebToOptTask. On NixOS, programs.nix-ld.enable=true
+# (in nixos-config/common/configuration.nix) supplies a real
+# /lib64/ld-linux-x86-64.so.2 so pristine generic-Linux binaries can exec.
+# Crostini uses its native FHS loader; no nix-ld needed there.
 #
 # Cert validation note: pangp's libwa* stack statically links OpenSSL and
 # uses bundled CA roots. The system trust store at /etc/ssl/certs is NOT
@@ -92,33 +88,14 @@ pkgs.stdenv.mkDerivation {
 
   nativeBuildInputs = with pkgs; [
     dpkg
-    autoPatchelfHook
     makeWrapper
   ];
 
-  # Runtime libs the bundled binaries (PanGPS, PanGPA, etc.) need from the
-  # host. PanGPS itself is small and links libpthread/libdl/libstdc++/
-  # libgcc_s/libc. libwaapi.so additionally needs libm and the bundled
-  # libwa* siblings -- those are colocated and resolved via DT_NEEDED with
-  # absolute /opt paths, so we must NOT try to bring them in via Nix; they
-  # come from $out/opt/... at runtime (via the /opt symlink).
-  buildInputs = with pkgs; [
-    stdenv.cc.cc.lib   # libstdc++
-    glibc              # libc, libpthread, libdl, libm
-  ];
-
-  # The bundled libwa*.so files reference each other by absolute /opt
-  # paths. autoPatchelfHook complains about these as "not found" because
-  # /opt doesn't exist inside the nix build sandbox. Suppress those
-  # specific warnings -- runtime resolution happens via the activation-
-  # script symlink documented above.
-  autoPatchelfIgnoreMissingDeps = [
-    "libwaapi.so.4"
-    "libwaheap.so.4"
-    "libwalocal.so.4"
-    "libwaresource.so"
-    "libwautils.so.4"
-  ];
+  # Keep the .deb-shipped binaries bit-for-bit identical so PanGPS's
+  # App Integrity check on PanGPA passes at runtime. Runtime loader is
+  # provided by programs.nix-ld on NixOS (set in nixos-config); Crostini
+  # has a native FHS /lib64/ld-linux-x86-64.so.2.
+  dontPatchELF = true;
 
   unpackPhase = ''
     runHook preUnpack
