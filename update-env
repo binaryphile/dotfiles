@@ -918,16 +918,21 @@ agentTomlTask() {
 
 agentTomlContent() {
   local hostname=$1
+  # Auth key listed first so ssh negotiation matches it before the signing key.
+  # On flat-section registries (Codeberg/Forgejo issue #4268), this preserves
+  # NIST SP 800-57 key-purpose separation operationally: auth ops use the auth
+  # key, signing ops use the signing key (via op-ssh-sign which selects by
+  # fingerprint, not by agent-offer order).
   cat <<EOF
 [[ssh-keys]]
 account = "$(opAccount $hostname)"
 vault = "$(opVault $hostname)"
-item = "$(opSigningKeyItem $hostname)"
+item = "$(opAuthKeyItem $hostname)"
 
 [[ssh-keys]]
 account = "$(opAccount $hostname)"
 vault = "$(opVault $hostname)"
-item = "$(opAuthKeyItem $hostname)"
+item = "$(opSigningKeyItem $hostname)"
 EOF
 }
 
