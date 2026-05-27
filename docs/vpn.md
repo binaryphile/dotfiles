@@ -260,6 +260,49 @@ sudo tail /opt/paloaltonetworks/globalprotect/PanGPS.log
 
 This is a manual fix today; folding it into the home-manager activation hook is tracked separately. The Nix-managed systemd unit + scripts stay as they are; only the proprietary binaries themselves come from the `.deb` extract.
 
+#### NixOS adaptation (calumny pattern)
+
+The `.deb`-extract strategy above works on Debian-flavored hosts (Crostini) where `/lib64/ld-linux-x86-64.so.2` resolves to a real Debian glibc loader. On bare NixOS, that path resolves to NixOS's stub-ld which deliberately fails for generic-Linux ELF binaries (status 127, "Could not start dynamically linked executable" per <https://nix.dev/permalink/stub-ld>).
+
+To preserve the co-location strategy on NixOS, source the binaries from `pangp.nix`'s autoPatchelf'd output instead of the raw `.deb`:
+
+1. **`contexts/pangp.nix` deploys two markers** via `home.file` (cross-platform; home-manager runs on both Crostini and NixOS):
+
+    ```nix
+    home.file.".local/share/pangp/source".text =
+      "${pangp.outPath}${pangp.passthru.runtimeBase}";
+    home.file.".local/share/pangp/dest".text = pangp.passthru.runtimeBase;
+    ```
+
+    `source` points into the nix-store at pangp's autoPatchelf'd `/opt/...` subtree; `dest` is the canonical runtime path (uses `pangp.passthru.runtimeBase` to avoid hardcoding `/opt/...`).
+
+2. **`update-env`'s `extractGlobalprotectDebToOptTask` reads the markers** and copies from the nix-store source to the runtime destination (replacing the prior `.deb` extraction):
+
+    ```bash
+    PANGP_SOURCE=$(< ~/.local/share/pangp/source)
+    PANGP_DEST=$(< ~/.local/share/pangp/dest)
+    sudo cp -a "$PANGP_SOURCE/." "$PANGP_DEST/"
+    ```
+
+    `cp -a` preserves the libwa symlink chain (`libwaapi.so → libwaapi.so.4 → libwaapi.so.4.3.3608.0`). Idempotence check verifies the deployed `PanGPS` interpreter starts with the recorded nix-store prefix; drift re-stages.
+
+3. **Both `PanGPS` and `PanGPA` at `/opt` are patched**; their ELF interpreter is the nix-store glibc loader, which exists at that path on both NixOS and Crostini (Crostini has `/nix/store/...` after Nix install). Co-location preserved by construction — `dirname(realpath(/proc/<pid>/exe))` resolves to the destination dir on both binaries.
+
+Verification gate on a new host (before recommending this pattern):
+
+```bash
+patchelf --print-interpreter "$PANGP_SOURCE/PanGPS"
+# expect: /nix/store/.../glibc/lib/ld-linux-x86-64.so.2
+
+patchelf --print-rpath "$PANGP_SOURCE/libwa"{api,utils,heap}.so.4
+# expect: rpath points at nix-store gcc-libs AND/OR $ORIGIN
+
+ldd "$PANGP_SOURCE/PanGPS"
+# expect: all libs resolve into /nix/store/...
+```
+
+Operational caveat: the deployed `/opt/.../PanGPS` interpreter still points at the OLD nix-store path after a pangp rebuild that rotates the rev. The idempotence check detects drift and re-stages on the next `update-env -2`. If `nix-store --gc` fires between rebuild and re-stage, the deployed binaries' interpreter target disappears; re-staging restores correctness.
+
 ### Critical: SAML browser routing on Crostini (host Chrome via darkhttpd shim)
 
 pangp's `CPanDefaultBrowserLinux` writes the SAML form as a local `saml.html` file to `~/.local/share/globalprotect/GP_HTML/` (HTTP-POST binding — the SAMLRequest is too long for URL-query, must come back as a form field). It then calls `xdg-open` on the file path. Two problems on Crostini:
