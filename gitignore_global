@@ -38,7 +38,6 @@ envrc
 conf.py
 ignore/
 .obsidian/
-*.sqlite
 .tool-versions
 mk
 gitlab-ci.yml
@@ -50,3 +49,37 @@ node_modules/
 .jira
 *-server-log.md
 .claude/
+
+# binary artifacts (added after era pack-bloat incident 2026-05-26)
+# compiled objects / libraries
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exe
+*.bin
+*.elf
+# compiled bytecode
+*.pyc
+*.pyo
+*.class
+# compressed archives (extending the existing tar/gz/bz2/tgz set)
+*.zip
+*.7z
+*.rar
+*.xz
+*.zst
+# databases
+*.db
+*.sqlite3
+# ML / model artifacts
+*.onnx
+*.pt
+*.pth
+*.h5
+*.safetensors
+*.gguf
+*.pkl

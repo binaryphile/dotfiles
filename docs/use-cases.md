@@ -352,6 +352,7 @@ Operational procedures documented in the canonical doc set in ~/projects/jeeves/
   - 4a. Auth callback not dispatched -> URL scheme handler misconfigured (see [docs/vpn.md](vpn.md)); resume at step 1
   - 4b. (pangp/Crostini) `/tmp/gpcallback.log` shows `gpclient::launch_gui Failed to feed auth data to the CLI` -> system `/usr/share/applications/gpgui.desktop` is still claiming the callback scheme over `gp.desktop`; re-run `update-env`'s system-desktop task; resume at step 1
   - 4c. PanGPS rejects PanGPA with `Connected by non-PanGPA. Close socket.` -> daemon and agent live in different directories; co-locate both at `/opt/paloaltonetworks/globalprotect/` (see [docs/vpn.md: PanGPS co-location workaround](vpn.md)); resume at step 1
+  - 4d. PanGPS log shows `Failed to connect to portal` while the shell can reach the same host -> daemon stuck after long uptime (sleep/wake/network swap cycles); `sudo systemctl restart gpd`; resume at step 1 (see [docs/vpn.md: PanGPS Failed to connect to portal with network reachable](vpn.md))
   - 5a. Reconnect loop hammers a dead gateway -> Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
 - **Success Guarantee:** VPN tunnel up. gpoc mode preserves split-tunnel routing; pangp pushes full-tunnel via `gpd0` (all traffic via Prisma Access), with internal DNS handling split-horizon hostnames.
@@ -564,6 +565,36 @@ Architecture, threat model, and operational procedures documented in the canonic
 
 ---
 
+### UC-14: Guard Against Accidental Binary Commits
+
+- **Primary Actor:** Ted
+- **Secondary Actors:** git, pre-commit hook, global gitignore
+- **Goal:** Block accidental binary commits across every repo Ted works in without leaving any settings or hook artifact in any individual repo's tracked content
+- **Scope:** Dotfiles git configuration (global)
+- **Level:** User goal
+- **Trigger:** Automatic -- fires on every `git commit` in any repo that does not set a local `core.hooksPath`
+- **Preconditions:** UC-4 completed (home-manager-deployed `~/.gitconfig` with `[core] hooksPath = /home/ted/dotfiles/githooks`); `~/dotfiles/githooks/pre-commit` is executable
+- **Stakeholders:**
+  - Ted -- protected from committing build artifacts (Go binaries with no extension, ELF objects, archives, databases, ML model files) to personal or shared repos
+  - Shared repos (dal, pepin, cloud-services, urma) -- the guard's existence leaves no trace in their tracked files or `.git/config`; coworkers never see it
+  - Coworkers on shared repos -- no behavior change visible to them
+- **Main Success Scenario:**
+  1. Ted runs `git commit` in any repo
+  2. Pre-commit hook reads `git diff --cached --numstat --no-renames` against the staged tree
+  3. Hook flags every entry git classifies as binary (numstat emits `- -` for binary content)
+  4. If any binary entry is detected, hook prints the file list + remediation options on stderr and exits 1; the commit aborts
+  5. If no binary entry, hook exits 0; commit proceeds normally
+- **Extensions:**
+  - 2a. *Repo sets local `core.hooksPath`*: the local chain takes precedence; the global guard is inactive in that repo (era's `.githooks/` is the canonical example)
+  - 3a. *Operator intentionally commits binary (test fixture, image, signed artifact)*: bypass with `git commit --no-verify`
+  - 3b. *Binary belongs to a recurring class*: add the path glob to per-repo `.gitignore` (project-local) or `~/dotfiles/gitignore_global` (all repos) and re-stage
+  - 5a. *Hook script missing or non-executable*: git falls back to no hook; commits succeed without inspection (fail-open by design -- a broken guard must not block work)
+- **Minimal Guarantee:** Shared-repo tracked content unchanged by the guard; existing commits unaffected
+- **Success Guarantee:** Future `git commit` in any non-overridden repo refuses staged binary files; bypass via `--no-verify` remains available; coworkers on shared repos see no evidence of the guard
+- **Technology:** `~/dotfiles/githooks/pre-commit` (bash + `git diff --cached --numstat`); wired in via `[core] hooksPath` in `~/dotfiles/gitconfig`. Complemented by `~/dotfiles/gitignore_global` binary-extensions block (compiled objects, archives, databases, ML model artifacts) that filters typical binaries before the hook ever runs. See [design.md: Git Commit Binary Guard](design.md#git-commit-binary-guard-uc-14).
+
+---
+
 ## Status
 
 | Use Case | Status | Notes |
@@ -586,3 +617,4 @@ Architecture, threat model, and operational procedures documented in the canonic
 | UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2 |
 | UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |
+| UC-14 Guard Against Accidental Binary Commits | Implemented (pending home-manager switch) | Global pre-commit hook + binary-extension gitignore; no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |

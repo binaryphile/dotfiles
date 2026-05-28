@@ -610,6 +610,29 @@ Static analysis for bash scripts. Nix-packaged in `shared.nix` (all platforms).
 
 `gh` for PR management, repo operations, and issue tracking from the terminal.
 
+### Git Commit Binary Guard (UC-14)
+
+Global pre-commit hook that refuses to commit binary files anywhere Ted works, without leaving any settings, hook, or marker in any individual repo's tracked content. Pairs with the `gitignore_global` binary-extensions block.
+
+**Mechanism**:
+
+- Hook at `~/dotfiles/githooks/pre-commit` (executable, ~20 lines of bash).
+- Wired in via `[core] hooksPath = /home/ted/dotfiles/githooks` in `~/dotfiles/gitconfig` (home-manager deployed).
+- Detection truth source is git itself: `git diff --cached --numstat --no-renames` emits `- -` for entries git classifies as binary (same heuristic git uses for diff suppression and the `text`/`binary` gitattribute). Hook exits 1 with the file list and remediation options on stderr if any are present; exits 0 otherwise.
+
+**Shared-repo non-pollution**: the guard lives entirely in Ted's home-manager-managed git config. No hook script, gitconfig entry, or marker file ever lands in `dal`, `pepin`, `cloud-services`, `urma`, or any other shared repo's tracked content or `.git/config`. Coworkers cloning those repos see no evidence of the guard's existence -- the protection is a property of Ted's local environment, not the repos themselves. This was the design driver: scaffolding for personal hygiene that must not bleed into shared collaboration surfaces.
+
+**Override paths**:
+
+1. `git commit --no-verify` -- one-off bypass for intentional binary commits (test fixtures, images, signed artifacts).
+2. Per-repo `core.hooksPath` -- when a repo sets its own (e.g., `git config core.hooksPath .githooks` -- era's tandem-protocol convention), the local chain takes precedence and the global guard is inactive there.
+
+**Complement to `gitignore_global`**: the binary-extensions block in `~/dotfiles/gitignore_global` (`*.o`, `*.a`, `*.so`, `*.so.*`, `*.dylib`, `*.dll`, `*.exe`, `*.bin`, `*.elf`, `*.pyc`, `*.pyo`, `*.class`, `*.zip`, `*.7z`, `*.rar`, `*.xz`, `*.zst`, `*.db`, `*.sqlite3`, `*.onnx`, `*.pt`, `*.pth`, `*.h5`, `*.safetensors`, `*.gguf`, `*.pkl`) filters typical-extension binaries before they reach the staging area. The pre-commit hook catches the residue: binaries with no extension (Go `cmd/<name>/` build output) or names that don't match a known pattern.
+
+**Failure mode**: if the hook script is missing or non-executable, git falls back to no hook and the commit proceeds without inspection. Fail-open is deliberate -- a broken guard must not block work, and the gitignore_global block already covers the common case.
+
+**Origin**: the era project accumulated ~110 MB of historical Go-binary blobs (era-ort 142.6 MB, two ~15 MB era-hook revisions) before they were removed via `git filter-repo`. The guard prevents that class of accident from recurring. era's own `.gitignore` already lists each `bin/era-*` binary by name -- the global guard is the defense-in-depth layer for repos that don't yet have per-project hygiene.
+
 ### Calendar (UC-1)
 
 Work calendar synced from OWA via published ICS URL. Three components:

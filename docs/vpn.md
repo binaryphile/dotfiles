@@ -172,6 +172,16 @@ If gpauth advances past `accept()` and removes `/tmp/gpcallback.port`, the in-co
 
 Probably SIGPIPE. The downstream side of `gpauth | sudo gpclient ...` (e.g., sudo prompting for a password and timing out, or gpclient hitting an early error) closes the read end of the pipe. When gpauth next writes, it gets SIGPIPE and dies. To diagnose, run `gpauth` standalone (no pipe) and capture stdout/stderr to files.
 
+**Symptom: PanGPS "Failed to connect to portal" with network reachable**
+
+PanGPS.log repeatedly shows lines like `Failed to connect to <portal-host> on 443 with return value -1 and socket error 115(Operation now in progress)`. The vpn-connect helper exits with `Error: Cannot connect to GlobalProtect Portal.` From the shell the same host IS reachable: `bash -c 'exec 3<>/dev/tcp/<host>/443'` succeeds, ping has 0% loss, and iptables-legacy/iptables-nft are clean across filter/nat/mangle. `ps -o etime -p $(pgrep PanGPS)` shows multi-day uptime.
+
+Cause: PanGPS internal connection state degrades after long uptime across Crostini sleep/wake cycles and network swaps. Userspace sockets reach the destination because they open fresh connections; PanGPS's pooled/cached layer is the stuck one.
+
+Fix: `sudo systemctl restart gpd`. The PanGPS PID rotates and the first prelogin to the portal succeeds immediately afterward; log moves on to the SAML challenge and the GUI client drives auth normally.
+
+Empirical anchor: 2026-05-28, penguin/Crostini, PanGPS PID had 5d 19h uptime; restart resolved with no other changes.
+
 ## Official PAN GlobalProtect CLI (pangp) — current workaround for CVE-2026-0257
 
 Until yuezk lands the fix for the gpoc 512 (see "Symptom: gateway login returns HTTP 512" above), pangp is the working VPN client. It's nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` and toggled in/out via `vpn-mode`.

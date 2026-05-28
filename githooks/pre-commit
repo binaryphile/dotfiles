@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Reject staged binary file additions/modifications.
+# Detection: git's own diff --numstat — binary entries show as "- - <path>".
+# Bypass: git commit --no-verify (for intentional binary commits).
+
+set -euo pipefail
+
+binary=()
+while IFS=$'\t' read -r add del path; do
+  [[ $add == '-' && $del == '-' ]] && binary+=("$path")
+done < <(git diff --cached --numstat --no-renames)
+
+(( ${#binary[@]} == 0 )) && exit 0
+
+{
+  echo "pre-commit: refusing to commit binary file(s):"
+  printf '  %s\n' "${binary[@]}"
+  echo
+  echo "Options:"
+  echo "  - Add the path to .gitignore"
+  echo "  - Unstage:  git restore --staged <path>"
+  echo "  - Override: git commit --no-verify (use sparingly)"
+} >&2
+
+exit 1
