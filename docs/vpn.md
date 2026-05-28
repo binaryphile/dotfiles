@@ -479,16 +479,39 @@ first)". Workaround: skip `vpn-mode pangp` and call `vpn-connect`
 directly. Declarative fix: `swapCallbackHandler` should be a no-op
 when `/etc/NIXOS` exists.
 
-**Open layer (not yet diagnosed)**: even after Gaps 1-3 are
-manually addressed and the FHS symlinks are in place, `vpn-connect`
-may still fail with `Error: Cannot connect to GlobalProtect Portal`
-and PanGPS.log shows `Failed to pre-login to the portal access.digi.com
-with return value 0(0)`. Network path to portal is healthy (`curl
-https://access.digi.com/` returns expected 403). Root cause not yet
-established — possibly state corruption from prior failed connect
-attempts, or stale PanPUAC_*.dat cache file under
-`~/.local/share/globalprotect/.GlobalProtect/`. To be investigated
-separately.
+**Gap 5: Internal DNS resolution not pushed on NixOS.** gpoc's
+vpn-slice writes `/etc/hosts` entries for internal hostnames at
+connect time (split-horizon DNS). pangp's full-tunnel path doesn't
+use vpn-slice — internal DNS is normally pushed via NetworkManager
+dispatcher hooks bundled with the .deb. NixOS doesn't run these
+hooks by default, so `/etc/resolv.conf` keeps its pre-VPN servers
+(public ISP DNS + LAN gateway). Symptom on calumny 2026-05-27:
+`nexus.digi.com`, `forge.digi.com`, and any other internal-only
+hostnames fail with `getaddrinfo: Name or service not known` even
+with the tunnel UP. Public-DNS internal hosts (e.g. `stash.digi.com`
+198.51.192.159, `tm1.idigi.com` 198.51.192.237, `dm1.devdevicecloud.com`)
+resolve fine because they have A records on public DNS that point at
+the internal IPs, and the tunnel routes them. Declarative fix: add a
+NetworkManager dispatcher hook (or systemd-resolved drop-in) that
+points to the VPN's internal DNS server when `gpd0` comes up.
+Workaround today: hand-add an `/etc/hosts` entry for the specific
+internal host you need.
+
+**OPENSSL SYMLINK TRAP (Gap 3 follow-up)**: when implementing the
+Gap-3 fix via `BindReadOnlyPaths=` in `gpd.service`, do NOT bind
+`/usr/bin/openssl` to NixOS's nix-store openssl. PanGPS calls
+`openssl version -d` to determine OPENSSLDIR; nix-store openssl's
+OPENSSLDIR is `/nix/store/<hash>-openssl-<ver>/etc/ssl`, which does
+NOT contain `tca.cer` (the trusted CA cert PanGPS expects). With
+the symlink in place, portal prelogin fails with `SSL cert
+verification failed with result 19 / The portal certificate is not
+signed by a trusted certificate authority`. Without the symlink,
+PanGPS falls back to `/etc/ssl/certs/tca.cer` (system-provided)
+which works. Two approaches in the declarative fix: (a) omit
+openssl from the BindReadOnlyPaths set entirely (rely on fallback),
+or (b) provide a wrapper that fakes `OPENSSLDIR=/etc/ssl`. Verified
+empirically 2026-05-27 (closed the prior "Open layer" diagnosis at
+the same time).
 
 Crostini: no change. Pristine bytes in `$out` are picked up by the
 extract task; Crostini's native loader runs them.
