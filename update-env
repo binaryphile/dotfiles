@@ -428,6 +428,9 @@ stage2() {
   try eraStateDirDropInTask
   try eraSystemdEnableTask
   try eraRestartTask
+  try task.Install 644 ~/projects/era/evtctl-forward@.service ~/.config/systemd/user/evtctl-forward@.service
+  try task.Install 644 ~/projects/era/evtctl-canary-watch@.service ~/.config/systemd/user/evtctl-canary-watch@.service
+  try task.Install 644 ~/projects/era/evtctl-canary-watch@.timer ~/.config/systemd/user/evtctl-canary-watch@.timer
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeTeshtConfigTask
