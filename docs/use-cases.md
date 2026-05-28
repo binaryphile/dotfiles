@@ -472,7 +472,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Extensions:**
   - 1a. Not in tmux -> start tmux; resume at step 1
   - 2a. Terminal resized -> panel layout adjusts within 5s or immediately via client-resized hook; resume at step 3
-  - 3a. VPN-gated widgets (dm1, stash, nexus, gitlab) hidden when tun0 is down; remotemanager is public and always probed; resume at step 4
+  - 3a. VPN-gated widgets (dm1, stash, nexus, gitlab) hidden when neither tun0 (gpoc) nor gpd0 (pangp) is in state UP; remotemanager is public and always probed; resume at step 4
   - 3b. Threshold widgets (cpu, mem, disk) hidden below 90% usage; resume at step 4
   - 5a. VPN comes up after session start -> VPN-gated widgets appear on next tick (<=5s); resume at step 4
   - 6a. Inspector tool not installed -> click handler falls back to basic status echo; separate success
@@ -486,7 +486,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 |----------|---------|-----------------|
 | Always shown | vpn, era, load | Visible in white; vpn and era are interactive (click to toggle); load shows sparkline |
 | Hidden when healthy | dm1, stash, nexus, gitlab, remotemanager, codeberg, bitbucket, teams, ntfy | Appear only for partial (light gray), off (dark gray), or unknown (amber) |
-| VPN-gated | dm1, stash, nexus, gitlab | Hidden when tun0 is down |
+| VPN-gated | dm1, stash, nexus, gitlab | Hidden when neither tun0 (gpoc) nor gpd0 (pangp) is in state UP |
 | Threshold (>=90%) | cpu, mem, disk | Appear in white when threshold crossed |
 | SSH connections | ssh | Hidden when no inbound connections |
 | Battery | bat | Hidden above 10%; warning [10,5%) shows "H:MM" in partial color; critical [5,0%] shows "N% bat" in white |
