@@ -619,4 +619,4 @@ Architecture, threat model, and operational procedures documented in the canonic
 | UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2 |
 | UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |
-| UC-14 Guard Against Accidental Binary Commits | Implemented (pending home-manager switch) | Global pre-commit hook + binary-extension gitignore; no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |
+| UC-14 Guard Against Accidental Binary Commits | Working | Global pre-commit hook + binary-extension gitignore active (deployed via home-manager); no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |
