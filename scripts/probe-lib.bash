@@ -125,18 +125,23 @@ sshHost() {
 #   - ping=ok                -> partial (reachable but no auth confirmation)
 #   - otherwise              -> unknown
 # Args: ssh-state ping-state [api-state]
+#
+# Locals are *Cls (class) rather than ssh/ping/api to avoid shadowing
+# the injectable globals $ssh, $ping, etc. -- a background fork that
+# inherits an empty local $ssh expands `$ssh -T ...` to ` -T ...`,
+# producing rc=127 and a false "fail" verdict.
 combine() {
-  local ssh=${1:-unknown}
-  local ping=${2:-unknown}
-  local api=${3:-on}
-  case $api in
+  local sshCls=${1:-unknown}
+  local pingCls=${2:-unknown}
+  local apiCls=${3:-on}
+  case $apiCls in
     down|off)         echo off;     return ;;
     degraded|partial) echo partial; return ;;
   esac
-  [[ $ping == fail ]] && { echo off; return; }
-  [[ $ssh  == ok   && $ping == ok ]] && { echo on; return; }
-  [[ $ssh  == skip && $ping == ok ]] && { echo on; return; }
-  [[ $ping == ok ]] && { echo partial; return; }
+  [[ $pingCls == fail ]] && { echo off; return; }
+  [[ $sshCls  == ok   && $pingCls == ok ]] && { echo on; return; }
+  [[ $sshCls  == skip && $pingCls == ok ]] && { echo on; return; }
+  [[ $pingCls == ok ]] && { echo partial; return; }
   echo unknown
 }
 
@@ -154,13 +159,13 @@ bitbucketApiProbe() {
   esac
 }
 
-# codebergApiProbe queries the Codeberg uptime status API; component
-# 7 is the "Codeberg SSH access" monitor. Returns: on, off.
+# codebergApiProbe queries the Codeberg uptime status API; monitor
+# 1 is "Codeberg.org" (the main site). Returns: on, off.
 codebergApiProbe() {
   local result
   result=$($curl -fs --connect-timeout 3 --max-time 5 \
     https://status.codeberg.org/api/status-page/heartbeat/codeberg 2>/dev/null \
-    | $jq -er '.heartbeatList."7"[-1].status' 2>/dev/null) || true
+    | $jq -er '.heartbeatList."1"[-1].status' 2>/dev/null) || true
   case $result in
     1) echo on ;;
     *) echo off ;;
@@ -234,22 +239,25 @@ probeReachability() {
   local key=$1
   local host=$2
   local apiFn=${3:-}
-  local ssh ping api
+  # *Cls (class) names, not ssh/ping/api -- the latter would shadow
+  # the injectable globals $ssh / $ping and refresh's bg subshell
+  # would inherit an empty $ssh, breaking sshHost.
+  local sshCls pingCls apiCls
   if [[ ${WidgetNoSsh[$key]:-no} == yes ]]; then
-    ssh=skip
+    sshCls=skip
   else
     refresh "${key}-ssh"  600 sshHost  "$host"
-    ssh=$(readState "${key}-ssh")
+    sshCls=$(readState "${key}-ssh")
   fi
   refresh "${key}-ping" 30  pingHost "$key" "$host"
-  ping=$(readState "${key}-ping")
+  pingCls=$(readState "${key}-ping")
   if [[ -n $apiFn ]]; then
     refresh "${key}-api" 30 "$apiFn"
-    api=$(readState "${key}-api")
+    apiCls=$(readState "${key}-api")
   else
-    api=on
+    apiCls=on
   fi
-  combine "$ssh" "$ping" "$api"
+  combine "$sshCls" "$pingCls" "$apiCls"
 }
 
 # probeWidget is a thin wrapper that reads host + apiFn from the
