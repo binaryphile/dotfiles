@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "claude-budget-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1779114874,
-        "narHash": "sha256-CG8Nxux6stAV+DgaF4SeFvh+3C0XluSIyvMLmEkTmYA=",
-        "owner": "binaryphile",
-        "repo": "claude-budget",
-        "rev": "67c2395f879388d07cd87de84b5a6916009d4304",
-        "type": "github"
-      },
-      "original": {
-        "owner": "binaryphile",
-        "repo": "claude-budget",
-        "type": "github"
-      }
-    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
@@ -301,7 +285,6 @@
     },
     "root": {
       "inputs": {
-        "claude-budget-src": "claude-budget-src",
         "globalprotect-openconnect": "globalprotect-openconnect",
         "home-manager": "home-manager",
         "mk-bash-src": "mk-bash-src",
