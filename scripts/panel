@@ -220,21 +220,25 @@ ntfyModule()      { segment nfy "$(probePing ntfy  "$(widgetHost ntfy)"  300)"; 
 # cachedHealthState reads the cached sub-states (ssh, ping, api) for a
 # health widget and combines them WITHOUT triggering new probes. Used by
 # healthSep and layoutCmd to check visibility without side effects.
+# Locals named *Cls to match probe-lib's probeReachability/combine and
+# avoid shadowing the $ssh / $ping injectable globals (harmless here
+# because this function doesn't fork, but kept consistent so the rule
+# is universal in the codebase).
 cachedHealthState() {
   local key=$1
-  local ssh ping api
+  local sshCls pingCls apiCls
   if [[ ${WidgetNoSsh[$key]:-no} == yes ]]; then
-    ssh=skip
+    sshCls=skip
   else
-    ssh=$(readState "${key}-ssh")
+    sshCls=$(readState "${key}-ssh")
   fi
-  ping=$(readState "${key}-ping")
+  pingCls=$(readState "${key}-ping")
   if [[ -n ${WidgetApiFn[$key]:-} ]]; then
-    api=$(readState "${key}-api")
+    apiCls=$(readState "${key}-api")
   else
-    api=on
+    apiCls=on
   fi
-  combine "$ssh" "$ping" "$api"
+  combine "$sshCls" "$pingCls" "$apiCls"
 }
 
 # cachedPingState reads the cached ping state for a ping-only widget

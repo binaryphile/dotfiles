@@ -312,14 +312,14 @@ test_codebergApiProbe() {
   local -A case1=(
     [name]='heartbeat status 1 means on'
     [curl]=mockCurl
-    [mockOutput]='{"heartbeatList":{"7":[{"status":1}]}}'
+    [mockOutput]='{"heartbeatList":{"1":[{"status":1}]}}'
     [want]=on
   )
 
   local -A case2=(
     [name]='heartbeat status 0 means off'
     [curl]=mockCurl
-    [mockOutput]='{"heartbeatList":{"7":[{"status":0}]}}'
+    [mockOutput]='{"heartbeatList":{"1":[{"status":0}]}}'
     [want]=off
   )
 
