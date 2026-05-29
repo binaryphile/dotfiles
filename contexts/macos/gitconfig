@@ -5,6 +5,7 @@
 [core]
   filemode = false
   excludesfile = /Users/tlilley/.gitignore_global
+  hooksPath = /Users/tlilley/dotfiles/githooks
   mergeoptions = --no-edit
 [push]
   default = tracking
