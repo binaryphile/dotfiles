@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Reject staged binary file additions/modifications.
-# Detection: git's own diff --numstat — binary entries show as "- - <path>".
+# Detection: git's own diff --numstat -- binary entries show as "- - <path>".
 # Bypass: git commit --no-verify (for intentional binary commits).
 
 set -euo pipefail

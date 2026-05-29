@@ -203,7 +203,7 @@ sudo systemctl restart gpd
 sleep 4
 sudo tail -30 /opt/paloaltonetworks/globalprotect/PanGPS.log
 # Expect: "Portal Pre-login starts" succeeds immediately, SAML challenge
-# from IdP returns, daemon state → "saml-pre-login" waiting for GUI client
+# from IdP returns, daemon state -> "saml-pre-login" waiting for GUI client
 # to drive SAML browser flow.
 ```
 
