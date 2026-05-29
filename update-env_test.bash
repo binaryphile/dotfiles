@@ -480,6 +480,8 @@ test_loosely_errexitActuallyWorks() {
 }
 
 ## agentTomlContent -- Q1: pure output, security-significant (controls agent key exposure)
+## CURRENTLY FAILING -- fixture drift from per-host vault refactor.
+## Diagnosis: era query tasks.dotfiles 'id = 19854'
 
 test_agentTomlContent() {
   local got_
