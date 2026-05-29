@@ -176,11 +176,40 @@ Probably SIGPIPE. The downstream side of `gpauth | sudo gpclient ...` (e.g., sud
 
 PanGPS.log repeatedly shows lines like `Failed to connect to <portal-host> on 443 with return value -1 and socket error 115(Operation now in progress)`. The vpn-connect helper exits with `Error: Cannot connect to GlobalProtect Portal.` From the shell the same host IS reachable: `bash -c 'exec 3<>/dev/tcp/<host>/443'` succeeds, ping has 0% loss, and iptables-legacy/iptables-nft are clean across filter/nat/mangle. `ps -o etime -p $(pgrep PanGPS)` shows multi-day uptime.
 
-Cause: PanGPS internal connection state degrades after long uptime across Crostini sleep/wake cycles and network swaps. Userspace sockets reach the destination because they open fresh connections; PanGPS's pooled/cached layer is the stuck one.
+Cause: PanGPS internal connection-pool/cache state degrades after long uptime across Crostini sleep/wake cycles and network swaps. Userspace `/dev/tcp` reaches the destination because each open creates a fresh socket; PanGPS's pooled/cached connection layer is the stuck one.
 
-Fix: `sudo systemctl restart gpd`. The PanGPS PID rotates and the first prelogin to the portal succeeds immediately afterward; log moves on to the SAML challenge and the GUI client drives auth normally.
+Diagnosis procedure:
 
-Empirical anchor: 2026-05-28, penguin/Crostini, PanGPS PID had 5d 19h uptime; restart resolved with no other changes.
+```bash
+# 1. Confirm PanGPS log shows the connect failure pattern
+sudo tail -50 /opt/paloaltonetworks/globalprotect/PanGPS.log | grep -E "Failed to connect|return value -1|error 115"
+
+# 2. Rule out network: independent TCP probe to the same host
+timeout 4 bash -c 'exec 3<>/dev/tcp/access.digi.com/443' && echo OK || echo FAIL
+ping -c 5 access.digi.com
+
+# 3. Rule out firewall: both legacy and nft tables empty?
+sudo iptables-legacy -L -n -v
+sudo iptables-nft -L -n -v
+
+# 4. Check daemon uptime — if >24h on Crostini, very likely the cause
+ps -o pid,etime,cmd -p $(pgrep PanGPS)
+```
+
+Fix:
+
+```bash
+sudo systemctl restart gpd
+sleep 4
+sudo tail -30 /opt/paloaltonetworks/globalprotect/PanGPS.log
+# Expect: "Portal Pre-login starts" succeeds immediately, SAML challenge
+# from IdP returns, daemon state → "saml-pre-login" waiting for GUI client
+# to drive SAML browser flow.
+```
+
+After restart, `vpn-connect` (or the widget click) makes it through SAML and `gpd0` comes UP normally.
+
+Empirical anchor: 2026-05-28, penguin/Crostini, PanGPS PID had 5d 19h uptime; restart resolved with no other changes. Mirrored to [jeeves/guides/globalprotect-vpn-guide.md](https://bitbucket.org/accelecon/jeeves/src/main/guides/globalprotect-vpn-guide.md) for team visibility; this entry is the authoritative source and stays in sync via the dotfiles cycle.
 
 ## Official PAN GlobalProtect CLI (pangp) — current workaround for CVE-2026-0257
 
