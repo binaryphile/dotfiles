@@ -480,19 +480,24 @@ test_loosely_errexitActuallyWorks() {
 }
 
 ## agentTomlContent -- Q1: pure output, security-significant (controls agent key exposure)
-## CURRENTLY FAILING -- fixture drift from per-host vault refactor.
-## Diagnosis: era query tasks.dotfiles 'id = 19854'
 
 test_agentTomlContent() {
   local got_
   got_=$(agentTomlContent testhost)
+  # Default-case path for an unknown host: opAccount falls back to
+  # "my.1password.com", opVault to "$1" (= "testhost"), opAuthKeyItem to
+  # "$1 SSH Key", opSigningKeyItem to "$1 signing SSH Key". Auth key is
+  # listed before signing key for ssh-agent negotiation order (per the
+  # agentTomlContent header comment).
   local want_='[[ssh-keys]]
-vault = "Private"
-item = "calliope signing SSH Key"
+account = "my.1password.com"
+vault = "testhost"
+item = "testhost SSH Key"
 
 [[ssh-keys]]
-vault = "Private"
-item = "testhost SSH Key"'
+account = "my.1password.com"
+vault = "testhost"
+item = "testhost signing SSH Key"'
   [[ $got_ == "$want_" ]] || {
     echo "got:"
     echo "$got_"
