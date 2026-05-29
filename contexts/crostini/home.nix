@@ -206,7 +206,7 @@ in
   # crostini-procfs-doctor target so HM can claim the path on first switch.
   # Idempotent: discriminator checks whether the existing link's first hop
   # is in /nix/store (HM-owned) vs elsewhere (legacy manual symlink). The
-  # /nix/store/* check is HM-version-agnostic — HM stages link targets
+  # /nix/store/* check is HM-version-agnostic -- HM stages link targets
   # through the store regardless of its internal layout convention.
   home.activation.rmStaleProcfsDoctor = config.lib.dag.entryBefore [ "checkLinkTargets" ] ''
     set -eu
@@ -214,7 +214,7 @@ in
     if [[ -L $link ]]; then
       case $(readlink "$link") in
         /nix/store/*) : ;;            # HM owns it; no-op
-        *)            rm "$link" ;;   # legacy manual symlink — surrender
+        *)            rm "$link" ;;   # legacy manual symlink -- surrender
       esac
     fi
   '';

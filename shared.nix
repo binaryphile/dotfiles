@@ -4,7 +4,7 @@ let
   effectiveBashTools = if bashTools != null then bashTools else import ./bash-tools.nix { inherit pkgs; };
 
   # Fallback: any importer that doesn't pass shellcheckFork gets stock pkgs.shellcheck.
-  # Silent downgrade — every configured importer SHOULD pass it explicitly via
+  # Silent downgrade -- every configured importer SHOULD pass it explicitly via
   # extraSpecialArgs in flake.nix; criterion #5 (SC9001+ identity probe) catches
   # the configured path, but unconfigured ad-hoc importers won't be flagged.
   effectiveShellcheck = if shellcheckFork != null then shellcheckFork else pkgs.shellcheck;
@@ -62,7 +62,7 @@ in {
     # appender, era-soak's drip JSONL, and `./mk grafana-up`'s Promtail
     # tailer all read this env var. Mismatch yields silently-empty Loki
     # (UC-27). era-soak.service hardcodes the same path; era-serve.service
-    # currently does not — tracked upstream as tasks.era #5021.
+    # currently does not -- tracked upstream as tasks.era #5021.
     ERA_STATE_DIR = "$HOME/.local/share/era-telemetry";
   };
   home.sessionPath = [

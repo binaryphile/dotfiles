@@ -43,7 +43,7 @@ cmdAttach() { tmux attach -t "$Session"; }
 
 cmdStatus() {
   # Official pangp path (systemd-managed; no tmux session). Check first
-  # because it's the more authoritative state — gpd.service knows whether
+  # because it's the more authoritative state -- gpd.service knows whether
   # the tunnel is actually up, not just whether a wrapper process exists.
   if globalprotect show --status 2>/dev/null | grep -q 'Connected$'; then
     echo up

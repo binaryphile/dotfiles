@@ -18,7 +18,7 @@
     # ShellCheck fork (binaryphile/shellcheck) with dynamic plugin loading
     # via $XDG_DATA_HOME/shellcheck/plugins/. Replaces nixpkgs shellcheck
     # so the convention-plugin's .so (next input) is actually loadable.
-    # Uses its own pinned nixpkgs (NO follows) — the Haskell build relies on
+    # Uses its own pinned nixpkgs (NO follows) -- the Haskell build relies on
     # a specific GHC version; following dotfiles' nixpkgs breaks compilation.
     shellcheck-fork = {
       url = "github:binaryphile/shellcheck";
@@ -27,7 +27,7 @@
     # IFS/noglob convention plugin (SC9001-SC9006) for the fork above.
     # Builds libconvention-checks.so under $out/lib/shellcheck/plugins/;
     # deployed via xdg.dataFile in shared.nix to the fork's discovery path.
-    # Uses its own pinned nixpkgs (NO follows) — same GHC pinning reason.
+    # Uses its own pinned nixpkgs (NO follows) -- same GHC pinning reason.
     shellcheck-convention-plugin = {
       url = "github:binaryphile/shellcheck-convention-plugin";
     };

@@ -4,7 +4,7 @@ How `vpn-connect` works on Crostini, why the SAML callback flow is fragile, and 
 
 ## The stack
 
-1. **`gpauth`** -- Rust binary from yuezk's globalprotect-openconnect (Rust rewrite). Performs SAML auth via an external browser, captures the cookie, prints it to stdout. The `--browser` arg is **single-token** (since Aug 2024, commit `9460d49`): a named choice from `{default, firefox, chrome, chromium, remote}` OR a path to a browser executable. Multi-token strings like `"chromium --incognito"` are treated as a single filename → ENOENT. See "Known pitfalls" below.
+1. **`gpauth`** -- Rust binary from yuezk's globalprotect-openconnect (Rust rewrite). Performs SAML auth via an external browser, captures the cookie, prints it to stdout. The `--browser` arg is **single-token** (since Aug 2024, commit `9460d49`): a named choice from `{default, firefox, chrome, chromium, remote}` OR a path to a browser executable. Multi-token strings like `"chromium --incognito"` are treated as a single filename -> ENOENT. See "Known pitfalls" below.
 2. **`gpclient connect`** -- can either pipe-consume a cookie from `gpauth` (`--cookie-on-stdin`) or drive SAML itself via its own `--browser` flag. The integrated mode is simpler; the pipeline mode lets you inspect/cache the cookie. Both invoke `openconnect` (linked via FFI) to bring up the GP tunnel.
 3. **`vpn-slice`** -- passed as `--script` to gpclient/openconnect for split-horizon DNS. Only the named hosts route through the tunnel; everything else stays on the LAN.
 4. **`vpn-connect` script** -- reconnect-loop wrapper around the above. Lives at `scripts/vpn-connect`, deployed via the Nix derivation in `contexts/linux-base.nix`.
@@ -13,7 +13,7 @@ The Nix derivation substitutes absolute store paths for `@vpn-slice@` and `@gpcl
 
 ## Dual-client architecture (gpoc + pangp + vpn-mode)
 
-Since the 2026-05-08 CVE-2026-0257 cookie-mint hardening on PAN Prisma Access broke gpoc against the Digi portal (see "Symptom: gateway login returns HTTP 512" below), both clients live on the same machine and a toggle picks the active one. The toggle is implicit in `gpd.service`'s systemd state — there's no separate state file.
+Since the 2026-05-08 CVE-2026-0257 cookie-mint hardening on PAN Prisma Access broke gpoc against the Digi portal (see "Symptom: gateway login returns HTTP 512" below), both clients live on the same machine and a toggle picks the active one. The toggle is implicit in `gpd.service`'s systemd state -- there's no separate state file.
 
 ```
 vpn-mode pangp   # start gpd+gpa (PAN proprietary client owns the tun device)
@@ -21,11 +21,11 @@ vpn-mode gpoc    # stop gpd+gpa + kill any in-flight gpoc tunnel
 vpn-mode         # print current mode ('pangp' or 'gpoc')
 ```
 
-`vpn-connect` reads `vpn-mode` and dispatches: `globalprotect connect --portal access.digi.com` for pangp, or the existing `gpauth | gpclient` retry loop for gpoc. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp) and `tun0` (gpoc) state UP independently — no widget changes needed across the toggle.
+`vpn-connect` reads `vpn-mode` and dispatches: `globalprotect connect --portal access.digi.com` for pangp, or the existing `gpauth | gpclient` retry loop for gpoc. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp) and `tun0` (gpoc) state UP independently -- no widget changes needed across the toggle.
 
 Packaging:
-- gpoc — apt-installed (yuezk's upstream nix derivation has a Rust build that's heavy enough to want to skip), installed by `update-env`'s gpoc group.
-- pangp — nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` home-manager module. The source tarball `PanGPLinux-<ver>.tgz` from PAN's customer portal must live at `~/crostini/` (Crostini) or the equivalent NixOS path (edit flake.nix's `pangp` let-binding).
+- gpoc -- apt-installed (yuezk's upstream nix derivation has a Rust build that's heavy enough to want to skip), installed by `update-env`'s gpoc group.
+- pangp -- nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` home-manager module. The source tarball `PanGPLinux-<ver>.tgz` from PAN's customer portal must live at `~/crostini/` (Crostini) or the equivalent NixOS path (edit flake.nix's `pangp` let-binding).
 - The home-manager activation hook keeps `/etc/systemd/system/gpd.service` in sync with the nix-store unit on every `home-manager switch` (requires sudo NOPASSWD; Crostini has it).
 
 ### Invocation patterns
@@ -43,7 +43,7 @@ gpauth access.digi.com --browser default \
 
 ### Forcing fresh SAML per connect
 
-gpclient 2.5.4 supports `--clean` ("Do not reuse the remembered authentication cookie"). This is the proper way to force re-auth each connect. Do NOT attempt to achieve this by passing browser args (e.g., `--browser "chromium --incognito"`) — see "Known pitfalls" below.
+gpclient 2.5.4 supports `--clean` ("Do not reuse the remembered authentication cookie"). This is the proper way to force re-auth each connect. Do NOT attempt to achieve this by passing browser args (e.g., `--browser "chromium --incognito"`) -- see "Known pitfalls" below.
 
 ### Client identity flags (2.5.4)
 
@@ -129,7 +129,7 @@ Pattern (observable since 2026-05-08):
 Error: Gateway login error: <none>
 ```
 
-**Root cause** (confirmed 2026-05-19): [CVE-2026-0257](https://security.paloaltonetworks.com/CVE-2026-0257) — PAN-OS GlobalProtect Authentication Bypass. PAN's mitigation: "the firewall regenerates cookies using improved methods." Prisma Access tenants got the coordinated pre-disclosure rollout ~5-7 days before public announcement — matches the 2026-05-08 onset. Community tracking at [yuezk/GlobalProtect-openconnect#606](https://github.com/yuezk/GlobalProtect-openconnect/issues/606).
+**Root cause** (confirmed 2026-05-19): [CVE-2026-0257](https://security.paloaltonetworks.com/CVE-2026-0257) -- PAN-OS GlobalProtect Authentication Bypass. PAN's mitigation: "the firewall regenerates cookies using improved methods." Prisma Access tenants got the coordinated pre-disclosure rollout ~5-7 days before public announcement -- matches the 2026-05-08 onset. Community tracking at [yuezk/GlobalProtect-openconnect#606](https://github.com/yuezk/GlobalProtect-openconnect/issues/606).
 
 **Affects**: every open-source GP client (gpoc, openconnect, NetworkManager-openconnect) against PAN Prisma Access cloud gateways (`*.gpcloudservice.com`). Official pangp client succeeds in the same conditions.
 
@@ -137,14 +137,14 @@ Error: Gateway login error: <none>
 
 **What we tried that did NOT fix it** (so don't repeat the experiments):
 - Patching gpoc to send the 3 prelogin fields pangp sends and gpoc omits (`host-id` = raw `/etc/machine-id`, `data` = base64 of `{"cas_embedded_browser":"yes"}`, `default-browser=4` instead of `1`). Field set now byte-matches pangp's, still 512.
-- Forcing `.http1_only()` on reqwest's Client — no-op because PAN cloud doesn't ALPN-advertise h2, gpoc was already h1.
+- Forcing `.http1_only()` on reqwest's Client -- no-op because PAN cloud doesn't ALPN-advertise h2, gpoc was already h1.
 - Adding `clientgpversion=6.3.0-33` at gateway-login (the commented-out branch in `gp_params.rs`).
 
 **What we don't have yet**: gateway-login wire from pangp (mitmproxy iptables-NAT capture works for portal prelogin but stalls at gateway-login because pangp's bundled libwa* trust store rejects mitmproxy's CA partway through). Getting it requires either binary-patching `libwaapi.so` or running pangp on a Linux host without Crostini's eBPF restrictions.
 
 **Symptom: gpauth fails immediately with `{"failure":"No such file or directory (os error 2)"}`**
 
-gpauth's `--browser` arg was passed a multi-token string (e.g., `"chromium --incognito"`). gpauth's `--browser` is single-token; the whole string is treated as one filename and ENOENT fires before the browser ever launches. The JSON failure goes to gpauth's stdout. If piped into `gpclient --cookie-on-stdin`, gpclient parses the JSON as `SamlAuthResult::Failure(String)` (`apps/gpclient/src/connect.rs:610` uses `serde_json::from_str::<SamlAuthResult>`) and bails locally with "Failed to parse auth data" — does NOT contact the gateway.
+gpauth's `--browser` arg was passed a multi-token string (e.g., `"chromium --incognito"`). gpauth's `--browser` is single-token; the whole string is treated as one filename and ENOENT fires before the browser ever launches. The JSON failure goes to gpauth's stdout. If piped into `gpclient --cookie-on-stdin`, gpclient parses the JSON as `SamlAuthResult::Failure(String)` (`apps/gpclient/src/connect.rs:610` uses `serde_json::from_str::<SamlAuthResult>`) and bails locally with "Failed to parse auth data" -- does NOT contact the gateway.
 
 Fix: pass `--browser` a single token (`default`, `firefox`, `chrome`, `chromium`, `remote`, or a path to a single browser executable). Use `--clean` if your goal is forcing fresh SAML, not multi-arg browser invocation.
 
@@ -192,7 +192,7 @@ ping -c 5 access.digi.com
 sudo iptables-legacy -L -n -v
 sudo iptables-nft -L -n -v
 
-# 4. Check daemon uptime — if >24h on Crostini, very likely the cause
+# 4. Check daemon uptime -- if >24h on Crostini, very likely the cause
 ps -o pid,etime,cmd -p $(pgrep PanGPS)
 ```
 
@@ -211,7 +211,7 @@ After restart, `vpn-connect` (or the widget click) makes it through SAML and `gp
 
 Empirical anchor: 2026-05-28, penguin/Crostini, PanGPS PID had 5d 19h uptime; restart resolved with no other changes. Mirrored to [jeeves/guides/globalprotect-vpn-guide.md](https://bitbucket.org/accelecon/jeeves/src/main/guides/globalprotect-vpn-guide.md) for team visibility; this entry is the authoritative source and stays in sync via the dotfiles cycle.
 
-## Official PAN GlobalProtect CLI (pangp) — current workaround for CVE-2026-0257
+## Official PAN GlobalProtect CLI (pangp) -- current workaround for CVE-2026-0257
 
 Until yuezk lands the fix for the gpoc 512 (see "Symptom: gateway login returns HTTP 512" above), pangp is the working VPN client. It's nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` and toggled in/out via `vpn-mode`.
 
@@ -224,7 +224,7 @@ update-env -1     # runs the pangp group: verify tarball, remove apt deb, then h
 ```
 
 Stages of the deploy:
-1. `aptRemoveGlobalprotectTask` — uninstalls the deprecated apt-shipped globalprotect deb if it's present (idempotent).
+1. `aptRemoveGlobalprotectTask` -- uninstalls the deprecated apt-shipped globalprotect deb if it's present (idempotent).
 2. `homeManagerFlakeSwitchTask` runs `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini --impure`. The `--impure` is required because `pangp.nix`'s `src` is an absolute path outside the flake's git tree (proprietary tarball, not vendored).
 3. Activation hook `home.activation.pangpSystemUnit` copies `${pangp}/lib/systemd/system/gpd.service` to `/etc/systemd/system/gpd.service`, runs `daemon-reload`, restarts the service. Uses `/usr/bin/sudo` (absolute path) because home-manager's activation env has minimal PATH.
 
@@ -237,7 +237,7 @@ because PanGPS performs an **asymmetric SHA-384 integrity check** on
 PanGPA at every IPC connection. It reads `/proc/<peer>/exe`, hashes the
 file content, and verifies the RSA signature in
 `/opt/.../sign/PanGPA-sha384.sig` against `/opt/.../sign/gp-public.pem`.
-Mismatch → close socket with:
+Mismatch -> close socket with:
 
 ```
 Error(1322): App Integrity: Failed to verify PanGPA Signature
@@ -246,7 +246,7 @@ Error( 312): Connected by process not from GP folder, app: /opt/.../PanGPA
 Error( 212): Connected by non-PanGPA. Close socket.
 ```
 
-PanGPS itself is NOT integrity-checked — observed 2026-05-27 on
+PanGPS itself is NOT integrity-checked -- observed 2026-05-27 on
 calumny, a running PanGPS with autoPatchelf-rewritten interpreter
 served the integrity check on PanGPA peers without self-rejecting.
 Only PanGPA's bytes matter for the gate.
@@ -289,7 +289,7 @@ sudo mkdir -p /opt/paloaltonetworks/globalprotect
 dpkg-deb -x "$TMPDIR/GlobalProtect_deb-6.3.3.1-638.deb" "$TMPDIR/extracted"
 sudo cp -a "$TMPDIR/extracted/opt/paloaltonetworks/globalprotect/." /opt/paloaltonetworks/globalprotect/
 
-# System unit override — point ExecStart at /opt PanGPS
+# System unit override -- point ExecStart at /opt PanGPS
 sudo mkdir -p /etc/systemd/system/gpd.service.d
 sudo tee /etc/systemd/system/gpd.service.d/override.conf <<'EOF'
 [Service]
@@ -299,7 +299,7 @@ ExecStart=/opt/paloaltonetworks/globalprotect/PanGPS
 WorkingDirectory=/var/lib/globalprotect
 EOF
 
-# User unit override — point ExecStart at /opt PanGPA, replicate HOME wrap inline.
+# User unit override -- point ExecStart at /opt PanGPA, replicate HOME wrap inline.
 # XDG_{CONFIG,DATA}_HOME pin to the real $HOME so xdg-open (spawned by PanGPA
 # for SAML browser launch) finds mimeapps.list and .desktop files in their
 # canonical user locations even though HOME is wrapped to a subdirectory.
@@ -321,7 +321,7 @@ systemctl --user daemon-reload
 systemctl --user restart gpa.service
 ```
 
-Verify success in the active log (when PanGPS runs from `/opt`, its log lives at `/opt/paloaltonetworks/globalprotect/PanGPS.log`, not `/var/lib/globalprotect/PanGPS.log` which is the nix-store symlink — same content as the in-store log only when PanGPS runs from the nix store):
+Verify success in the active log (when PanGPS runs from `/opt`, its log lives at `/opt/paloaltonetworks/globalprotect/PanGPS.log`, not `/var/lib/globalprotect/PanGPS.log` which is the nix-store symlink -- same content as the in-store log only when PanGPS runs from the nix store):
 
 ```bash
 sudo tail /opt/paloaltonetworks/globalprotect/PanGPS.log
@@ -377,7 +377,7 @@ sudo systemctl start gpd.service
 systemctl --user start gpa.service
 ```
 
-(`Text file busy` if services aren't stopped first — PanGPS/PanGPA
+(`Text file busy` if services aren't stopped first -- PanGPS/PanGPA
 mmap their executable images.) Wiring NixOS into the `pangp` group
 declaratively is tracked at tasks.dotfiles #6547.
 
@@ -521,7 +521,7 @@ when `/etc/NIXOS` exists.
 **Gap 5: Internal DNS resolution not pushed on NixOS.** gpoc's
 vpn-slice writes `/etc/hosts` entries for internal hostnames at
 connect time (split-horizon DNS). pangp's full-tunnel path doesn't
-use vpn-slice — internal DNS is normally pushed via NetworkManager
+use vpn-slice -- internal DNS is normally pushed via NetworkManager
 dispatcher hooks bundled with the .deb. NixOS doesn't run these
 hooks by default, so `/etc/resolv.conf` keeps its pre-VPN servers
 (public ISP DNS + LAN gateway). Symptom on calumny 2026-05-27:
@@ -557,12 +557,12 @@ extract task; Crostini's native loader runs them.
 
 ### Critical: SAML browser routing on Crostini (host Chrome via darkhttpd shim)
 
-pangp's `CPanDefaultBrowserLinux` writes the SAML form as a local `saml.html` file to `~/.local/share/globalprotect/GP_HTML/` (HTTP-POST binding — the SAMLRequest is too long for URL-query, must come back as a form field). It then calls `xdg-open` on the file path. Two problems on Crostini:
+pangp's `CPanDefaultBrowserLinux` writes the SAML form as a local `saml.html` file to `~/.local/share/globalprotect/GP_HTML/` (HTTP-POST binding -- the SAMLRequest is too long for URL-query, must come back as a form field). It then calls `xdg-open` on the file path. Two problems on Crostini:
 
 1. **Host Chrome can't open local container files.** The `garcon_host_browser.desktop` handler is registered only for URL schemes (`http`, `https`, `ftp`, `mailto`); local file paths can't cross the Crostini boundary.
 2. **xdg-open's default text/html chain falls through to the terminal vim handler** when no graphical browser is found (firefox-esr post-purge, nix firefox not on the gpa.service PATH). Cf. `garcon --client --terminal -e vim <file>` in the strace.
 
-**Shim**: a one-line wrapper script that converts the file path to an HTTP URL on the existing `darkhttpd` (proxy-pac-server, already serving `127.0.0.1:8120`) and hands the URL to `garcon-url-handler` — which routes to host Chrome via the standard Crostini bridge.
+**Shim**: a one-line wrapper script that converts the file path to an HTTP URL on the existing `darkhttpd` (proxy-pac-server, already serving `127.0.0.1:8120`) and hands the URL to `garcon-url-handler` -- which routes to host Chrome via the standard Crostini bridge.
 
 ```bash
 # Wrapper at ~/.local/bin/saml-host-browser:
@@ -589,7 +589,7 @@ End-to-end flow with the shim in place:
 
 1. PanGPA writes `~/.local/share/globalprotect/GP_HTML/saml.html`
 2. PanGPA invokes `xdg-open <saml.html>`
-3. xdg-mime resolves `text/html` → `saml-host-browser.desktop` (pinned)
+3. xdg-mime resolves `text/html` -> `saml-host-browser.desktop` (pinned)
 4. `.desktop` Exec runs `saml-host-browser <saml.html>`
 5. shim constructs `http://127.0.0.1:8120/saml-bundle/saml.html` and exec's `garcon-url-handler`
 6. host Chrome receives the URL, fetches via darkhttpd, the form's auto-submit POSTs to the IdP
@@ -601,12 +601,12 @@ End-to-end flow with the shim in place:
 
 ### Callback-handler conflict: system gpgui.desktop vs gp.desktop
 
-On Crostini, ChromeOS host Chrome consults the system `/usr/share/applications/` mimeinfo cache for scheme handlers — **not** the user-level `~/.local/share/applications/` cache. Two MimeType=`x-scheme-handler/globalprotectcallback` registrations exist by default:
+On Crostini, ChromeOS host Chrome consults the system `/usr/share/applications/` mimeinfo cache for scheme handlers -- **not** the user-level `~/.local/share/applications/` cache. Two MimeType=`x-scheme-handler/globalprotectcallback` registrations exist by default:
 
-- `/usr/share/applications/gpgui.desktop` — shipped by the apt-installed `globalprotect-openconnect` package; Exec=`/usr/bin/gpclient launch-gui %u` (gpoc).
-- `~/.local/share/applications/gp.desktop` — symlinked from `~/.nix-profile/share/applications/gp.desktop` by home-manager; Exec=`/nix/store/.../bin/globalprotect defaultbrowser %u` (pangp).
+- `/usr/share/applications/gpgui.desktop` -- shipped by the apt-installed `globalprotect-openconnect` package; Exec=`/usr/bin/gpclient launch-gui %u` (gpoc).
+- `~/.local/share/applications/gp.desktop` -- symlinked from `~/.nix-profile/share/applications/gp.desktop` by home-manager; Exec=`/nix/store/.../bin/globalprotect defaultbrowser %u` (pangp).
 
-ChromeOS prefers the system one and dispatches every callback to gpoc's `gpclient launch-gui`. Symptom: `/tmp/gpcallback.log` shows `gpclient::launch_gui Failed to feed auth data to the CLI: No such file or directory (os error 2)` — gpoc has no peer running (we're in pangp mode), and the cookie never reaches PanGPS.
+ChromeOS prefers the system one and dispatches every callback to gpoc's `gpclient launch-gui`. Symptom: `/tmp/gpcallback.log` shows `gpclient::launch_gui Failed to feed auth data to the CLI: No such file or directory (os error 2)` -- gpoc has no peer running (we're in pangp mode), and the cookie never reaches PanGPS.
 
 **Fix**: disable the system gpgui.desktop while pangp is the active mode, and install gp.desktop at the system level so ChromeOS sees it:
 
@@ -629,7 +629,7 @@ Drop the tarball at a known path (e.g., `/etc/nixos/pangp/PanGPLinux-6.3.3-c31.t
 }
 ```
 
-(`pkgs.pangp` needs an overlay — see `~/dotfiles/contexts/pangp.nix` header for the overlay hint.) Then `nixos-rebuild switch` + `home-manager switch --flake ~/dotfiles#desktop`.
+(`pkgs.pangp` needs an overlay -- see `~/dotfiles/contexts/pangp.nix` header for the overlay hint.) Then `nixos-rebuild switch` + `home-manager switch --flake ~/dotfiles#desktop`.
 
 ### Critical: default-browser handshake
 
@@ -677,7 +677,7 @@ sudo rm -rf /var/lib/globalprotect        # systemd StateDirectory leftovers (Hi
 rm -rf ~/.local/share/globalprotect       # user-side wrapped HOME (PanGPA.log, GP_HTML/, .GlobalProtect/)
 ```
 
-To temporarily disable pangp without uninstalling — i.e., switch back to using gpoc — use `vpn-mode gpoc` instead.
+To temporarily disable pangp without uninstalling -- i.e., switch back to using gpoc -- use `vpn-mode gpoc` instead.
 
 ## Diff-the-requests instrumentation (debugging "gpoc fails / pangp works")
 
@@ -685,7 +685,7 @@ When the OSS yuezk gpoc client returns a server-side error (e.g., HTTP 512 at ga
 
 ### Pangp logging levels (what they actually capture)
 
-`globalprotect set-log --level {debug|dump}` (must run as user, sudo errors with "Unable to run GlobalProtect CLI for system users: 0"). Empirically observed contents at dump level (the higher of the two — LIVEcommunity reports of "passwords appearing in cleartext" are narrow to legacy Save-User-Credential mode, NOT modern SAML flows):
+`globalprotect set-log --level {debug|dump}` (must run as user, sudo errors with "Unable to run GlobalProtect CLI for system users: 0"). Empirically observed contents at dump level (the higher of the two -- LIVEcommunity reports of "passwords appearing in cleartext" are narrow to legacy Save-User-Credential mode, NOT modern SAML flows):
 
 | Log captures at dump | Captured? |
 |---|---|
@@ -694,13 +694,13 @@ When the OSS yuezk gpoc client returns a server-side error (e.g., HTTP 512 at ga
 | Response HTTP status code | yes |
 | Response content-length | yes |
 | Cookie file write events (PanPUAC `.dat`, encrypted on disk) | yes |
-| Tunnel packet-level metadata (IPv4 headers, send-packet-size) | yes (LOTS — fills 10MB in ~4 min of active VPN use) |
+| Tunnel packet-level metadata (IPv4 headers, send-packet-size) | yes (LOTS -- fills 10MB in ~4 min of active VPN use) |
 | **HTTP POST request body** | **NO** |
 | **HTTP response body** | **NO** |
 
-Use dump for ops-level connect diagnostics (which endpoints get hit, status codes, where it fails) — NOT for request/response field-level inspection. For that, see the webhook.site technique below.
+Use dump for ops-level connect diagnostics (which endpoints get hit, status codes, where it fails) -- NOT for request/response field-level inspection. For that, see the webhook.site technique below.
 
-**Log rotation hazard**: at dump level, PanGPS rotates `PanGPS.log → PanGPS.log.old` when it hits ~10MB, and keeps only the most recent .old. With active VPN use that's every few minutes — you'll lose the auth-cycle log to rotation before you can read it. Capture independently with `sudo tail -F /var/lib/globalprotect/PanGPS.log > /tmp/pangp-capture.log &` BEFORE the connect cycle; the tail-F follows the rotation and your file is untouched by pangp.
+**Log rotation hazard**: at dump level, PanGPS rotates `PanGPS.log -> PanGPS.log.old` when it hits ~10MB, and keeps only the most recent .old. With active VPN use that's every few minutes -- you'll lose the auth-cycle log to rotation before you can read it. Capture independently with `sudo tail -F /var/lib/globalprotect/PanGPS.log > /tmp/pangp-capture.log &` BEFORE the connect cycle; the tail-F follows the rotation and your file is untouched by pangp.
 
 ```bash
 globalprotect set-log --level dump   # run as user, NOT sudo
@@ -711,15 +711,15 @@ globalprotect connect --portal access.digi.com --username tlilley@digi.com
 # Wait for Connected, then:
 kill "$TAIL"
 sudo grep -nE 'GetHttpResponse: Request|user_agent|status is|content-length' /tmp/pangp-capture.log
-# Always drop back to debug after — dump generates massive disk and CPU pressure on a busy tunnel
+# Always drop back to debug after -- dump generates massive disk and CPU pressure on a busy tunnel
 globalprotect set-log --level debug
 ```
 
 ### Gpoc verbose logging (captures responses but NOT request bodies)
 
 `gpclient -vvv` activates `log::trace!` macros via `clap-verbosity-flag` + `env_logger`. At the gateway-login site (`crates/gpapi/src/gateway/login.rs`):
-- `info!("Perform gateway login, user_agent: ...")` — line ~48
-- `debug!("Gateway login response: {}", res)` — line ~75 (the response only)
+- `info!("Perform gateway login, user_agent: ...")` -- line ~48
+- `debug!("Gateway login response: {}", res)` -- line ~75 (the response only)
 
 The request body `HashMap` built by `build_gateway_login_params` is handed to `reqwest::Client::post(...).form(&params)` without ever being printed. To see what gpoc actually SENT, you need either a custom build that adds tracing OR the pipedream technique below.
 
@@ -727,8 +727,8 @@ The request body `HashMap` built by `build_gateway_login_params` is handed to `r
 
 Originally documented as "the pipedream technique" in [yuezk/GlobalProtect-openconnect#574](https://github.com/yuezk/GlobalProtect-openconnect/issues/574). As of 2026-05-19, pipedream rebranded to "String" (post-Workday acquisition) and the simple HTTP-webhook surface is gone. Equivalent free alternatives:
 
-- **webhook.site** — UUID-based URLs `https://webhook.site/<uuid>`; supports subdomain alias `https://<uuid>.webhook.site` (the alias form is what we need because pangp/gpoc's `--portal` accepts hostnames, not paths).
-- **requestcatcher.com** — `<random>.requestcatcher.com` subdomain native; simpler if subdomain aliasing fails.
+- **webhook.site** -- UUID-based URLs `https://webhook.site/<uuid>`; supports subdomain alias `https://<uuid>.webhook.site` (the alias form is what we need because pangp/gpoc's `--portal` accepts hostnames, not paths).
+- **requestcatcher.com** -- `<random>.requestcatcher.com` subdomain native; simpler if subdomain aliasing fails.
 
 Both serve valid Let's Encrypt certs so neither client refuses to TLS-handshake.
 
@@ -740,7 +740,7 @@ Procedure with webhook.site:
    globalprotect disconnect 2>/dev/null
    globalprotect connect --portal <uuid>.webhook.site --username <user>
    ```
-   Pangp TLS-handshakes, POSTs prelogin to `<uuid>.webhook.site/global-protect/prelogin.esp`, gets a bogus response, fails — but webhook.site captures the request verbatim (method, URL, headers, body).
+   Pangp TLS-handshakes, POSTs prelogin to `<uuid>.webhook.site/global-protect/prelogin.esp`, gets a bogus response, fails -- but webhook.site captures the request verbatim (method, URL, headers, body).
 3. Same for gpoc's prelogin (standalone, doesn't need full pipeline):
    ```bash
    gpauth <uuid>.webhook.site
@@ -766,7 +766,7 @@ POST `/global-protect/prelogin.esp` body, side-by-side:
 | `host-id` | `<32-hex machine UUID>` | *(missing)* | **gpoc omits; pangp sends `/etc/machine-id` (or `dmidecode -s system-uuid` with dashes stripped)** |
 | `os-version` | `Linux <kernel-version>` | *(missing)* | **gpoc omits; sends only when `--os` flag is passed (`gp_params.rs:131-133`)** |
 | `data` | b64 of `{"cas_embedded_browser":"yes"}` (CAS = Cloud Authentication Service) | *(missing)* | **gpoc omits** |
-| User-Agent | `PAN GlobalProtect/6.3.3-638 (Linux <kernel>)` | `PAN GlobalProtect` | different but ruled out as load-bearing — gpoc with UA spoofed to pangp's exact string STILL gets 512 |
+| User-Agent | `PAN GlobalProtect/6.3.3-638 (Linux <kernel>)` | `PAN GlobalProtect` | different but ruled out as load-bearing -- gpoc with UA spoofed to pangp's exact string STILL gets 512 |
 
 ### Where the diff lives in gpoc source
 
@@ -787,10 +787,10 @@ params.retain(|k, _| REQUIRED_PARAMS.contains(k));   // silently drops anything 
 
 ### Ranked hypotheses for the 512
 
-1. **(MOST LIKELY) Missing `host-id`** — `REQUIRED_PARAMS` declares it; code never sends it; tenants with HIP-enforcement or device-posture config reject prelogin/gateway-login without it. Timing matches: 2026-05-08 outage onset aligns with potential portal-side enforcement bump.
-2. **(SECOND) Missing `data` (CAS metadata)** — Digi's portal version 6.3.3-650 is recent enough that the CAS auth path may be default; without `cas_embedded_browser` declaration, the portal may select a path that's incompatible with what gpoc's gpauth produced.
-3. **(THIRD) `default-browser=1` declaring embedded but doing external SAML** — plausible but no direct evidence the portal validates declaration-vs-execution; community workaround in #574 (`--os Windows`) doesn't change this field.
-4. **Other** — yuezk #574 (your exact symptom, open as of 2026-01-20, 46 comments, no accepted fix). Related: #318, #472 (host-id absence with PAN error 53003), #572 (Reusing Portal's cookie on the Gateway seems broken).
+1. **(MOST LIKELY) Missing `host-id`** -- `REQUIRED_PARAMS` declares it; code never sends it; tenants with HIP-enforcement or device-posture config reject prelogin/gateway-login without it. Timing matches: 2026-05-08 outage onset aligns with potential portal-side enforcement bump.
+2. **(SECOND) Missing `data` (CAS metadata)** -- Digi's portal version 6.3.3-650 is recent enough that the CAS auth path may be default; without `cas_embedded_browser` declaration, the portal may select a path that's incompatible with what gpoc's gpauth produced.
+3. **(THIRD) `default-browser=1` declaring embedded but doing external SAML** -- plausible but no direct evidence the portal validates declaration-vs-execution; community workaround in #574 (`--os Windows`) doesn't change this field.
+4. **Other** -- yuezk #574 (your exact symptom, open as of 2026-01-20, 46 comments, no accepted fix). Related: #318, #472 (host-id absence with PAN error 53003), #572 (Reusing Portal's cookie on the Gateway seems broken).
 
 `clientgpversion` is ALSO commented out at `gp_params.rs:135-138` ("Do not include clientgpversion for now") and was an earlier hypothesis, but the prelogin diff above shows the bigger gap is `host-id`/`data`/`default-browser=1`. `clientgpversion` may be a contributing factor but is unlikely to be the sole cause.
 
@@ -798,19 +798,19 @@ params.retain(|k, _| REQUIRED_PARAMS.contains(k));   // silently drops anything 
 
 Three runtime experiments, in cost order:
 
-1. **Custom gpoc build with `host-id`** — clone yuezk source, patch `gp_params.rs:to_params()` to read `/etc/machine-id` (which on Linux matches the pangp format exactly: 32 hex chars), insert it as `host-id` form param. Build with `cargo build --release`. ~30-60 min if cargo + deps need to be set up; minutes if Rust toolchain present.
-2. **Custom build adding `data=b64({"cas_embedded_browser":"yes"})` + `os-version` + flipping `default-browser=1` → `4`** — if #1 alone doesn't fix it.
-3. **Binary patch (single-byte `1` → `4` for default-browser)** — gpclient binary has `default-browser1cas-support` as a contiguous rodata literal at decimal offset 3776961; byte 3776976 is the literal `'1'` (0x31). Patch to `'4'` (0x34) with `dd conv=notrunc`. Only affects that one bound field; reversible with the inverse patch. Doesn't help with the host-id hypothesis (binary patching can't INSERT new fields, only SUBSTITUTE existing bytes). Useful only if hypothesis #3 turns out to be load-bearing on its own — unlikely per the ranking.
+1. **Custom gpoc build with `host-id`** -- clone yuezk source, patch `gp_params.rs:to_params()` to read `/etc/machine-id` (which on Linux matches the pangp format exactly: 32 hex chars), insert it as `host-id` form param. Build with `cargo build --release`. ~30-60 min if cargo + deps need to be set up; minutes if Rust toolchain present.
+2. **Custom build adding `data=b64({"cas_embedded_browser":"yes"})` + `os-version` + flipping `default-browser=1` -> `4`** -- if #1 alone doesn't fix it.
+3. **Binary patch (single-byte `1` -> `4` for default-browser)** -- gpclient binary has `default-browser1cas-support` as a contiguous rodata literal at decimal offset 3776961; byte 3776976 is the literal `'1'` (0x31). Patch to `'4'` (0x34) with `dd conv=notrunc`. Only affects that one bound field; reversible with the inverse patch. Doesn't help with the host-id hypothesis (binary patching can't INSERT new fields, only SUBSTITUTE existing bytes). Useful only if hypothesis #3 turns out to be load-bearing on its own -- unlikely per the ranking.
 
 ### What does NOT work for TLS decryption
 
 - **SSLKEYLOGFILE on gpoc**: gpoc uses `reqwest` with `native-tls` (OpenSSL) per workspace `Cargo.toml:34`. `native-tls` does not honor `SSLKEYLOGFILE` (see [reqwest #1016](https://github.com/seanmonstar/reqwest/issues/1016) and [#2676](https://github.com/seanmonstar/reqwest/issues/2676)). Would require a custom build swapping to `rustls` + `KeyLogFile`.
 - **SSLKEYLOGFILE on pangp**: proprietary; no documented key-export. `LD_PRELOAD` of a key-extracting OpenSSL is theoretically possible but unreported for PanGPS specifically; PanGPS runs as systemd-managed root.
-- **openconnect as a discriminator**: openconnect 9.12 supports `gp` protocol natively, but era memory shows openconnect already fails on Digi's tenant with the same 512 — it inherits the upstream-incompatibility class.
+- **openconnect as a discriminator**: openconnect 9.12 supports `gp` protocol natively, but era memory shows openconnect already fails on Digi's tenant with the same 512 -- it inherits the upstream-incompatibility class.
 
 ### Mitmproxy approach (heavyweight fallback)
 
-If pipedream and pangp logs are both inconclusive, mitmproxy with iptables transparent redirect works as long as PAN's portal isn't using certificate pinning beyond standard validation (no public evidence of pinning in either gpoc source or PAN docs). Install mitmproxy CA in both clients' trust stores; iptables PREROUTING redirects outbound 443 to portal IP → mitmproxy local port. Cost: ~30 min setup. Risk: DNS interception on Crostini's veth is awkward; if cert pinning IS present, neither client will connect through the proxy.
+If pipedream and pangp logs are both inconclusive, mitmproxy with iptables transparent redirect works as long as PAN's portal isn't using certificate pinning beyond standard validation (no public evidence of pinning in either gpoc source or PAN docs). Install mitmproxy CA in both clients' trust stores; iptables PREROUTING redirects outbound 443 to portal IP -> mitmproxy local port. Cost: ~30 min setup. Risk: DNS interception on Crostini's veth is awkward; if cert pinning IS present, neither client will connect through the proxy.
 
 Pipedream is strictly better when it works (which it should for clients that just do standard TLS validation).
 
@@ -830,7 +830,7 @@ The Crostini case is technically supported (works via the garcon symlink) but it
 
 ## Known pitfalls
 
-**Do NOT use multi-token `--browser` strings.** `--browser "chromium --incognito"` (or any space-separated string) is treated by gpauth as a single filename → ENOENT. Has been broken since Aug 2024 (commit `9460d49`); no released gpauth has ever supported shell-style splitting of this arg.
+**Do NOT use multi-token `--browser` strings.** `--browser "chromium --incognito"` (or any space-separated string) is treated by gpauth as a single filename -> ENOENT. Has been broken since Aug 2024 (commit `9460d49`); no released gpauth has ever supported shell-style splitting of this arg.
 
 If your intent is forcing fresh SAML per connect, use `gpclient connect --clean` (or the corresponding flag on whichever invocation pattern you use). Do not try to force fresh SAML via `--incognito` browser flags.
 

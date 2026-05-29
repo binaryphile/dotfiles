@@ -64,7 +64,7 @@ in
   #   so any future pangp.nix runtimeBase change propagates here without
   #   re-touching update-env)
   #
-  # `.outPath` is explicit (vs bare `"${pangp}"` derivation→string
+  # `.outPath` is explicit (vs bare `"${pangp}"` derivation->string
   # coercion) to make the producer code defensible against unusual
   # pangp value shapes.
   #

@@ -216,7 +216,7 @@ declare -A WidgetNoSsh=(
   [dm1]=yes
   [nexus]=yes
   [remotemanager]=yes
-  # SSH probes (sshHost) removed for the remaining widgets — were triggering
+  # SSH probes (sshHost) removed for the remaining widgets -- were triggering
   # 1Password SSH-agent auth dialogs on every poll. Ping result alone now
   # drives the state (combine treats ssh=skip + ping=ok as "on").
   [stash]=yes

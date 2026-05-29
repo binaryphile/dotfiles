@@ -24,8 +24,8 @@
   # gitconfig + gitignore_global: macOS doesn't import contexts/linux-base.nix
   # (which Linux uses to deploy these via ctxDir-relative paths), so declare
   # them explicitly here. Source paths are nix-relative-to-this-file:
-  #   ./gitconfig             → contexts/macos/gitconfig (this dir's gitconfig)
-  #   ../../gitignore_global  → dotfiles/gitignore_global (repo root)
+  #   ./gitconfig             -> contexts/macos/gitconfig (this dir's gitconfig)
+  #   ../../gitignore_global  -> dotfiles/gitignore_global (repo root)
   # Both files are shared across all contexts; macOS-specific deltas (e.g.,
   # hooksPath = /Users/tlilley/dotfiles/githooks, excludesfile pointing at
   # the deployed gitignore_global) live in contexts/macos/gitconfig directly.

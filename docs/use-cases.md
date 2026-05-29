@@ -496,7 +496,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 
 **State coloring** (mirrors waybar.css): on = hidden (health) or white (always-shown); light gray = partial; dark gray = off; amber = unknown.
 
-**Reachability signal**: TCP/443 ping (`pingHost`) is the only operative reachability probe. The SSH probe (`sshHost`) is disabled for all widgets in `WidgetNoSsh` (= all widgets currently) — was triggering 1Password SSH-agent prompts on every poll. The `combine` rule `ssh=skip + ping=ok = on` keeps state-display semantics intact: ping success drives "on" directly. See [design.md: Status widgets](design.md#status-widgets-uc-10) for the implementation detail.
+**Reachability signal**: TCP/443 ping (`pingHost`) is the only operative reachability probe. The SSH probe (`sshHost`) is disabled for all widgets in `WidgetNoSsh` (= all widgets currently) -- was triggering 1Password SSH-agent prompts on every poll. The `combine` rule `ssh=skip + ping=ok = on` keeps state-display semantics intact: ping success drives "on" directly. See [design.md: Status widgets](design.md#status-widgets-uc-10) for the implementation detail.
 
 ---
 

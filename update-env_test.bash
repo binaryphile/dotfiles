@@ -895,7 +895,7 @@ test_extractGlobalprotectDebToOptTask_copies_from_marker_fresh() {
   cp "$(command -v patchelf)" $fakeStore/PanGPS
   cp "$(command -v patchelf)" $fakeStore/PanGPA
 
-  # libwa symlink chain — assert cp -a preserves it
+  # libwa symlink chain -- assert cp -a preserves it
   echo 'fake libwaheap content' >$fakeStore/libwaheap.so.4.3.3608.0
   ( cd $fakeStore && ln -s libwaheap.so.4.3.3608.0 libwaheap.so.4 )
   ( cd $fakeStore && ln -s libwaheap.so.4 libwaheap.so )

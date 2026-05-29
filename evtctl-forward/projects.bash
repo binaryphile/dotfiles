@@ -36,7 +36,7 @@ declare -Agr ProjectWebhookItem=(
 )
 
 # Field name within the 1Password item containing the Workflow URL. By
-# convention "webhook" — Password-type items name the field "password" by
+# convention "webhook" -- Password-type items name the field "password" by
 # default; this layout uses "webhook" for explicitness.
 declare -Agr ProjectWebhookField=(
   # [urma]=webhook

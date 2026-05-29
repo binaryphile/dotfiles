@@ -667,7 +667,7 @@ aptRemoveGlobalprotectTask() {
 # Idempotency: deployed PanGPS interpreter must start with the recorded
 # nix-store prefix. If not (stub-ld, missing, or stale rev), re-stage.
 #
-# Marker absence is FATAL — home-manager must have activated to deploy
+# Marker absence is FATAL -- home-manager must have activated to deploy
 # them before this task runs. See docs/vpn.md for the bootstrap sequence.
 #
 # Requires sudo NOPASSWD on Crostini for the install into /opt.
@@ -677,7 +677,7 @@ extractGlobalprotectDebToOptTask() {
 
   desc 'stage pangp patched binaries from nix-store into runtimeBase'
 
-  # Marker presence is a HARD prerequisite — home-manager must have
+  # Marker presence is a HARD prerequisite -- home-manager must have
   # activated to deploy them. Fatal if absent; operator runs
   # `home-manager switch` first.
   if [[ ! -r $srcMarker || ! -r $destMarker ]]; then
@@ -727,7 +727,7 @@ extractGlobalprotectDebToOptTask() {
     # cp -a preserves symlinks. libwa* libraries ship as a symlink
     # chain (libwaapi.so -> libwaapi.so.4 -> libwaapi.so.4.3.3608.0);
     # -a preserves the chain. -aL would dereference symlinks producing
-    # byte-identical regular files per chain — works for dlopen but
+    # byte-identical regular files per chain -- works for dlopen but
     # changes filesystem semantics for no benefit.
     sudo cp -a "$pangpSource/." "$pangpDest/"
   }
@@ -1113,7 +1113,7 @@ claudeMemoryRedirectsTask() {
   check "[[ -f $redirectSrc ]]"
 
   # Project dirs covered by the redirect. Single source of truth shared
-  # by the up-to-date check and the install command — adding a project
+  # by the up-to-date check and the install command -- adding a project
   # means adding one line here.
   memoryProjectDirs() {
     echo $HOME/dotfiles

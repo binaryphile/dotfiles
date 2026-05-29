@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# pangp-test — one-shot discriminator test: install official Palo Alto
+# pangp-test -- one-shot discriminator test: install official Palo Alto
 # Networks GlobalProtect CLI alongside existing OSS gpoc, capture both
 # clients' behavior against the Digi tenant, package evidence for IT
 # ticket SC-80940. See conversation history (2026-05-18) for design.
@@ -119,7 +119,7 @@ EOF
   cat > "$DIR/summary.md" <<EOF
 # pangp discriminator test $(date -u +%FT%TZ)
 
-Outcome (HEURISTIC — verify against logs): $outcome
+Outcome (HEURISTIC -- verify against logs): $outcome
 Source IP: $(cat "$DIR/source-ip.txt")
 Versions: see versions.txt
 Exit codes: see exit-codes.txt
@@ -130,7 +130,7 @@ Ticket: SC-80940
 
 Classifier notes: 'connected' requires \bConnected\b in show-status.txt
 with no Disconnected/Not Connected. 'identical-512' is heuristic across
-multiple likely pangp surface forms — confirm by inspecting pangp-connect.log
+multiple likely pangp surface forms -- confirm by inspecting pangp-connect.log
 and gpd.log directly.
 EOF
 
@@ -166,7 +166,7 @@ chmod 700 "$DIR"
 
 # Probe before priming. Crostini and other NOPASSWD-only environments
 # can't satisfy `sudo -v` (per sudoers(5): verifypw defaults to 'all', so
-# any non-NOPASSWD entry — e.g. inherited from %sudo group — makes `sudo
+# any non-NOPASSWD entry -- e.g. inherited from %sudo group -- makes `sudo
 # -v` require a password even when individual sudo calls don't). Probe
 # avoids prompting for an unsatisfiable password; individual sudo calls
 # later still work because NOPASSWD covers them.
@@ -185,7 +185,7 @@ curl -s --max-time 10 https://ifconfig.me > "$DIR/source-ip.txt" || echo "(curl 
 gpclient --version > "$DIR/versions.txt"
 echo "test started: $(date -u +%FT%TZ)" >> "$DIR/versions.txt"
 
-# Step 1: gpoc baseline capture (xdg-mime still → gpgui.desktop)
+# Step 1: gpoc baseline capture (xdg-mime still -> gpgui.desktop)
 xdg-mime query default x-scheme-handler/globalprotectcallback > "$DIR/mime-before.txt"
 echo
 echo "==> Starting gpoc baseline capture (timeout: ${GPOC_TIMEOUT}s)."
@@ -209,7 +209,7 @@ chmod 600 "$DIR/gpoc-capture.log"
 } > "$DIR/exit-codes.txt"
 [[ $gpoc_outer_exit -eq 124 ]] && echo "WARN: gpoc capture timed out." >&2
 
-# Step 2: flip xdg-mime → gp.desktop
+# Step 2: flip xdg-mime -> gp.desktop
 ack_or_exit "Edit ~/dotfiles/contexts/crostini/home.nix to add 'x-scheme-handler/globalprotectcallback = lib.mkForce [\"gp.desktop\"]' and commit?"
 grep -qE '^[[:space:]]+"x-scheme-handler/globalprotectcallback".*mkForce.*gp\.desktop' \
   "$HOME/dotfiles/contexts/crostini/home.nix" \

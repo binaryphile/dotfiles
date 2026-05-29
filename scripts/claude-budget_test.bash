@@ -94,7 +94,7 @@ test_StopSkipsMalformedJSONL() {
   local dir; tesht.MktempDir dir
 
   local transcript="$dir/session.jsonl"
-  # Only one line: a truncated/malformed entry. head -n -1 strips it → 0 tokens → no file.
+  # Only one line: a truncated/malformed entry. head -n -1 strips it -> 0 tokens -> no file.
   printf '{"message":{"id":"m1","usage":{"input_tokens":100' > "$transcript"
 
   runStop "mysession" "$transcript"
@@ -112,7 +112,7 @@ test_SessionStartWarnsAt25Pct() {
   local day
   day=$(date -d '2 hours ago' +%Y-%m-%d)
 
-  # 760k used of 1000k → 24% remaining → crosses 25% threshold → 25%-action text fires
+  # 760k used of 1000k -> 24% remaining -> crosses 25% threshold -> 25%-action text fires
   writeConfig 1000000
   writeTokenFile "$day" "sess1" 500000
   writeTokenFile "$day" "sess2" 260000
@@ -132,7 +132,7 @@ test_SessionStartNoWarnUnderThreshold() {
   local day
   day=$(date -d '2 hours ago' +%Y-%m-%d)
 
-  # 500k used of 1000k → 50% remaining → no threshold crossed
+  # 500k used of 1000k -> 50% remaining -> no threshold crossed
   writeConfig 1000000
   writeTokenFile "$day" "sess1" 500000
 
@@ -149,7 +149,7 @@ test_UserPromptSubmitWarnsOnNewThreshold() {
   local day
   day=$(date -d '2 hours ago' +%Y-%m-%d)
 
-  # 910k of 1000k → 9% remaining → 25% already warned → 10%-action fires
+  # 910k of 1000k -> 9% remaining -> 25% already warned -> 10%-action fires
   writeConfig 1000000
   writeTokenFile "$day" "sess1" 910000
 
@@ -174,7 +174,7 @@ test_UserPromptSubmitBlocksAtEnforceThreshold() {
   local day
   day=$(date -d '2 hours ago' +%Y-%m-%d)
 
-  # 960k of 1000k → 4% remaining → enforce_at_pct=5 → block
+  # 960k of 1000k -> 4% remaining -> enforce_at_pct=5 -> block
   writeConfig 1000000 5
   writeTokenFile "$day" "sess1" 960000
 
@@ -191,7 +191,7 @@ test_WarningFlockedNoDuplicate() {
   local day
   day=$(date -d '2 hours ago' +%Y-%m-%d)
 
-  # 760k of 1000k → 24% remaining → both concurrent calls race to emit 25% warning
+  # 760k of 1000k -> 24% remaining -> both concurrent calls race to emit 25% warning
   writeConfig 1000000
   writeTokenFile "$day" "sess1" 760000
 
@@ -255,7 +255,7 @@ test_SessionStartWarnsWithSessionCount() {
   local day
   day=$(date -d '2 hours ago' +%Y-%m-%d)
 
-  # 3 sessions, 800k total → 20% remaining → crosses 25%
+  # 3 sessions, 800k total -> 20% remaining -> crosses 25%
   writeConfig 1000000
   writeTokenFile "$day" "sessA" 300000
   writeTokenFile "$day" "sessB" 300000

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# pangp-enable-default-browser — opt the official PAN GlobalProtect Linux
+# pangp-enable-default-browser -- opt the official PAN GlobalProtect Linux
 # CLI into default-browser SAML authentication. PAN portals that push
 # "Use Default Browser for SAML Authentication = Yes" require the client
 # to opt in via pangps.xml; without this, `globalprotect connect` aborts
