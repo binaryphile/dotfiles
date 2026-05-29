@@ -12,8 +12,8 @@
   gpgsign = true
 [core]
   filemode = false
-  excludesfile = /home/ted/.gitignore_global
-  hooksPath = /home/ted/dotfiles/githooks
+  excludesfile = ~/.gitignore_global
+  hooksPath = ~/dotfiles/githooks
   mergeoptions = --no-edit
   pager = diff-so-fancy | less --tabs=4 -RFX
 [push]
