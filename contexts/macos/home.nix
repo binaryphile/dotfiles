@@ -26,9 +26,11 @@
   # them explicitly here. Source paths are nix-relative-to-this-file:
   #   ./gitconfig             -> contexts/macos/gitconfig (this dir's gitconfig)
   #   ../../gitignore_global  -> dotfiles/gitignore_global (repo root)
-  # Both files are shared across all contexts; macOS-specific deltas (e.g.,
-  # hooksPath = /Users/tlilley/dotfiles/githooks, excludesfile pointing at
-  # the deployed gitignore_global) live in contexts/macos/gitconfig directly.
+  # Both files are shared across all contexts; macOS-specific deltas
+  # (gpg.program path, LFS filter section, signing key fingerprint format)
+  # live in contexts/macos/gitconfig directly. Paths in the gitconfig use
+  # ~ (git expands via expand_user_path) so the same gitconfig values
+  # work on /Users/<user> and any other home layout.
   # UC-14 binary-commit guard depends on this deployment to activate on macOS.
   home.file.".gitconfig".source = ./gitconfig;
   home.file.".gitignore_global".source = ../../gitignore_global;
