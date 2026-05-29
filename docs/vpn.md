@@ -225,7 +225,7 @@ update-env -1     # runs the pangp group: verify tarball, remove apt deb, then h
 
 Stages of the deploy:
 1. `aptRemoveGlobalprotectTask` -- uninstalls the deprecated apt-shipped globalprotect deb if it's present (idempotent).
-2. `homeManagerFlakeSwitchTask` runs `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini --impure`. The `--impure` is required because `pangp.nix`'s `src` is an absolute path outside the flake's git tree (proprietary tarball, not vendored).
+2. `homeManagerFlakeSwitchTask` runs `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini`. No `--impure` flag: `pangp.nix`'s `src` is resolved by content hash via `pkgs.requireFile`, so nix-store searches by content address and pure-eval succeeds. First-time bootstrap requires `nix-store --add-fixed sha256 PanGPLinux-<ver>.tgz` once per machine (the proprietary tarball cannot be redistributed).
 3. Activation hook `home.activation.pangpSystemUnit` copies `${pangp}/lib/systemd/system/gpd.service` to `/etc/systemd/system/gpd.service`, runs `daemon-reload`, restarts the service. Uses `/usr/bin/sudo` (absolute path) because home-manager's activation env has minimal PATH.
 
 Result: `gpd.service` runs PanGPS from the nix store, `WorkingDirectory=/var/lib/globalprotect` (writable, systemd-`StateDirectory`-managed), `ExecStartPre` symlinks read-only config files into the StateDirectory. PanGPA runs as a home-manager user-service, with `HOME` wrapped to `$HOME/.local/share/globalprotect` so it doesn't pollute the top-level home dir with `GP_HTML/` and `.GlobalProtect/`.

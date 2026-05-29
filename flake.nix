@@ -70,15 +70,32 @@
 
     # PAN GlobalProtect (proprietary) -- workaround client for the gpoc
     # CVE-2026-0257 breakage (see pangp.nix header for context).
-    # The .tgz source is per-machine: the path below is the Crostini
-    # location; edit on the NixOS work machine to wherever the tarball
-    # lives there (e.g., /etc/nixos/pangp/PanGPLinux-6.3.3-c31.tgz).
-    # If the path doesn't exist, nix eval still succeeds; the build of
-    # `pangp` will fail at unpack time, which is the right shape -- a
-    # user without the tarball doesn't get pangp wired into their config.
+    #
+    # Resolved via requireFile against the tarball's content hash, not by
+    # absolute filesystem path. Pure-eval safe: nix-store searches by
+    # content address, so no --impure flag needed at the call site.
+    #
+    # First-time bootstrap on a new machine:
+    #   1. Download PanGPLinux-<ver>.tgz from PAN's customer portal
+    #      (proprietary; not redistributable, so cannot be fetchurl'd).
+    #   2. Add to the nix-store with its content hash:
+    #        nix-store --add-fixed sha256 PanGPLinux-6.3.3-c31.tgz
+    #   3. Re-run home-manager switch -- no --impure needed.
+    #
+    # If the file is missing, requireFile fails at evaluation with an
+    # actionable message rather than producing a silently broken pangp.
     pangp = import ./pangp.nix {
       pkgs = linuxPkgs;
-      src = /home/ted/crostini/PanGPLinux-6.3.3-c31.tgz;
+      src = linuxPkgs.requireFile {
+        name = "PanGPLinux-6.3.3-c31.tgz";
+        sha256 = "0z4n73hx27717i8p92r4ad2xbbi1l8w5nfsx20yqbx3irwhyvdba";
+        message = ''
+          PanGPLinux-6.3.3-c31.tgz is not in the nix-store.
+          Download from PAN's customer portal, then:
+            nix-store --add-fixed sha256 PanGPLinux-6.3.3-c31.tgz
+          and re-run.
+        '';
+      };
     };
 
     commonSpecialArgs = {
