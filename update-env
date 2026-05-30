@@ -1854,8 +1854,8 @@ opAccount() {
 # Fix in task.bash: use explicit -m flag as a separate arg.
 
 # Pinned to the same rev as bash-tools.nix taskBash. Update both together.
-TaskBashBootstrapRev=655e7e6e60a7c3156b723f3a4167bc9b0e9c432e
-TaskBashBootstrapSha256=d02127de04c26f2cd57140aa741d5b28575595ae5cf188b27f0575c1f3d36af1
+TaskBashBootstrapRev=90465b8515b3d928a7e8aea3170c843910123c06
+TaskBashBootstrapSha256=41ac8366e4e5faa866366d24206db738e1f62b653848a2ca61bf5999d84ca65e
 
 if [[ -n ${TASK_BASH_LIB:-} ]]; then
   [[ -r $TASK_BASH_LIB ]] || { echo fatal: TASK_BASH_LIB unreadable: $TASK_BASH_LIB >&2; exit 1; }

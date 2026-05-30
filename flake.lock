@@ -451,11 +451,11 @@
     "task-bash-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1778106903,
-        "narHash": "sha256-m1uQRWzTxKsNjGb62FPPydSStMgiB6jhJrM3rPseZVU=",
+        "lastModified": 1780164323,
+        "narHash": "sha256-nU3qVqGfj+C6OiAb/WCmaL+IO7SlykekpxLjuP3XS3E=",
         "owner": "binaryphile",
         "repo": "task.bash",
-        "rev": "bbb71540fc10f700723137b5add8f5a2a7de2051",
+        "rev": "90465b8515b3d928a7e8aea3170c843910123c06",
         "type": "github"
       },
       "original": {
