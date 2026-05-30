@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# op-run-checksum-update -- regenerate op-run/checksums.
+#
+# Operator helper (not deployed via mkScriptBin). Invoked from anywhere
+# inside the dotfiles working tree after deliberate edits to scripts/op-run,
+# op-run/projects.bash, or any op-run/machines/*.allow:
+#
+#     bash scripts/op-run-checksum-update
+#     git add op-run/checksums
+#
+# The .githooks/pre-commit hash-drift gate refuses commits when a hashed
+# file is staged without a matching op-run/checksums update.
+#
+# Manifest sharing: the Manifest array below is mirrored in
+# .githooks/pre-commit. A tesht case asserts both produce the same set
+# when run against the live tree (catches drift across the two scripts).
+
+set -euo pipefail
+shopt -s nullglob
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Manifest: hashed artifacts. Mirror in .githooks/pre-commit.
+declare -a Manifest=(
+  scripts/op-run
+  op-run/projects.bash
+  op-run/machines/*.allow
+)
+
+# sha256sum-format, path-sorted (deterministic across glob-order variation).
+sha256sum "${Manifest[@]}" | LC_ALL=C sort -k 2 > op-run/checksums
+
+echo "wrote op-run/checksums covering ${#Manifest[@]} path(s)" >&2
