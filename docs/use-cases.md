@@ -505,7 +505,14 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Primary Actor:** Ted
 - **Goal:** Tools that need work credentials start successfully
 - **Trigger:** Ted starts a tool that requires credentials (e.g., Claude Code with MCP servers)
-- **Postcondition:** Tool running with declared credentials in its process environment
+- **Postcondition:** Tool running with declared credentials in its process environment; launcher integrity verified at shell init
+- **Stakeholders:**
+  - Ted — credentialed tools start without per-invocation friction
+  - Ted (security-conscious) — modifications to the op-run launcher, the project registry, or the machine allowlist are detected at interactive-shell init; PATH-shadowed launchers (a fake `op-run` earlier in `$PATH`) are surfaced
+- **Extensions:**
+  - *Shell init detects launcher / registry / allowlist hash drift:* `OpRunIntegrityCheck` (sourced from `bash/lib/op-run-integrity.bash`, called from the interactive branch of `bash/init.bash`) runs `sha256sum --check op-run/checksums` and emits a single detective warning to stderr naming the offending path(s). Shell startup is not blocked. The check is detective per the canonical threat model (modifying both a hashed file AND its committed expected hash is the documented bypass; signed-commits + branch protection on the dotfiles registry raise that bar).
+  - *Shell init detects PATH-shadowed launcher:* If `command -v op-run` resolves to a path NOT under `/nix/store/`, `OpRunIntegrityCheck` emits a detective warning. Catches PATH-shadow attacks and home-manager profile symlink redirection. Shell startup is not blocked.
+  - *Operator edits a hashed file (launcher, registry, allowlist):* `.githooks/pre-commit` refuses the commit unless `op-run/checksums` is staged with hashes matching the staged source content. Operator runs `scripts/op-run-checksum-update && git add op-run/checksums` to update. Bypass: `git commit --no-verify`.
 
 Architecture, threat model, and operational procedures documented in the canonical doc set in ~/projects/jeeves/security/ (security.md, threat-model.md, secrets-lifecycle.md).
 
@@ -616,7 +623,7 @@ Architecture, threat model, and operational procedures documented in the canonic
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
-| UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. v2 deferrals: tamper-evident launcher hash, audit-log rotation, generalized failure-mode probing. |
+| UC-11 Use a Credentialed Tool | v1 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. Tamper-evident launcher hash check (`op-run/checksums` + `OpRunIntegrityCheck` at interactive-shell init + pre-commit drift gate) closes the v1 deferral. Remaining v2 deferrals: audit-log rotation, generalized failure-mode probing. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2 |
 | UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |
 | UC-14 Guard Against Accidental Binary Commits | Working | Global pre-commit hook + binary-extension gitignore active (deployed via home-manager); no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |
