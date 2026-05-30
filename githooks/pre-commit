@@ -1,25 +1,82 @@
 #!/usr/bin/env bash
-# Reject staged binary file additions/modifications.
-# Detection: git's own diff --numstat -- binary entries show as "- - <path>".
-# Bypass: git commit --no-verify (for intentional binary commits).
+# Reject (a) staged binary file additions/modifications (UC-14), and
+# (b) op-run-hashed file changes without a matching op-run/checksums
+# update (UC-11, #2906).
+#
+# Both gates can be bypassed with: git commit --no-verify.
 
 set -euo pipefail
 
+# ----- (a) Binary detection (UC-14) -----
+# git's own diff --numstat marks binary entries as "- - <path>".
 binary=()
 while IFS=$'\t' read -r add del path; do
   [[ $add == '-' && $del == '-' ]] && binary+=("$path")
 done < <(git diff --cached --numstat --no-renames)
 
-(( ${#binary[@]} == 0 )) && exit 0
+if (( ${#binary[@]} > 0 )); then
+  {
+    echo "pre-commit: refusing to commit binary file(s):"
+    printf '  %s\n' "${binary[@]}"
+    echo
+    echo "Options:"
+    echo "  - Add the path to .gitignore"
+    echo "  - Unstage:  git restore --staged <path>"
+    echo "  - Override: git commit --no-verify (use sparingly)"
+  } >&2
+  exit 1
+fi
 
-{
-  echo "pre-commit: refusing to commit binary file(s):"
-  printf '  %s\n' "${binary[@]}"
-  echo
-  echo "Options:"
-  echo "  - Add the path to .gitignore"
-  echo "  - Unstage:  git restore --staged <path>"
-  echo "  - Override: git commit --no-verify (use sparingly)"
-} >&2
+# ----- (b) UC-11 op-run hash drift gate (#2906) -----
+# Manifest MIRRORS scripts/op-run-checksum-update. A tesht case asserts
+# both produce the same set against the live tree.
+shopt -s nullglob
+declare -a Manifest=(
+  scripts/op-run
+  op-run/projects.bash
+  op-run/machines/*.allow
+)
 
-exit 1
+# Skip-fast: did any manifest path change in this commit?
+mapfile -t staged < <(git diff --cached --name-only)
+needCheck=0
+for p in "${Manifest[@]}"; do
+  for s in "${staged[@]}"; do
+    [[ $s == "$p" ]] && { needCheck=1; break 2; }
+  done
+done
+(( needCheck == 0 )) && exit 0
+
+# Compute the canonical checksums file from staged content of each
+# manifest entry. git cat-file -e gates each entry against the index
+# (handles the delete-from-index edge case by skipping that entry; the
+# regenerator does the same via shopt -s nullglob over working-tree refs).
+expected=$(
+  for p in "${Manifest[@]}"; do
+    git cat-file -e ":$p" 2>/dev/null || continue
+    hash=$(git show ":$p" | sha256sum | awk '{print $1}')
+    printf '%s  %s\n' "$hash" "$p"
+  done | LC_ALL=C sort -k 2
+)
+
+# Read the staged checksums file (empty if not in index, including the
+# delete-from-index case).
+actual=$(git show :op-run/checksums 2>/dev/null || true)
+
+if [[ $expected != "$actual" ]]; then
+  {
+    echo "pre-commit: op-run/checksums not updated for staged hashed-file change(s)."
+    echo
+    echo "  Fix:"
+    echo "    bash scripts/op-run-checksum-update"
+    echo "    git add op-run/checksums"
+    echo
+    echo "  Bypass: git commit --no-verify (use sparingly)"
+    echo
+    echo "  See ~/projects/jeeves/security/threat-model.md \"Tamper-evident launcher\""
+    echo "  and op-run/README.md \"Integrity check\"."
+  } >&2
+  exit 1
+fi
+
+exit 0

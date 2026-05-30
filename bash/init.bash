@@ -49,6 +49,13 @@ ShellIsInteractive && {
       systemctl --user start 1password.service
     } 2>/dev/null
   fi
+
+  # UC-11 detective integrity check (#2906). Verifies committed SHA-256
+  # hashes of op-run + registry + machine allowlists at $Root/../op-run/
+  # checksums and that command -v op-run resolves under /nix/store/.
+  # Emits a single stderr warning on mismatch; never blocks shell init.
+  TestAndSource $Root/lib/op-run-integrity.bash
+  declare -F OpRunIntegrityCheck >/dev/null && OpRunIntegrityCheck
 }
 
 SplitSpace off
