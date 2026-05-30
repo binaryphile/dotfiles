@@ -144,11 +144,13 @@ test_OpRunIntegrityCheck_both_probes_warn() {
 ## manifest equality across regenerator and pre-commit hook
 
 test_manifest_equality_regenerator_vs_hook() {
-  # Both scripts hardcode the same glob pattern in a `declare -a Manifest=(...)`
-  # array. Extract the Manifest block from each, normalize, and compare.
+  # Both scripts hardcode the same glob pattern in a `(declare|local) -a
+  # Manifest=(...)` array. Extract the Manifest block from each, normalize,
+  # and compare. The regenerator's Manifest is at file scope (`declare -a`,
+  # column 0); the hook's lives inside checkOpRunDrift (`local -a`, indented).
   extractManifest() {
-    awk '/^declare -a Manifest=\(/,/^\)/' "$1" \
-      | sed -e 's/^declare -a Manifest=(//' -e 's/^)$//' \
+    awk '/^[[:space:]]*(declare|local) -a Manifest=\(/,/^[[:space:]]*\)/' "$1" \
+      | sed -E -e 's/^[[:space:]]*(declare|local) -a Manifest=\(//' -e 's/^[[:space:]]*\)$//' \
       | grep -v '^[[:space:]]*$' \
       | grep -v '^[[:space:]]*#' \
       | awk '{$1=$1;print}'
@@ -156,7 +158,7 @@ test_manifest_equality_regenerator_vs_hook() {
 
   local regenManifest hookManifest
   regenManifest=$(extractManifest scripts/op-run-checksum-update)
-  hookManifest=$(extractManifest githooks/pre-commit)
+  hookManifest=$(extractManifest .githooks/pre-commit)
 
   tesht.AssertGot "$regenManifest" "$hookManifest"
 }

@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# pre-commit -- reject credentials in tracked files (claude/settings.json env)
+# pre-commit -- three gates:
+#   (a) Reject env vars in claude/settings.json mcpServers
+#       (MCP servers requiring credentials must use op-run)
+#   (b) Reject staged binary file additions/modifications (UC-14)
+#   (c) Reject op-run-hashed file changes without a matching
+#       op-run/checksums update (UC-11, #2906)
+#
+# All gates can be bypassed with: git commit --no-verify.
 #
 # Naming Policy:
 #
@@ -21,8 +28,88 @@ END
     fi
 }
 
+checkBinary() {
+    local -a binary=()
+    local add del path
+    while IFS=$'\t' read -r add del path; do
+        [[ $add == '-' && $del == '-' ]] && binary+=("$path")
+    done < <(git diff --cached --numstat --no-renames)
+
+    (( ${#binary[@]} > 0 )) || return 0
+    {
+        echo "pre-commit: refusing to commit binary file(s):"
+        printf '  %s\n' "${binary[@]}"
+        echo
+        echo "Options:"
+        echo "  - Add the path to .gitignore"
+        echo "  - Unstage:  git restore --staged <path>"
+        echo "  - Override: git commit --no-verify (use sparingly)"
+    } >&2
+    exit 1
+}
+
+checkOpRunDrift() {
+    # Manifest MIRRORS scripts/op-run-checksum-update. A tesht case asserts
+    # both produce the same set against the live tree.
+    # Locally disable noglob (the file-level default) for *.allow expansion;
+    # restore on the success-return path. On exit 1 the script terminates anyway.
+    set +f
+    shopt -s nullglob
+    local -a Manifest=(
+        scripts/op-run
+        op-run/projects.bash
+        op-run/machines/*.allow
+    )
+    set -f
+
+    # Skip-fast: did any manifest path change in this commit?
+    local -a staged=()
+    mapfile -t staged < <(git diff --cached --name-only)
+    local needCheck=0 p s
+    for p in "${Manifest[@]}"; do
+        for s in "${staged[@]}"; do
+            [[ $s == "$p" ]] && { needCheck=1; break 2; }
+        done
+    done
+    (( needCheck == 0 )) && return 0
+
+    # Compute the canonical checksums file from staged content of each
+    # manifest entry. git cat-file -e gates each entry against the index
+    # (handles the delete-from-index edge case by skipping that entry; the
+    # regenerator does the same via shopt -s nullglob over working-tree refs).
+    local expected actual hash
+    expected=$(
+        for p in "${Manifest[@]}"; do
+            git cat-file -e ":$p" 2>/dev/null || continue
+            hash=$(git show ":$p" | sha256sum | awk '{print $1}')
+            printf '%s  %s\n' "$hash" "$p"
+        done | LC_ALL=C sort -k 2
+    )
+
+    # Read the staged checksums file (empty if not in index, including the
+    # delete-from-index case).
+    actual=$(git show :op-run/checksums 2>/dev/null || true)
+
+    [[ $expected == "$actual" ]] && return 0
+    {
+        echo "pre-commit: op-run/checksums not updated for staged hashed-file change(s)."
+        echo
+        echo "  Fix:"
+        echo "    bash scripts/op-run-checksum-update"
+        echo "    git add op-run/checksums"
+        echo
+        echo "  Bypass: git commit --no-verify (use sparingly)"
+        echo
+        echo "  See ~/projects/jeeves/security/threat-model.md \"Tamper-evident launcher\""
+        echo "  and op-run/README.md \"Integrity check\"."
+    } >&2
+    exit 1
+}
+
 main() {
     checkSettingsJson
+    checkBinary
+    checkOpRunDrift
 }
 
 # IFS / noglob / -u / pipefail apply at source time so functions tested via
