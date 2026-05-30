@@ -356,7 +356,7 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 
 ### Credential Architecture (UC-4, UC-4a-e, UC-11)
 
-Documented in the private security-architecture doc set (`~/projects/security-docs/security.md`, `~/projects/security-docs/threat-model.md`, `~/projects/security-docs/secrets-lifecycle.md`). These docs live in a separate private git repo (bitbucket.org/accelecon/security-docs) cloned by `update-env` stage 2 with restrictive perms (700/600). The segregation is itself a security control. Repo content here reflects functional behavior; architectural detail lives in the private docs.
+Documented in the canonical security-architecture doc set (`~/projects/jeeves/security/security.md`, `~/projects/jeeves/security/threat-model.md`, `~/projects/jeeves/security/secrets-lifecycle.md`). These docs live in the private `jeeves` repo under `security/`. Repo content here reflects functional behavior; architectural detail lives in those canonical docs.
 
 **v2 mechanism: 1Password Service Accounts (not Connect).** v2 uses 1Password's Service Account model -- per-machine and per-project SAs with cryptographic vault scoping -- rather than 1Password Connect (the daemon-based credential broker). Rationale:
 
@@ -364,9 +364,38 @@ Documented in the private security-architecture doc set (`~/projects/security-do
 - Connect requires running a daemon process per machine, which adds a new attack surface (process to compromise, port to attack) and conflicts with the dotfiles philosophy of stateless local config.
 - SA's distributed-bearer-token model fits the existing op-run launcher shape (resolve credential at launch, exec the tool); Connect would require a different integration pattern.
 
-The cryptographic scoping that Service Accounts provide bounds *which vaults a token can decrypt*, not *who can use the token*. Theft resistance comes from local controls (bwrap mount policy in Hardened mode, filesystem permissions and storage hardening in Default mode), not from the cryptographic property. See `~/projects/security-docs/threat-model.md` for the full Property A vs Property B analysis.
+The cryptographic scoping that Service Accounts provide bounds *which vaults a token can decrypt*, not *who can use the token*. Theft resistance comes from local controls (bwrap mount policy in Hardened mode, filesystem permissions and storage hardening in Default mode), not from the cryptographic property. See `~/projects/jeeves/security/threat-model.md` for the full Property A vs Property B analysis.
 
 **op-run nix packaging:** `op-run` is built via `mkScriptBin` in `linux-base.nix`. `pkgs._1password-cli` is intentionally absent from its `runtimeInputs` -- the NixOS system wrapper for `op` must be used instead of the nix store binary. See the comment in `linux-base.nix` for the security rationale; the system wrapper is managed by nixos-config.
+
+#### Launcher integrity check (UC-11 detective)
+
+Closes the v1 deferral documented at `~/projects/jeeves/security/security.md` and tracked as `tasks.dotfiles #2906`. The `threat-model.md:120` "Tamper-evident launcher" control becomes runtime-active via the following pieces:
+
+**Hashed artifact set:** `scripts/op-run` (launcher), `op-run/projects.bash` (project-vault registry), every `op-run/machines/*.allow` (per-host vault allowlist). All three sit at the same trust root (signed-commits + branch protection on the dotfiles main branch) and have equivalent attack value — tampering with the registry to add a malicious vault is no less effective than modifying the launcher itself.
+
+**Storage:** `op-run/checksums`, committed, sha256sum-format (`<hash>  <path-relative-to-dotfiles-root>` per line). Standard format means operators can verify directly with `( cd ~/dotfiles && sha256sum --check op-run/checksums )` without any custom tooling.
+
+**Check function:** `OpRunIntegrityCheck` lives at `bash/lib/op-run-integrity.bash`, sourced from `bash/init.bash` inside the existing `ShellIsInteractive && { ... }` block. Two probes run sequentially on every interactive shell startup:
+
+1. *Source-content probe:* `sha256sum --quiet --check $DotfilesRoot/op-run/checksums` (cwd-ed at `$DotfilesRoot`). Non-zero rc → single warning naming the offending path. Catches drift in the local checkout, whether from explicit tampering or stale uncommitted edits.
+2. *PATH-resolution probe:* `command -v op-run` → `readlink -f` → emit a warning if the canonical path is NOT under `/nix/store/`. Catches PATH-shadow attacks (a malicious `op-run` earlier in `$PATH`) and home-manager profile symlink redirection.
+
+`DotfilesRoot` is parameterized as `${DotfilesRoot:-$Root/..}` so tests can point at a temp directory without overriding `$Root` or the working directory.
+
+**Failure mode (deliberate):** stderr warning, no shell startup block. The control is Detective per `threat-model.md:144`. Blocking would conflict with the threat-model classification AND create lockout risk if `op-run/checksums` ever drifts unexpectedly (e.g., a partial pull leaves source and checksums out of sync). The legitimate-bypass scenario — modifying a hashed file AND its committed expected hash — is the documented attacker bypass.
+
+**Pre-commit drift gate:** `.githooks/pre-commit` (already deployed from UC-14) extends with a hash-drift block. When any hashed file is staged, the hook computes the would-be-correct checksums from the staged content (`git show :<path> | sha256sum`) and compares against the staged `op-run/checksums`. Mismatch → refused commit with the actionable hint to run `scripts/op-run-checksum-update && git add op-run/checksums`. The standard `git commit --no-verify` bypass remains for the rare case the operator needs to override.
+
+**Regenerator:** `scripts/op-run-checksum-update` recomputes `op-run/checksums` from the current source files. Operator-only (not deployed via `mkScriptBin`); invoked as `bash scripts/op-run-checksum-update` from the dotfiles root after deliberate edits to any hashed file. Idempotent: running twice yields identical output. `shopt -s nullglob` handles the empty-allow-dir case on a bare-bootstrap machine.
+
+**Manifest sharing (anti-drift):** the list of hashed paths is hardcoded in both `scripts/op-run-checksum-update` and `.githooks/pre-commit` (identical glob: `scripts/op-run op-run/projects.bash op-run/machines/*.allow`). A tesht case asserts both produce the same set when run against the live tree. Factoring the manifest into a separate file would add a third tamperable artifact AND offer no security benefit at this threat-model level — the chain of trust ends at signed-commits, not at any one local file.
+
+**Non-goals (deliberate):**
+- Hashing the installed wrapper or `.op-run-wrapped` — the `makeWrapper`-generated wrapper embeds nix-store paths that change with every nix update; expected-hash maintenance against a moving target is more brittle than the PATH-resolution probe.
+- Auto-regenerating checksums from the pre-commit hook — silent working-tree mutation by hooks creates a debugging trap; failing loud keeps the hash bump visible in the commit diff.
+- Blocking shell init on mismatch — covered above under Failure mode.
+- Hashing `bash/init.bash` itself — chain-of-trust would have to extend to all sourced init machinery; separate cycle if motivated.
 
 ### VPN (UC-7, UC-7a)
 
