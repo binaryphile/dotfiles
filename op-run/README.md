@@ -26,4 +26,4 @@ Verify against current sources at any time:
 
 Bypass (for the rare cycle that needs it): `git commit --no-verify`.
 
-Architecture, deployment procedures, failure modes, and operational details are documented in the canonical doc set in ~/projects/jeeves/security/ (security.md, threat-model.md, secrets-lifecycle.md).
+Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat-model.md`, `secrets-lifecycle.md`).

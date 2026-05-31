@@ -515,7 +515,7 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
   - *Operator edits a hashed file (launcher, registry, allowlist):* `.githooks/pre-commit` refuses the commit unless `op-run/checksums` is staged with hashes matching the staged source content. Operator runs `scripts/op-run-checksum-update && git add op-run/checksums` to update. Bypass: `git commit --no-verify`.
   - *Audit fallback log grows past size cap:* When the file at `${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log` exceeds `AuditLogMaxBytes` (default 1 MiB), the next fallback write rotates it to `audit.log.1` (overwriting any prior rotation) and the new `audit.log` opens with a `{"event":"rotated","at":"<ISO8601>","prev_size":<bytes>}` marker. `AuditLogMaxBytes=0` disables the cap (debugging escape hatch). Disk use bounded at ~2× the cap. Rotation failures never block a launch; the function returns 0 on any failure path.
 
-Architecture, threat model, and operational procedures documented in the canonical doc set in ~/projects/jeeves/security/ (security.md, threat-model.md, secrets-lifecycle.md).
+Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat-model.md`, `secrets-lifecycle.md`).
 
 ---
 
