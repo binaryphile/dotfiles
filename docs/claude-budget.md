@@ -70,7 +70,7 @@ printf '{"hook_event_name":"SessionStart","session_id":"test","transcript_path":
 # expect: [Claude Budget] 20% remaining ... Consider closing idle parallel sessions.
 ```
 
-The full tesht suite lives at `scripts/claude-budget_test.bash`; run with `tesht -f scripts/claude-budget_test.bash` from the dotfiles repo root.
+The full tesht suite lives at `scripts/claude-budget_test.bash`; run with `tesht scripts/claude-budget_test.bash` from the dotfiles repo root.
 
 ## Hook wiring
 
