@@ -13,7 +13,7 @@
 [core]
   filemode = false
   excludesfile = ~/.gitignore_global
-  hooksPath = ~/dotfiles/githooks
+  hooksPath = ~/dotfiles/.githooks
   mergeoptions = --no-edit
   pager = diff-so-fancy | less --tabs=4 -RFX
 [push]
