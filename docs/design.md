@@ -397,6 +397,21 @@ Closes the v1 deferral documented at `~/projects/jeeves/security/security.md` an
 - Blocking shell init on mismatch — covered above under Failure mode.
 - Hashing `bash/init.bash` itself — chain-of-trust would have to extend to all sourced init machinery; separate cycle if motivated.
 
+#### Audit-log fallback rotation (UC-11)
+
+**Mechanism:** `auditFileFallback` in `scripts/op-run` is the file fallback that fires when the era publish (`auditTransport`) times out, errors, or finds era missing. v1 had no rotation; v2 adds an inline size-cap. After each fallback write, if the file at `${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log` exceeds `AuditLogMaxBytes` bytes (default 1 MiB; override via env var; `=0` disables; non-numeric or negative values silently default), it is renamed to `audit.log.1` (overwriting any prior `.1`), and the new `audit.log` begins with a one-line rotation marker (`{"event":"rotated","at":"<ISO8601>","prev_size":<bytes>}`) so operators reading only the live log see the rotation boundary. Disk use is bounded at ~2× the cap.
+
+**Why this shape:**
+
+- *Single generation:* a second rotation already implies sustained era outage long enough that the operator has noticed; multi-gen rotation adds a knob without a documented use case at this trust level.
+- *Inline (no logrotate):* op-run runs in many contexts (interactive shell, MCP daemons, cron); inline rotation works everywhere op-run runs without a system-service prerequisite. External logrotate would diverge Crostini-vs-NixOS behavior and require nixos-config changes.
+- *Cap default 1 MiB:* at ~100 bytes per record, that is ~10K records. In normal ops (era reachable) the fallback file barely grows. The cap is a backstop, not a per-cycle bound.
+- *Detective not blocking:* every external command in the rotation block (`stat`, `mv`, `jq`, marker-write subshell) is guarded by `|| return 0`. Failure of any step (filesystem error, missing jq, ENOSPC, permission change) leaves the function returning 0; the launch is never blocked. Worst case is a temporary gap in audit.log (a moved-but-not-marked rotation) that the next fallback write recreates.
+
+**Concurrent-write races (acknowledged, not mitigated):** rotator-vs-rotator marker overwrite; appender-vs-rotator inode divergence (record lands in `.1` via held inode); repeated double-rotation (second mv overwrites first's `.1`); stale-mv overwrites freshly-rotated `.1` (A stats then yields → B rotates fully → A's `mv -f` overwrites B's `.1` with B's small marker file — both generations destroyed, ~2× cap bytes lost). All windows are sub-millisecond; op-run invocations are typically serialized; the fallback fires only on era outage. File locking would add complexity without commensurate benefit for a detective control. Recovery via `.1` timestamps + era's recovered stream.
+
+**Operator override:** `AuditLogMaxBytes=0` disables the cap entirely (debugging escape hatch for cases where rotation would lose data the operator needs). `AuditLogMaxBytes=<bytes>` sets the cap; non-numeric / negative input silently falls back to the 1 MiB default (avoids `(( ))` error under strict mode that would kill op-run's main path before `runOp`).
+
 ### VPN (UC-7, UC-7a)
 
 Two GlobalProtect clients coexist on every Linux platform; UC-7a's `vpn-mode` toggle picks which one is active at any time. The dual-client setup landed 2026-05-19 in response to PAN's CVE-2026-0257 Prisma Access cookie-mint hardening, which broke yuezk's gpoc against the Digi portal indefinitely (tracked at [yuezk/GlobalProtect-openconnect#606](https://github.com/yuezk/GlobalProtect-openconnect/issues/606)). pangp is the working workaround; gpoc remains installed for when upstream lands the fix.
