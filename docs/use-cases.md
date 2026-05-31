@@ -582,7 +582,7 @@ Architecture, threat model, and operational procedures documented in the canonic
 - **Scope:** Dotfiles git configuration (global)
 - **Level:** User goal
 - **Trigger:** Automatic -- fires on every `git commit` in any repo that does not set a local `core.hooksPath`
-- **Preconditions:** UC-4 completed (home-manager-deployed `~/.gitconfig` with `[core] hooksPath = /home/ted/dotfiles/githooks`); `~/dotfiles/githooks/pre-commit` is executable
+- **Preconditions:** UC-4 completed (home-manager-deployed `~/.gitconfig` with `[core] hooksPath = ~/dotfiles/.githooks`); `~/dotfiles/.githooks/pre-commit` is executable
 - **Stakeholders:**
   - Ted -- protected from committing build artifacts (Go binaries with no extension, ELF objects, archives, databases, ML model files) to personal or shared repos
   - Shared repos (dal, pepin, cloud-services, urma) -- the guard's existence leaves no trace in their tracked files or `.git/config`; coworkers never see it
@@ -600,7 +600,7 @@ Architecture, threat model, and operational procedures documented in the canonic
   - 5a. *Hook script missing or non-executable*: git falls back to no hook; commits succeed without inspection (fail-open by design -- a broken guard must not block work)
 - **Minimal Guarantee:** Shared-repo tracked content unchanged by the guard; existing commits unaffected
 - **Success Guarantee:** Future `git commit` in any non-overridden repo refuses staged binary files; bypass via `--no-verify` remains available; coworkers on shared repos see no evidence of the guard
-- **Technology:** `~/dotfiles/githooks/pre-commit` (bash + `git diff --cached --numstat`); wired in via `[core] hooksPath` in `~/dotfiles/gitconfig`. Complemented by `~/dotfiles/gitignore_global` binary-extensions block (compiled objects, archives, databases, ML model artifacts) that filters typical binaries before the hook ever runs. See [design.md: Git Commit Binary Guard](design.md#git-commit-binary-guard-uc-14).
+- **Technology:** `~/dotfiles/.githooks/pre-commit` (bash + `git diff --cached --numstat`); wired in via `[core] hooksPath` in `~/dotfiles/gitconfig`. Complemented by `~/dotfiles/gitignore_global` binary-extensions block (compiled objects, archives, databases, ML model artifacts) that filters typical binaries before the hook ever runs. See [design.md: Git Commit Binary Guard](design.md#git-commit-binary-guard-uc-14).
 
 ---
 

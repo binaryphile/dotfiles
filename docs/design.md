@@ -645,8 +645,8 @@ Global pre-commit hook that refuses to commit binary files anywhere Ted works, w
 
 **Mechanism**:
 
-- Hook at `~/dotfiles/githooks/pre-commit` (executable, ~20 lines of bash).
-- Wired in via `[core] hooksPath = /home/ted/dotfiles/githooks` in `~/dotfiles/gitconfig` (home-manager deployed).
+- Hook at `~/dotfiles/.githooks/pre-commit` (executable, function-structured bash; UC-14 binary-detection + UC-11 op-run hash-drift + claude/settings.json env-vars guard).
+- Wired in via `[core] hooksPath = ~/dotfiles/.githooks` in `~/dotfiles/gitconfig` (home-manager deployed).
 - Detection truth source is git itself: `git diff --cached --numstat --no-renames` emits `- -` for entries git classifies as binary (same heuristic git uses for diff suppression and the `text`/`binary` gitattribute). Hook exits 1 with the file list and remediation options on stderr if any are present; exits 0 otherwise.
 
 **Shared-repo non-pollution**: the guard lives entirely in Ted's home-manager-managed git config. No hook script, gitconfig entry, or marker file ever lands in `dal`, `pepin`, `cloud-services`, `urma`, or any other shared repo's tracked content or `.git/config`. Coworkers cloning those repos see no evidence of the guard's existence -- the protection is a property of Ted's local environment, not the repos themselves. This was the design driver: scaffolding for personal hygiene that must not bleed into shared collaboration surfaces.
