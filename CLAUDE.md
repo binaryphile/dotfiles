@@ -56,8 +56,7 @@ ASCII only. No em-dashes, en-dashes, arrows, or fancy punctuation -- use `--`, `
 
 - `docs/use-cases.md` -- what this repo does and for whom.
 - `docs/design.md` -- how components work, deployment flow, bash init flow.
-- `docs/security.md` -- security model: threat actors, trust boundaries, confidentiality/integrity models, accepted risks.
-- `docs/secrets-lifecycle.md` -- credential and secrets operational procedures: bootstrap, rotation, recovery.
 - `docs/environment-lifecycle.md` -- environment lifecycle: bootstrap, maintenance, multi-machine sync, development workflow.
 - `docs/uc-init.md` -- use cases for every init.bash feature employed in the config.
-- Keep all updated when making changes. When changing credential handling, trust boundaries, or `~/secrets/` consumers, review `docs/security.md` and `docs/secrets-lifecycle.md` for sync.
+- Security architecture (threat model, secrets-lifecycle procedures) lives in the canonical private doc set at `~/projects/jeeves/security/`.
+- Keep all updated when making changes. When changing credential handling, trust boundaries, or `~/secrets/` consumers, review `~/projects/jeeves/security/security.md` and `~/projects/jeeves/security/secrets-lifecycle.md` for sync.
