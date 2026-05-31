@@ -356,7 +356,7 @@ Managed via `programs.firefox` (home-manager module), not `home.packages`. This 
 
 ### Credential Architecture (UC-4, UC-4a-e, UC-11)
 
-Architecture, threat model, and design rationale (v1 vs v2, Service Accounts vs Connect, launcher integrity classification, audit-log retention discipline) documented in `~/projects/jeeves/security/{security,threat-model,secrets-lifecycle}.md`.
+Architecture, threat model, and design rationale documented in `~/projects/jeeves/security/{security,threat-model,secrets-lifecycle}.md`.
 
 ### op-run launcher operator mechanics (UC-11)
 
