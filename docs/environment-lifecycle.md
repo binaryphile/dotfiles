@@ -84,9 +84,9 @@ See [`op-run/README.md`](../op-run/README.md) for the full op-run flow.
 
 ### Changing credential handling
 
-1. Review security.md for trust boundaries and constraints (1Password secure document)
-2. Update security.md in 1Password if trust model changes
-3. Update secrets-lifecycle.md in 1Password if procedures change
+1. Review `~/projects/jeeves/security/security.md` for trust boundaries and constraints
+2. Update `~/projects/jeeves/security/security.md` if trust model changes
+3. Update `~/projects/jeeves/security/secrets-lifecycle.md` if procedures change
 4. Update use-cases.md (UC-4a through UC-4d) if workflows change
 5. Implement and test
 
