@@ -321,15 +321,37 @@ auditTransport() {
 # auditFileFallback appends `payload` as one JSON-Lines record to the local audit log.
 #
 # Log path is ${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log, file mode
-# 600, parent dir 700. v1 has no rotation; v2 will add a size cap. `rc` is
-# the upstream era failure code, used only in the operator-facing warning
-# text on a fallback-fallback (filesystem write failed too).
+# 600, parent dir 700. After each write, if the file exceeds AuditLogMaxBytes
+# (default 1 MiB; non-numeric defaults; 0 disables), it rotates to audit.log.1
+# (overwriting any prior .1) and the new audit.log opens with a one-line
+# {event:rotated,at:<ISO8601>,prev_size:<bytes>} marker. Every external command
+# in the rotation block is guarded by `|| return 0` so a missing jq, a failed
+# mv, or a marker-write error never blocks op-run's main path. See UC-11
+# Extension "Audit fallback log grows past size cap" + design.md
+# "Audit-log fallback rotation".
+#
+# `rc` is the upstream era failure code, used only in the operator-facing
+# warning text on a fallback-fallback (filesystem write failed too).
 auditFileFallback() {
   local payload=$1 rc=$2
   local stateDir=${XDG_STATE_HOME:-$HOME/.local/state}/op-run
   install -d -m 700 $stateDir 2>/dev/null || { echo "op-run: audit fallback failed (rc=$rc, mkdir failed)" >&2; return 0; }
   local logPath=$stateDir/audit.log
   ( umask 077; printf '%s\n' $payload >>$logPath ) || echo "op-run: audit fallback write failed (rc=$rc)" >&2
+
+  # Rotation: every external command guarded so a failure here cannot abort
+  # op-run under set -euo pipefail (which would kill the launch before runOp).
+  local maxBytes=${AuditLogMaxBytes:-1048576}
+  [[ $maxBytes =~ ^[0-9]+$ ]] || maxBytes=1048576
+  (( maxBytes == 0 )) && return 0
+  local size
+  size=$(stat -c '%s' $logPath 2>/dev/null) || return 0
+  (( size > maxBytes )) || return 0
+  mv -f $logPath $logPath.1 2>/dev/null || return 0
+  local marker
+  marker=$($jq -nc --arg at "$(date -u '+%FT%TZ')" --argjson prev_size $size \
+    '{event:"rotated",at:$at,prev_size:$prev_size}' 2>/dev/null) || return 0
+  ( umask 077; printf '%s\n' $marker >$logPath ) || return 0
   return 0
 }
 

@@ -583,3 +583,203 @@ arg-one
 arg-two"
   tesht.AssertGot "$got" "$want"
 }
+
+## audit fallback log rotation (#2907)
+#
+# 7 cases covering the rotation block added to auditFileFallback:
+#   1. below_cap_no_rotation        -- happy path: no rotation under cap
+#   2. above_cap_rotates_with_marker -- happy rotation: .1 has pre-rotation
+#                                       content, new audit.log opens with
+#                                       {event:rotated,...} marker
+#   3. above_cap_twice_overwrites_dot1 -- bounded disk use: second rotation
+#                                         overwrites first's .1
+#   4. cap_zero_disables_rotation   -- AuditLogMaxBytes=0 escape hatch
+#   5. invalid_cap_under_strict_mode -- non-numeric cap defaults to 1 MiB
+#                                       without aborting under set -e
+#   6. jq_failure_under_strict_mode -- DI-stubbed failing jq does not
+#                                      abort op-run main path
+#   7. mv_failure_survives_strict_mode -- chmod 0500 denies rename;
+#                                         function returns 0
+#
+# Khorikov posture: tests on the controller (auditFileFallback) boundary.
+# Output-based assertions on observable filesystem state + jq -e field
+# probes on the marker (NOT exact-JSON match -- field-order / timestamp
+# formatting changes don't break tests). Mock boundary is XDG_STATE_HOME
+# (env var) + $jq DI (test 6) + chmod (test 7).
+
+# test_auditFileFallback_below_cap_no_rotation: write under cap, no .1.
+test_auditFileFallback_below_cap_no_rotation() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+  XDG_STATE_HOME=$stateDir AuditLogMaxBytes=10000 auditFileFallback '{"ts":"under-cap"}' 0 >/dev/null 2>&1
+
+  [[ -f $stateDir/op-run/audit.log ]] || { echo "audit.log missing"; return 1; }
+  [[ ! -e $stateDir/op-run/audit.log.1 ]] || { echo "unexpected audit.log.1 present"; return 1; }
+  grep -q '"ts":"under-cap"' "$stateDir/op-run/audit.log" || { echo "record not in audit.log"; return 1; }
+}
+
+# test_auditFileFallback_above_cap_rotates_with_marker: write past cap,
+# .1 has pre-rotation content, audit.log opens with rotation marker.
+test_auditFileFallback_above_cap_rotates_with_marker() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+  # Seed audit.log just under cap so the first invocation pushes it over.
+  mkdir -p "$stateDir/op-run"
+  ( umask 077; yes '{"ts":"seed"}' | head -c 120 > "$stateDir/op-run/audit.log" )
+
+  XDG_STATE_HOME=$stateDir AuditLogMaxBytes=100 auditFileFallback '{"ts":"trigger"}' 0 >/dev/null 2>&1
+
+  [[ -f $stateDir/op-run/audit.log.1 ]] || { echo "audit.log.1 missing after rotation"; return 1; }
+  [[ -f $stateDir/op-run/audit.log ]]   || { echo "audit.log missing after rotation"; return 1; }
+  grep -q '"ts":"seed"'    "$stateDir/op-run/audit.log.1" || { echo "pre-rotation content lost from .1"; return 1; }
+  grep -q '"ts":"trigger"' "$stateDir/op-run/audit.log.1" || { echo "trigger record not in .1 (should be there: written before rotation)"; return 1; }
+
+  # Marker assertions: observable semantics, not exact JSON match.
+  local marker
+  marker=$(head -1 "$stateDir/op-run/audit.log")
+  echo "$marker" | jq -e '.event == "rotated"' >/dev/null \
+    || { echo "marker event != 'rotated': $marker"; return 1; }
+  echo "$marker" | jq -e '.prev_size > 0' >/dev/null \
+    || { echo "marker prev_size not > 0: $marker"; return 1; }
+  echo "$marker" | jq -e '.at | length > 0' >/dev/null \
+    || { echo "marker at missing or empty: $marker"; return 1; }
+}
+
+# test_auditFileFallback_above_cap_twice_overwrites_dot1: two rotations
+# leave .1 holding the SECOND pre-rotation batch (bounded disk use).
+test_auditFileFallback_above_cap_twice_overwrites_dot1() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+
+  # First rotation cycle: seed + trigger.
+  mkdir -p "$stateDir/op-run"
+  ( umask 077; yes '{"ts":"first-batch"}' | head -c 120 > "$stateDir/op-run/audit.log" )
+  XDG_STATE_HOME=$stateDir AuditLogMaxBytes=100 auditFileFallback '{"ts":"first-trigger"}' 0 >/dev/null 2>&1
+
+  # After first rotation: .1 has first-batch + first-trigger; audit.log has marker.
+  grep -q '"ts":"first-batch"' "$stateDir/op-run/audit.log.1" || { echo "first batch not in .1"; return 1; }
+
+  # Second rotation cycle: append more content to push back over cap.
+  ( umask 077; yes '{"ts":"second-batch"}' | head -c 120 >> "$stateDir/op-run/audit.log" )
+  XDG_STATE_HOME=$stateDir AuditLogMaxBytes=100 auditFileFallback '{"ts":"second-trigger"}' 0 >/dev/null 2>&1
+
+  # After second rotation: .1 should now hold SECOND batch (first batch lost).
+  grep -q '"ts":"second-batch"' "$stateDir/op-run/audit.log.1" || { echo "second batch not in .1 (overwrite failed)"; return 1; }
+  ! grep -q '"ts":"first-batch"' "$stateDir/op-run/audit.log.1" || { echo "first batch still in .1 (overwrite did not happen)"; return 1; }
+}
+
+# test_auditFileFallback_cap_zero_disables_rotation: AuditLogMaxBytes=0
+# disables the cap entirely; no rotation across many writes.
+test_auditFileFallback_cap_zero_disables_rotation() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    XDG_STATE_HOME=$stateDir AuditLogMaxBytes=0 auditFileFallback "{\"ts\":\"cap-disabled-$i\"}" 0 >/dev/null 2>&1
+  done
+
+  [[ ! -e $stateDir/op-run/audit.log.1 ]] || { echo "audit.log.1 created despite cap=0"; return 1; }
+  local lines
+  lines=$(wc -l < "$stateDir/op-run/audit.log")
+  (( lines == 10 )) || { echo "expected 10 lines in audit.log, got $lines"; return 1; }
+}
+
+# test_auditFileFallback_invalid_cap_under_strict_mode: garbage cap
+# silently defaults to 1 MiB without aborting under set -euo pipefail.
+test_auditFileFallback_invalid_cap_under_strict_mode() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+  local rc=0
+  (
+    set -euo pipefail
+    XDG_STATE_HOME=$stateDir AuditLogMaxBytes=garbage auditFileFallback '{"ts":"invalid-cap"}' 0
+  ) >/dev/null 2>&1 || rc=$?
+
+  tesht.AssertRC $rc 0
+  # With invalid cap defaulting to 1 MiB, a single small record does not trigger rotation.
+  [[ -f $stateDir/op-run/audit.log ]] || { echo "audit.log missing"; return 1; }
+  [[ ! -e $stateDir/op-run/audit.log.1 ]] || { echo "unexpected rotation under default cap"; return 1; }
+}
+
+# test_auditFileFallback_jq_failure_under_strict_mode: a DI-stubbed
+# failing jq does not abort op-run's main path; .1 has pre-rotation
+# content; audit.log absent (no marker written).
+test_auditFileFallback_jq_failure_under_strict_mode() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+  mkdir -p "$stateDir/op-run"
+  ( umask 077; yes '{"ts":"seed"}' | head -c 120 > "$stateDir/op-run/audit.log" )
+
+  # Deterministic failing jq stub via $jq DI override.
+  local stub=$Dir/jq-fail
+  cat >"$stub" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "$stub"
+
+  local rc=0
+  (
+    set -euo pipefail
+    local jq=$stub
+    XDG_STATE_HOME=$stateDir AuditLogMaxBytes=100 auditFileFallback '{"ts":"trigger"}' 0
+  ) >/dev/null 2>&1 || rc=$?
+
+  tesht.AssertRC $rc 0
+  [[ -f $stateDir/op-run/audit.log.1 ]] || { echo "expected audit.log.1 present after rotation"; return 1; }
+  [[ ! -f $stateDir/op-run/audit.log ]] || { echo "expected audit.log absent (jq failed before marker write)"; return 1; }
+  grep -q '"ts":"seed"' "$stateDir/op-run/audit.log.1" || { echo "pre-rotation content lost from .1"; return 1; }
+}
+
+# test_auditFileFallback_mv_failure_survives_strict_mode: PATH-prepended
+# failing mv stub deterministically aborts the rename step; function
+# returns 0; audit.log.1 absent; audit.log preserved.
+#
+# Note: chmod-based fault injection on the state dir does NOT work here
+# because the function's `install -d -m 700 $stateDir` would reset the
+# mode at every call (verified). PATH-prepend in the subshell gives a
+# clean, deterministic fault that bash command-lookup will use (subshell
+# has its own hash table — no stale cache to invalidate).
+test_auditFileFallback_mv_failure_survives_strict_mode() {
+  local Dir; tesht.MktempDir Dir || return 128
+  trap "rm -rf $Dir" RETURN
+
+  local stateDir=$Dir/state
+
+  # Failing mv stub (PATH-prepended).
+  local fakebin=$Dir/fakebin
+  mkdir -p "$fakebin"
+  cat >"$fakebin/mv" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "$fakebin/mv"
+
+  local rc=0
+  (
+    set -euo pipefail
+    PATH=$fakebin:$PATH
+    # Seed AFTER PATH prepend so seed's own writes (not via mv) still work.
+    mkdir -p "$stateDir/op-run"
+    : >"$stateDir/op-run/audit.log"
+    for i in 1 2 3 4 5; do echo '{"ts":"seed-padding-bytes"}'; done >>"$stateDir/op-run/audit.log"
+    XDG_STATE_HOME=$stateDir AuditLogMaxBytes=100 auditFileFallback '{"ts":"trigger"}' 0
+  ) >/dev/null 2>&1 || rc=$?
+
+  tesht.AssertRC $rc 0
+  [[ ! -e $stateDir/op-run/audit.log.1 ]] || { echo "audit.log.1 created despite mv stub failure"; return 1; }
+  # Original audit.log preserved (mv didn't happen, file intact + trigger appended).
+  grep -q '"ts":"seed-padding-bytes"' "$stateDir/op-run/audit.log" || { echo "original audit.log content lost"; return 1; }
+  grep -q '"ts":"trigger"' "$stateDir/op-run/audit.log" || { echo "trigger record not appended"; return 1; }
+}
