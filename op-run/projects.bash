@@ -13,7 +13,7 @@
 # all others pass through literally.
 
 declare -Agr ProjectPath=(
-  [urma]=/home/ted/projects/urma
+  [urma]=~/projects/urma
 )
 
 # ProjectAccount accepts anything OP_ACCOUNT accepts: shorthand, sign-in

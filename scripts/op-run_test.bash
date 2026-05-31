@@ -117,7 +117,7 @@ test_guardSubstitutions_unsubstituted() {
 # must survive substitution unchanged, so this exercises the actual fix.
 test_guardSubstitutions_after_substitution() {
   local body
-  body=$(declare -f guardSubstitutions | sed "s|'@dotfilesRoot@'|'/home/ted/dotfiles'|")
+  body=$(declare -f guardSubstitutions | sed "s|'@dotfilesRoot@'|'$HOME/dotfiles'|")
   eval "$body"
   local rc=0
   guardSubstitutions || rc=$?
@@ -279,6 +279,27 @@ test_urmaProjectEnvSpec_includesJira() {
     grep -qE '^JIRA_URL=' <<<"$spec"            || { echo "missing JIRA_URL";       return 1; }
     grep -qE '^JIRA_USERNAME=' <<<"$spec"       || { echo "missing JIRA_USERNAME";  return 1; }
     grep -qE '^JIRA_API_TOKEN=op://' <<<"$spec" || { echo "missing JIRA_API_TOKEN op:// ref"; return 1; }
+  )
+}
+
+# test_projectPath_urma_resolves_via_realpath verifies the urma entry's
+# tilde-form expands at source-time and resolves to a real on-disk path.
+#
+# Regression guard for #20003: the entry previously hardcoded /home/ted; the
+# bash-expansion conversion (~/projects/urma) only works if tilde-expansion
+# fires inside `declare -A`. This test exercises the real registry value
+# end-to-end through realpath -- existing resolveProject tests use stubbed
+# ProjectPath arrays, so nothing else catches a future expansion regression.
+test_projectPath_urma_resolves_via_realpath() {
+  ( source "$PWD/op-run/projects.bash"
+
+    local raw=${ProjectPath[urma]:-}
+    [[ -n $raw ]] || { echo "ProjectPath[urma] not set"; return 1; }
+    [[ $raw != *'~'* ]] || { echo "ProjectPath[urma] still contains literal ~: $raw"; return 1; }
+
+    local resolved
+    resolved=$(realpath "$raw" 2>/dev/null) || { echo "realpath failed for: $raw"; return 1; }
+    [[ $resolved == */projects/urma ]] || { echo "resolved path does not end in /projects/urma: $resolved"; return 1; }
   )
 }
 
