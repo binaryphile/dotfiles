@@ -768,7 +768,7 @@ If nix changes break `home-manager switch`, the previous generation's packages a
 
 ### Performance
 
-Shell startup: previously ~500ms interactive login, dominated by keychain eval (~250ms). Keychain has been removed; interactive login startup has not been re-measured. Non-interactive login: ~57ms. Liquidprompt: ~1ms.
+Shell startup: non-interactive login: ~57ms. Liquidprompt: ~1ms. Interactive login not currently measured (post-keychain-removal baseline pending).
 
 The `Alias`/reveal wrapper adds no measurable overhead to command invocation.
 
