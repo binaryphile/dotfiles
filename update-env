@@ -522,9 +522,6 @@ stage2() {
   try bitbucketCloneAndLinkTask tlilley-daily-notes
   try obsidianSnippetsTask ~/projects/tlilley-daily-notes/.obsidian/snippets
 
-  section security-docs
-  try restrictedBitbucketCloneTask security-docs
-
   #  +-------------------------------------------------------------+
   #  | PHASE 7: SSH Key Generation (section unique_credential)     |
   #  |   +-> [crostini/linux] Generate unique SSH key if needed    |
@@ -797,36 +794,6 @@ bitbucketCloneAndLinkTask() {
   try gitUpdate ~/projects/$repo
 }
 
-# restrictedBitbucketCloneTask clones a bitbucket accelecon repo with
-# restrictive permissions (700 directories, 600 files) for sensitive
-# material -- security architecture docs, anything that shouldn't be
-# readable by host-side backup/index agents on shared filesystems or
-# by any future non-owner user on this machine.
-#
-# Defense in depth: bitbucket-side privacy gates who can clone; this
-# task gates who can read after clone. Both layers are necessary.
-restrictedBitbucketCloneTask() {
-  local repo=$1 branch=${2:-main}
-  local dir=~/projects/$repo
-
-  desc "clone bitbucket.org:accelecon/$repo to $dir (restricted 700/600 perms)"
-  exist "'$dir'"
-  restrictedClone() {
-    (
-      umask 077
-      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10' \
-        git -c http.connectTimeout=10 clone --branch $branch \
-          git@bitbucket.org:accelecon/$repo $dir
-    )
-  }
-  cmd restrictedClone
-
-  try gitUpdate $dir
-
-  desc "enforce 700/600 perms on $dir"
-  ok '[[ -z $(find '"$dir"' -perm /go=rwx -print -quit 2>/dev/null) ]]'
-  cmd chmod -R go-rwx $dir
-}
 
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}

@@ -6,6 +6,3 @@ assets/
 result
 result-*
 *.age
-docs/security.md
-docs/secrets-lifecycle.md
-docs/threat-model.md
