@@ -524,23 +524,27 @@ first)". Workaround: skip `vpn-mode pangp` and call `vpn-connect`
 directly. Declarative fix: `swapCallbackHandler` should be a no-op
 when `/etc/NIXOS` exists.
 
-**Gap 5: Internal DNS resolution not pushed on NixOS.** gpoc's
-vpn-slice writes `/etc/hosts` entries for internal hostnames at
-connect time (split-horizon DNS). pangp's full-tunnel path doesn't
-use vpn-slice -- internal DNS is normally pushed via NetworkManager
-dispatcher hooks bundled with the .deb. NixOS doesn't run these
-hooks by default, so `/etc/resolv.conf` keeps its pre-VPN servers
-(public ISP DNS + LAN gateway). Symptom on calumny 2026-05-27:
-`nexus.digi.com`, `forge.digi.com`, and any other internal-only
-hostnames fail with `getaddrinfo: Name or service not known` even
-with the tunnel UP. Public-DNS internal hosts (e.g. `stash.digi.com`
-198.51.192.159, `tm1.idigi.com` 198.51.192.237, `dm1.devdevicecloud.com`)
-resolve fine because they have A records on public DNS that point at
-the internal IPs, and the tunnel routes them. Declarative fix: add a
-NetworkManager dispatcher hook (or systemd-resolved drop-in) that
-points to the VPN's internal DNS server when `gpd0` comes up.
-Workaround today: hand-add an `/etc/hosts` entry for the specific
-internal host you need.
+**Gap 5 (PARTIALLY RESOLVED 2026-06-01): Internal DNS resolution not pushed on NixOS.**
+gpoc's vpn-slice writes `/etc/hosts` entries for internal hostnames at connect time
+(split-horizon DNS). pangp's full-tunnel path doesn't use vpn-slice -- internal DNS
+is normally pushed via NetworkManager dispatcher hooks bundled with the .deb. NixOS
+doesn't run these hooks by default.
+
+**Partial fix (deployed):** `networking.networkmanager.dns = "dnsmasq"` +
+`NetworkManager/dnsmasq.d/digi-corp.conf` in `nixos-config/common/configuration.nix`
+forwards `digi.com` and `idigi.com` queries to the corp DNS at `172.26.101.1`
+(the VPN gateway). A more-specific `server=/access.digi.com/1.1.1.1` override
+prevents the VPN portal from being captured by the `digi.com` forwarder, keeping
+bootstrap working when the tunnel is down (dnsmasq longest-suffix-match). Default
+upstreams `1.1.1.1`/`1.0.0.1` are explicit because NM's D-Bus upstream push doesn't
+reach the dnsmasq process. After `nixos-rebuild test/switch`, restart NetworkManager
+to respawn dnsmasq: `sudo systemctl restart NetworkManager`.
+
+**Remaining gap:** The architecturally-correct fix (patch pangp to push DNS via NM
+D-Bus when `gpd0` comes up, matching the behaviour bundled in the .deb's NM dispatcher
+hooks) is still deferred. Any internal hostnames NOT under `digi.com` or `idigi.com`
+still require manual `/etc/hosts` entries. `devdevicecloud.com` resolves identically
+from public DNS and corp DNS (same AWS IPs); no forwarder needed.
 
 **OPENSSL SYMLINK TRAP (Gap 3 follow-up)**: when implementing the
 Gap-3 fix via `BindReadOnlyPaths=` in `gpd.service`, do NOT bind
@@ -626,7 +630,28 @@ This is asymmetric with the `vpn-mode` toggle: gpoc-mode reverses the move. Fold
 
 ### Install (NixOS work machine)
 
-Drop the tarball at a known path (e.g., `/etc/nixos/pangp/PanGPLinux-6.3.3-c31.tgz`), edit `~/dotfiles/flake.nix`'s `pangp` let-binding to point there, then in `configuration.nix`:
+Drop the tarball at a known path (e.g., `~/pangp/PanGPLinux-6.3.3-c31.tgz`). Declare
+it as a flake input in `nixos-config/flake.nix` (not dotfiles/flake.nix — the NixOS
+flake owns the pangp derivation for NixOS hosts):
+
+```nix
+inputs.pangp-src = {
+  url = "path:/home/ted/pangp/PanGPLinux-6.3.3-c31.tgz";
+  flake = false;
+};
+```
+
+Then in the `outputs` let-binding, pass `pangp-src` as the `src`:
+
+```nix
+pangp = import "${dotfiles}/pangp.nix" {
+  pkgs = import nixpkgs { system = "x86_64-linux"; config.allowUnfree = true; };
+  src = pangp-src;
+};
+```
+
+Run `nix flake lock --update-input pangp-src` to hash the tarball into `flake.lock`.
+Pure evaluation works without `--impure` after this. Then in `configuration.nix`:
 
 ```nix
 { pkgs, ... }: {
