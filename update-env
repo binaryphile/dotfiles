@@ -449,6 +449,12 @@ stage2() {
   claudeTandemConfigTask
   claudeMemoryRedirectsTask
   shellcheckrcTask
+  gitExcludeTask ~/projects/urma .shellcheckrc
+  gitExcludeTask ~/projects/urma .direnv/
+  gitExcludeTask ~/projects/urma tm1-debug/
+  gitExcludeTask ~/projects/dal .shellcheckrc
+  gitExcludeTask ~/projects/pepin .shellcheckrc
+  gitExcludeTask ~/projects/cloud-services .shellcheckrc
 
   section toc
   try codebergCloneAndLinkTask toc
