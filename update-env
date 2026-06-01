@@ -466,43 +466,53 @@ stage2() {
   #  +-------------------------------------------------------------+
 
   section urma
-  try stashCloneAndLinkTask urma-next urma idigi develop
-  try scaffoldTask ~/projects/urma
+  each try <<'  END'
+    stashCloneAndLinkTask urma-next urma idigi develop
+    scaffoldTask ~/projects/urma
+    obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
+    writeMcpJsonTask ~/projects/urma
+  END
+  # try: these repos are VPN-dependent; check "[[ -d .git ]]" fails when not yet
+  # cloned, which would abort the run under set -e without try.
   each "try gitExcludeTask ~/projects/urma" <<'  END'
     /obsidian
     .shellcheckrc
     .direnv/
     tm1-debug/
   END
-  try obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
-  try writeMcpJsonTask ~/projects/urma
 
   section pepin
-  try stashCloneAndLinkTask pepin pepin idigi develop
-  try scaffoldTask ~/projects/pepin
+  each try <<'  END'
+    stashCloneAndLinkTask pepin pepin idigi develop
+    scaffoldTask ~/projects/pepin
+    obsidianSnippetsTask ~/projects/pepin/obsidian/.obsidian/snippets
+  END
   each "try gitExcludeTask ~/projects/pepin" <<'  END'
     /obsidian
     .shellcheckrc
   END
-  try obsidianSnippetsTask ~/projects/pepin/obsidian/.obsidian/snippets
 
   section cloud-services
-  try stashCloneAndLinkTask cloud-services cloud-services idigi develop
-  try scaffoldTask ~/projects/cloud-services
+  each try <<'  END'
+    stashCloneAndLinkTask cloud-services cloud-services idigi develop
+    scaffoldTask ~/projects/cloud-services
+    obsidianSnippetsTask ~/projects/cloud-services/obsidian/.obsidian/snippets
+  END
   each "try gitExcludeTask ~/projects/cloud-services" <<'  END'
     /obsidian
     .shellcheckrc
   END
-  try obsidianSnippetsTask ~/projects/cloud-services/obsidian/.obsidian/snippets
 
   section dal
-  try stashCloneAndLinkTask accelerated-linux dal acl master
-  try scaffoldTask ~/projects/dal
+  each try <<'  END'
+    stashCloneAndLinkTask accelerated-linux dal acl master
+    scaffoldTask ~/projects/dal
+    obsidianSnippetsTask ~/projects/dal/obsidian/.obsidian/snippets
+  END
   each "try gitExcludeTask ~/projects/dal" <<'  END'
     /obsidian
     .shellcheckrc
   END
-  try obsidianSnippetsTask ~/projects/dal/obsidian/.obsidian/snippets
 
   section urma-obsidian
   try stashCloneAndLinkTask urma-obsidian urma/obsidian ~tlilley
