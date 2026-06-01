@@ -449,12 +449,6 @@ stage2() {
   claudeTandemConfigTask
   claudeMemoryRedirectsTask
   shellcheckrcTask
-  gitExcludeTask ~/projects/urma .shellcheckrc
-  gitExcludeTask ~/projects/urma .direnv/
-  gitExcludeTask ~/projects/urma tm1-debug/
-  gitExcludeTask ~/projects/dal .shellcheckrc
-  gitExcludeTask ~/projects/pepin .shellcheckrc
-  gitExcludeTask ~/projects/cloud-services .shellcheckrc
 
   section toc
   try codebergCloneAndLinkTask toc
@@ -474,26 +468,40 @@ stage2() {
   section urma
   try stashCloneAndLinkTask urma-next urma idigi develop
   try scaffoldTask ~/projects/urma
-  try gitExcludeTask ~/projects/urma /obsidian
+  each "try gitExcludeTask ~/projects/urma" <<'  END'
+    /obsidian
+    .shellcheckrc
+    .direnv/
+    tm1-debug/
+  END
   try obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
   try writeMcpJsonTask ~/projects/urma
 
   section pepin
   try stashCloneAndLinkTask pepin pepin idigi develop
   try scaffoldTask ~/projects/pepin
-  try gitExcludeTask ~/projects/pepin /obsidian
+  each "try gitExcludeTask ~/projects/pepin" <<'  END'
+    /obsidian
+    .shellcheckrc
+  END
   try obsidianSnippetsTask ~/projects/pepin/obsidian/.obsidian/snippets
 
   section cloud-services
   try stashCloneAndLinkTask cloud-services cloud-services idigi develop
   try scaffoldTask ~/projects/cloud-services
-  try gitExcludeTask ~/projects/cloud-services /obsidian
+  each "try gitExcludeTask ~/projects/cloud-services" <<'  END'
+    /obsidian
+    .shellcheckrc
+  END
   try obsidianSnippetsTask ~/projects/cloud-services/obsidian/.obsidian/snippets
 
   section dal
   try stashCloneAndLinkTask accelerated-linux dal acl master
   try scaffoldTask ~/projects/dal
-  try gitExcludeTask ~/projects/dal /obsidian
+  each "try gitExcludeTask ~/projects/dal" <<'  END'
+    /obsidian
+    .shellcheckrc
+  END
   try obsidianSnippetsTask ~/projects/dal/obsidian/.obsidian/snippets
 
   section urma-obsidian
