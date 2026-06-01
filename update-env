@@ -333,7 +333,7 @@ stage2() {
   section mk.bash
   try githubCloneAndLinkTask mk.bash
   try obsidianSnippetsTask ~/projects/mk.bash/.obsidian/snippets
-  each "try task.Ln nix-wrapper" <<'  END'
+  each try task.Ln nix-wrapper <<'  END'
     ~/projects/mk.bash/bin/node
     ~/projects/mk.bash/bin/npx
   END
@@ -374,7 +374,7 @@ stage2() {
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try obsidianSnippetsTask ~/projects/jeeves/.obsidian/snippets
-  each "try task.Ln nix-wrapper" <<'  END'
+  each try task.Ln nix-wrapper <<'  END'
     ~/projects/jeeves/bin/go
     ~/projects/jeeves/bin/node
     ~/projects/jeeves/bin/npx
@@ -386,7 +386,7 @@ stage2() {
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
   try obsidianSnippetsTask ~/projects/sofdevsim-2026/.obsidian/snippets
-  each "try task.Ln nix-wrapper" <<'  END'
+  each try task.Ln nix-wrapper <<'  END'
     ~/projects/sofdevsim-2026/bin/go
     ~/projects/sofdevsim-2026/bin/node
     ~/projects/sofdevsim-2026/bin/npx
@@ -402,7 +402,7 @@ stage2() {
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
   try obsidianSnippetsTask ~/projects/binaryphile.github.io/.obsidian/snippets
-  each "try task.Ln nix-wrapper" <<'  END'
+  each try task.Ln nix-wrapper <<'  END'
     ~/projects/binaryphile.github.io/bin/ruby
     ~/projects/binaryphile.github.io/bin/bundler
     ~/projects/binaryphile.github.io/bin/node
@@ -448,7 +448,7 @@ stage2() {
     eraMcpCleanupTask
     eraServiceCleanupTask
   END
-  each "try task.Install 644" <<'  END'
+  each try task.Install 644 <<'  END'
     ~/projects/era/era.service ~/.config/systemd/user/era.service
     ~/projects/era/evtctl-forward@.service ~/.config/systemd/user/evtctl-forward@.service
     ~/projects/era/evtctl-canary-watch@.service ~/.config/systemd/user/evtctl-canary-watch@.service
@@ -490,7 +490,7 @@ stage2() {
   END
   # try: these repos are VPN-dependent; check "[[ -d .git ]]" fails when not yet
   # cloned, which would abort the run under set -e without try.
-  each "try gitExcludeTask ~/projects/urma" <<'  END'
+  each try gitExcludeTask ~/projects/urma <<'  END'
     /obsidian
     .shellcheckrc
     .direnv/
@@ -503,7 +503,7 @@ stage2() {
     scaffoldTask ~/projects/pepin
     obsidianSnippetsTask ~/projects/pepin/obsidian/.obsidian/snippets
   END
-  each "try gitExcludeTask ~/projects/pepin" <<'  END'
+  each try gitExcludeTask ~/projects/pepin <<'  END'
     /obsidian
     .shellcheckrc
   END
@@ -514,7 +514,7 @@ stage2() {
     scaffoldTask ~/projects/cloud-services
     obsidianSnippetsTask ~/projects/cloud-services/obsidian/.obsidian/snippets
   END
-  each "try gitExcludeTask ~/projects/cloud-services" <<'  END'
+  each try gitExcludeTask ~/projects/cloud-services <<'  END'
     /obsidian
     .shellcheckrc
   END
@@ -525,7 +525,7 @@ stage2() {
     scaffoldTask ~/projects/dal
     obsidianSnippetsTask ~/projects/dal/obsidian/.obsidian/snippets
   END
-  each "try gitExcludeTask ~/projects/dal" <<'  END'
+  each try gitExcludeTask ~/projects/dal <<'  END'
     /obsidian
     .shellcheckrc
   END
@@ -1772,9 +1772,9 @@ detectPlatform() {
 stream() { printf '%s\n' "$@"; }
 
 each() {
-  local command=$1 arg
+  local IFS=' ' arg
   while IFS='' read -r arg; do
-    eval "$command $arg"
+    eval "$* $arg"
   done
 }
 
