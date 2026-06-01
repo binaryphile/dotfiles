@@ -13,7 +13,7 @@
 
 # Vault name in the 1Password account named by ProjectAccount[$proj].
 declare -Agr ProjectVault=(
-  # [urma]=teams-webhooks
+  [urma]=teams-webhooks
   # [era]=teams-webhooks
   # [jeeves]=teams-webhooks
 )
@@ -21,7 +21,7 @@ declare -Agr ProjectVault=(
 # 1Password account shorthand or sign-in address. SSO/desktop-attached
 # accounts have no shorthand -- use the sign-in address directly.
 declare -Agr ProjectAccount=(
-  # [urma]=digi.1password.com
+  [urma]=digi.1password.com
   # [era]=digi.1password.com
   # [jeeves]=digi.1password.com
 )
@@ -30,18 +30,17 @@ declare -Agr ProjectAccount=(
 # the project name itself, but can differ if the operator prefers
 # `Teams Webhook - <project>` or similar.
 declare -Agr ProjectWebhookItem=(
-  # [urma]=urma
+  [urma]=urma
   # [era]=era
   # [jeeves]=jeeves
 )
 
-# Field name within the 1Password item containing the Workflow URL. By
-# convention "webhook" -- Password-type items name the field "password" by
-# default; this layout uses "webhook" for explicitness.
+# Field name within the 1Password item containing the Workflow URL.
+# Uses the default "password" field on 1Password Password-type items.
 declare -Agr ProjectWebhookField=(
-  # [urma]=webhook
-  # [era]=webhook
-  # [jeeves]=webhook
+  [urma]=password
+  # [era]=password
+  # [jeeves]=password
 )
 
 # Per-project op:// references resolved at runtime as:
