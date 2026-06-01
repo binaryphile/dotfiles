@@ -176,6 +176,8 @@ Probably SIGPIPE. The downstream side of `gpauth | sudo gpclient ...` (e.g., sud
 
 PanGPS.log repeatedly shows lines like `Failed to connect to <portal-host> on 443 with return value -1 and socket error 115(Operation now in progress)`. The vpn-connect helper exits with `Error: Cannot connect to GlobalProtect Portal.` From the shell the same host IS reachable: `bash -c 'exec 3<>/dev/tcp/<host>/443'` succeeds, ping has 0% loss, and iptables-legacy/iptables-nft are clean across filter/nat/mangle. `ps -o etime -p $(pgrep PanGPS)` shows multi-day uptime.
 
+Variant — the GUI client (PanGPA) surfaces the same underlying failure as an auth-window-shows-failed: user clicks connect, the SAML browser window opens and immediately reports the auth attempt failed before any credentials are entered. The portal pre-login under the hood is what's stuck; the GUI just renders the downstream failure as an auth failure.
+
 Cause: PanGPS internal connection-pool/cache state degrades after long uptime across Crostini sleep/wake cycles and network swaps. Userspace `/dev/tcp` reaches the destination because each open creates a fresh socket; PanGPS's pooled/cached connection layer is the stuck one.
 
 Diagnosis procedure:
@@ -209,7 +211,11 @@ sudo tail -30 /opt/paloaltonetworks/globalprotect/PanGPS.log
 
 After restart, `vpn-connect` (or the widget click) makes it through SAML and `gpd0` comes UP normally.
 
-Empirical anchor: 2026-05-28, penguin/Crostini, PanGPS PID had 5d 19h uptime; restart resolved with no other changes. Mirrored to [jeeves/guides/globalprotect-vpn-guide.md](https://bitbucket.org/accelecon/jeeves/src/main/guides/globalprotect-vpn-guide.md) for team visibility; this entry is the authoritative source and stays in sync via the dotfiles cycle.
+Empirical anchors:
+- 2026-05-28, penguin/Crostini, PanGPS PID 5d 19h uptime; CLI-path failure (vpn-connect exits "Cannot connect to GlobalProtect Portal"); restart resolved with no other changes.
+- 2026-06-01, penguin/Crostini, PanGPS PID 2d 22h uptime; GUI-path failure (PanGPA auth window shows failed immediately on widget click); restart resolved. Shorter uptime than the first instance — uptime is a loose predictor, not a tight one; the precipitating event is likely sleep/wake count or network swap count rather than wall time. Investigation tracked at tasks.jeeves #11009.
+
+Mirrored to [jeeves/guides/globalprotect-vpn-guide.md](https://bitbucket.org/accelecon/jeeves/src/main/guides/globalprotect-vpn-guide.md) for team visibility; this entry is the authoritative source and stays in sync via the dotfiles cycle.
 
 ## Official PAN GlobalProtect CLI (pangp) -- current workaround for CVE-2026-0257
 
