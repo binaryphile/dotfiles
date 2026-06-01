@@ -331,8 +331,10 @@ stage2() {
   section mk.bash
   try githubCloneAndLinkTask mk.bash
   try obsidianSnippetsTask ~/projects/mk.bash/.obsidian/snippets
-  try task.Ln nix-wrapper ~/projects/mk.bash/bin/node
-  try task.Ln nix-wrapper ~/projects/mk.bash/bin/npx
+  each "try task.Ln nix-wrapper" <<'  END'
+    ~/projects/mk.bash/bin/node
+    ~/projects/mk.bash/bin/npx
+  END
   try task.Ln ~/projects/mk.bash/mk.bash ~/.local/bin/mk.bash
   # mk-example symlink deferred until upstream uses repo-relative sourcing.
   # Nix-packaged mk (patched to store path) is the active command until then.
@@ -370,9 +372,11 @@ stage2() {
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try obsidianSnippetsTask ~/projects/jeeves/.obsidian/snippets
-  try task.Ln nix-wrapper ~/projects/jeeves/bin/go
-  try task.Ln nix-wrapper ~/projects/jeeves/bin/node
-  try task.Ln nix-wrapper ~/projects/jeeves/bin/npx
+  each "try task.Ln nix-wrapper" <<'  END'
+    ~/projects/jeeves/bin/go
+    ~/projects/jeeves/bin/node
+    ~/projects/jeeves/bin/npx
+  END
 
   section fluentfp
   try githubCloneAndLinkTask fluentfp
@@ -380,9 +384,11 @@ stage2() {
   section sofdevsim-2026
   try githubCloneAndLinkTask sofdevsim-2026
   try obsidianSnippetsTask ~/projects/sofdevsim-2026/.obsidian/snippets
-  try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/go
-  try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/node
-  try task.Ln nix-wrapper ~/projects/sofdevsim-2026/bin/npx
+  each "try task.Ln nix-wrapper" <<'  END'
+    ~/projects/sofdevsim-2026/bin/go
+    ~/projects/sofdevsim-2026/bin/node
+    ~/projects/sofdevsim-2026/bin/npx
+  END
 
   section finances
   try githubCloneAndLinkTask finances
@@ -394,10 +400,12 @@ stage2() {
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
   try obsidianSnippetsTask ~/projects/binaryphile.github.io/.obsidian/snippets
-  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/ruby
-  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/bundler
-  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/node
-  try task.Ln nix-wrapper ~/projects/binaryphile.github.io/bin/npx
+  each "try task.Ln nix-wrapper" <<'  END'
+    ~/projects/binaryphile.github.io/bin/ruby
+    ~/projects/binaryphile.github.io/bin/bundler
+    ~/projects/binaryphile.github.io/bin/node
+    ~/projects/binaryphile.github.io/bin/npx
+  END
 
   section tandem-protocol
   try codebergCloneAndLinkTask tandem-protocol
@@ -436,13 +444,15 @@ stage2() {
 
   try eraMcpCleanupTask
   try eraServiceCleanupTask
-  try task.Install 644 ~/projects/era/era.service ~/.config/systemd/user/era.service
+  each "try task.Install 644" <<'  END'
+    ~/projects/era/era.service ~/.config/systemd/user/era.service
+    ~/projects/era/evtctl-forward@.service ~/.config/systemd/user/evtctl-forward@.service
+    ~/projects/era/evtctl-canary-watch@.service ~/.config/systemd/user/evtctl-canary-watch@.service
+    ~/projects/era/evtctl-canary-watch@.timer ~/.config/systemd/user/evtctl-canary-watch@.timer
+  END
   try eraStateDirDropInTask
   try eraSystemdEnableTask
   try eraRestartTask
-  try task.Install 644 ~/projects/era/evtctl-forward@.service ~/.config/systemd/user/evtctl-forward@.service
-  try task.Install 644 ~/projects/era/evtctl-canary-watch@.service ~/.config/systemd/user/evtctl-canary-watch@.service
-  try task.Install 644 ~/projects/era/evtctl-canary-watch@.timer ~/.config/systemd/user/evtctl-canary-watch@.timer
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeTeshtConfigTask
