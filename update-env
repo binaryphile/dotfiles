@@ -219,9 +219,11 @@ stage1() {
     try runSigningKeyPreflight
   fi
 
-  task.Ln ~/dotfiles/update-env  ~/.local/bin/update-env
-  task.Ln ~/dotfiles/scripts/scaffold ~/.local/bin/scaffold
-  task.Ln ~/dotfiles/scripts/sync-shellcheckrc ~/.local/bin/sync-shellcheckrc
+  each task.Ln <<'  END'
+    ~/dotfiles/update-env               ~/.local/bin/update-env
+    ~/dotfiles/scripts/scaffold         ~/.local/bin/scaffold
+    ~/dotfiles/scripts/sync-shellcheckrc ~/.local/bin/sync-shellcheckrc
+  END
   claudeBaseCopyTask
 }
 
@@ -442,17 +444,21 @@ stage2() {
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
-  try eraMcpCleanupTask
-  try eraServiceCleanupTask
+  each try <<'  END'
+    eraMcpCleanupTask
+    eraServiceCleanupTask
+  END
   each "try task.Install 644" <<'  END'
     ~/projects/era/era.service ~/.config/systemd/user/era.service
     ~/projects/era/evtctl-forward@.service ~/.config/systemd/user/evtctl-forward@.service
     ~/projects/era/evtctl-canary-watch@.service ~/.config/systemd/user/evtctl-canary-watch@.service
     ~/projects/era/evtctl-canary-watch@.timer ~/.config/systemd/user/evtctl-canary-watch@.timer
   END
-  try eraStateDirDropInTask
-  try eraSystemdEnableTask
-  try eraRestartTask
+  each try <<'  END'
+    eraStateDirDropInTask
+    eraSystemdEnableTask
+    eraRestartTask
+  END
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeTeshtConfigTask
