@@ -58,12 +58,16 @@ in {
     XDG_CONFIG_HOME = "$HOME/.config";
     TASK_BASH_LIB = "${effectiveBashTools.taskBash}/lib/task.bash";
     MK_BASH_LIB = "${effectiveBashTools.mkBash}/lib/mk.bash";
-    # Align all era telemetry consumers on one path: era-serve's slog
-    # appender, era-soak's drip JSONL, and `./mk grafana-up`'s Promtail
-    # tailer all read this env var. Mismatch yields silently-empty Loki
-    # (UC-27). era-soak.service hardcodes the same path; era-serve.service
-    # currently does not -- tracked upstream as tasks.era #5021.
-    ERA_STATE_DIR = "$HOME/.local/share/era-telemetry";
+    # ERA_STATE_DIR intentionally NOT set. The prior override at
+    # ~/.local/share/era-telemetry pointed era-serve at a non-canonical
+    # path while era-soak.service (infra/era-soak.service:7) and the
+    # Grafana stack continued to use the canonical $XDG_STATE_HOME/era
+    # fallback (~/.local/state/era). The override therefore caused the
+    # exact divergence it was written to prevent — era-serve's startup
+    # WARN ("ERA_STATE_DIR override detected") catches this failure mode
+    # post-#5274. Leaving the env unset lets era's default resolution
+    # (XDG_STATE_HOME ? $XDG_STATE_HOME/era : ~/.local/state/era) align
+    # all three consumers on the canonical path.
   };
   home.sessionPath = [
     "$HOME/.local/bin"
