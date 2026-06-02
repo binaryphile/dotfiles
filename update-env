@@ -338,8 +338,9 @@ stage2() {
     ~/projects/mk.bash/bin/npx
   END
   try task.Ln ~/projects/mk.bash/mk.bash ~/.local/bin/mk.bash
-  # mk-example symlink deferred until upstream uses repo-relative sourcing.
-  # Nix-packaged mk (patched to store path) is the active command until then.
+  # Global `mk` binary retired 2026-06-01: git-update functionality replaced
+  # by try clauses in update-env. Library still installed for per-project ./mk
+  # scripts that source it.
 
   section tesht
   try githubCloneAndLinkTask tesht

@@ -44,13 +44,11 @@
     version = mk-bash-src.shortRev or "unknown";
     src = mk-bash-src;
     dontBuild = true;
+    # Library only — the global `mk` binary was retired 2026-06-01 once
+    # git-update was replaced by try clauses in update-env. Per-project
+    # ./mk scripts are the intended use of mk.bash.
     installPhase = ''
       install -Dm644 mk.bash $out/lib/mk.bash
-      install -Dm755 mk-example $out/bin/mk
-      substituteInPlace $out/bin/mk \
-        --replace-fail \
-          "source ~/.local/lib/mk.bash 2>/dev/null || { echo 'fatal: mk.bash not found' >&2; exit 1; }" \
-          "source $out/lib/mk.bash"
     '';
   };
 
