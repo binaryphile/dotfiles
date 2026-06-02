@@ -49,6 +49,15 @@ in {
     source = "${shellcheckPlugin}/lib/shellcheck/plugins/libconvention-checks.so";
   };
 
+  # Global shellcheck config — the user-wide bash style conventions Ted
+  # adopts across personal scripts. shellcheck reads this from
+  # ~/.shellcheckrc before falling through to per-repo $PWD/.shellcheckrc
+  # files. ALL repos (personal AND open-source binaryphile/*) rely on
+  # this global; no per-repo .shellcheckrc files. If an external
+  # contributor / CI environment needs discoverability without Ted's
+  # home-manager profile, re-add a per-repo file at that point.
+  home.file.".shellcheckrc".source = ./.shellcheckrc;
+
   home.sessionVariables = {
     EDITOR = "nvim";
     PAGER = "less";
