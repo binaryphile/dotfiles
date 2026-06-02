@@ -865,7 +865,7 @@ obsidianSnippetsTask() {
   desc "deploy obsidian snippets to $snippetsDir"
 
   obsidianSnippetsUpToDate() {
-    local f
+    local IFS=$'\n' f
     for f in $(lib.Glob $srcDir/*.css); do
       [[ -f $snippetsDir/$(basename $f) ]] && diff -q $f $snippetsDir/$(basename $f) >/dev/null 2>&1 || return 1
     done
@@ -874,7 +874,7 @@ obsidianSnippetsTask() {
 
   obsidianSnippetsInstall() {
     mkdir -p $snippetsDir
-    local f
+    local IFS=$'\n' f
     for f in $(lib.Glob $srcDir/*.css); do
       cp $f $snippetsDir/$(basename $f)
     done
