@@ -356,11 +356,11 @@
         "shellcheck": "shellcheck"
       },
       "locked": {
-        "lastModified": 1779125531,
-        "narHash": "sha256-FYWJVyuLzYZtuTAHCf/SKHmTK2TP7qk7c09mHbfk//U=",
+        "lastModified": 1780369173,
+        "narHash": "sha256-nZUdjIWixNtMBZJKlLncAPJPDoKuUEItPlJ4Cg91tng=",
         "owner": "binaryphile",
         "repo": "shellcheck-convention-plugin",
-        "rev": "be87e8984665d8f1d66d05440c8e11d74bc04155",
+        "rev": "5a9010ef486f9861d751d2f613415229e967cece",
         "type": "github"
       },
       "original": {
