@@ -163,6 +163,7 @@ stage1() {
     ~/dotfiles/bash/init.bash                     ~/.bash_profile
     ~/dotfiles/bash/init.bash                     ~/.bashrc
     ~/dotfiles/bash/init.bash                     ~/.profile
+    ~/dotfiles/.shellcheckrc                      ~/.shellcheckrc
   END
   desc  'set git hooksPath to .githooks'
   ok    "[[ $(git -C ~/dotfiles config core.hooksPath) == .githooks ]]"
