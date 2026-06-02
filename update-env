@@ -941,10 +941,10 @@ eraStateDirDropInTask() {
   local path=$HOME/.config/systemd/user/era.service.d/era-state-dir.conf
 
   desc 'remove legacy era.service drop-in (ERA_STATE_DIR override)'
-  ok   '[[ ! -f '"$path"' ]]'
+  ok   '[[ ! -f '$path' ]]'
 
   eraStateDirDropInRemove() {
-    rm -f "$path"
+    rm -f $path
     systemctl --user daemon-reload
     systemctl --user is-active era &>/dev/null && systemctl --user restart era || true
   }
