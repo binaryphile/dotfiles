@@ -364,6 +364,7 @@ stage2() {
   #  |   +-> era               - semantic memory MCP (codeberg)    |
   #  |       Default branch: main. Cloned and symlinked.           |
   #  |   +-> toc               - TOC DBR pipeline lib (codeberg)   |
+  #  |   +-> tmux-claude       - tmux plugin for claude panes      |
   #  |   +-> flake-locks       - pin all locks to same nixpkgs rev |
   #  +-------------------------------------------------------------+
 
@@ -470,6 +471,14 @@ stage2() {
 
   section toc
   try codebergCloneAndLinkTask toc
+
+  section tmux-claude
+  try githubCloneAndLinkTask tmux-claude
+  # Symlink the CLI into ~/.local/bin so `tmux-claude topology` etc work
+  # from any shell. The tmux plugin (sourced from the desktop tmux.conf
+  # via run-shell) ALSO prepends scripts/ to tmux's PATH, but the symlink
+  # makes the CLI usable from non-tmux shells too.
+  try task.Ln ~/projects/tmux-claude/scripts/tmux-claude ~/.local/bin/tmux-claude
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
