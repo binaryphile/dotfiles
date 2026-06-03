@@ -342,6 +342,9 @@ stage2() {
   # Global `mk` binary retired 2026-06-01: git-update functionality replaced
   # by try clauses in update-env. Library still installed for per-project ./mk
   # scripts that source it.
+  desc  'remove stale ~/.local/bin/mk symlink (global mk retired 2026-06-01)'
+  ok    '[[ ! -e ~/.local/bin/mk && ! -L ~/.local/bin/mk ]]'
+  cmd   'rm -f ~/.local/bin/mk'
 
   section tesht
   try githubCloneAndLinkTask tesht
