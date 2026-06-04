@@ -16,37 +16,49 @@
 # absolute paths under /opt/paloaltonetworks/globalprotect/. The .deb
 # installs there, and the binaries are built assuming that path.
 #
-# Two PanGPS-enforced constraints govern packaging:
+# Two PanGPS-enforced gates govern packaging. Only the first is
+# characterised; the second is open at tasks.dotfiles #26911.
 #
-# 1. App Integrity check (asymmetric, the load-bearing constraint).
-#    PanGPS verifies PanGPA's binary at every IPC connection: it reads
-#    /proc/<peer>/exe, SHA-384's the file content, and RSA-verifies the
-#    signature in /opt/.../sign/PanGPA-sha384.sig against
-#    /opt/.../sign/gp-public.pem. Any modification to PanGPA -- including
-#    autoPatchelfHook's ELF-interpreter rewrite -- breaks the signature
-#    and PanGPS closes the socket with Error(1322). PanGPS does NOT
-#    self-verify; modified PanGPS bytes run fine.
+# 1. Directory collocation (verified gate). At every IPC connection,
+#    PanGPS reads realpath(/proc/<peer-pid>/exe) and
+#    realpath(/proc/self/exe) and requires dirname of each to match.
+#    Mismatch -> Error(312) "not from GP folder" + Error(212) close
+#    socket. The check makes no reference to the binaries' bytes or
+#    signatures. Empirically verified 2026-05-20 (era memory
+#    c9dfa3f9e2af): byte-flipping the PanGPS binary in place at /opt
+#    keeps PanGPS accepting pristine PanGPA; relocating either binary
+#    out of /opt fires Error 312.
 #
-# 2. Co-location check (secondary). PanGPS also requires
-#    dirname(realpath(/proc/<peer>/exe)) == dirname(realpath(/proc/self/exe)).
-#    On mismatch it emits Error(312) "not from GP folder". Error(312) is
-#    ALSO emitted as a fallback whenever IsConnectedByPanGPA returns false
-#    -- including from sig-check failure -- which makes the text misleading
-#    when the real failure was (1) above.
+# 2. autoPatchelf rejection (uncharacterised gate). Even when collocated
+#    at /opt, autoPatchelf-built binaries are rejected with a different
+#    error path: Error(1322) "App Integrity: Failed to verify PanGPA
+#    Signature" + Error(212) close socket. The mechanism behind 1322
+#    has NOT been isolated -- autoPatchelfHook rewrites the ELF .interp
+#    section and RPATH/RUNPATH in addition to other bytes, so the gate
+#    could be (a) a real signature/hash check, (b) an .interp value
+#    check, (c) an RPATH origin check, or (d) something else. The
+#    targeted single-axis isolation experiment is tracked at
+#    tasks.dotfiles #26911.
 #
-# The earlier byte-flip experiment (2026-05-20) tested PanGPS-flipping and
-# concluded "hashes don't matter" -- the PanGPA-flipping case wasn't
-# tested. Re-verified empirically 2026-05-27 (see era memory 99b0337bc6fe):
-# pristine PanGPA passes openssl verify; autoPatchelf'd PanGPA fails.
+# Misframing to avoid (corrected 2026-06-03): a prior cycle (2026-05-27)
+# ran openssl dgst -sha384 -verify against pristine vs autoPatchelf'd
+# PanGPA, observed Verified OK vs bad signature, and concluded "PanGPS
+# performs an asymmetric SHA-384 integrity check on PanGPA." That
+# conclusion was load-bearing but unsupported -- the openssl-dgst
+# result only proves the on-disk .sig file matches the binary, not
+# that PanGPS uses that signature file at runtime. The verified gate
+# is collocation only.
 #
 # Working architecture (see docs/design.md "pangp packaging" and
 # docs/vpn.md "Critical: PanGPS App Integrity check"): keep both PanGPS
 # and PanGPA bit-for-bit identical to the .deb-shipped versions, deploy
-# them co-located at /opt/paloaltonetworks/globalprotect/ via update-env's
-# extractGlobalprotectDebToOptTask. On NixOS, programs.nix-ld.enable=true
-# (in nixos-config/common/configuration.nix) supplies a real
-# /lib64/ld-linux-x86-64.so.2 so pristine generic-Linux binaries can exec.
-# Crostini uses its native FHS loader; no nix-ld needed there.
+# them collocated at /opt/paloaltonetworks/globalprotect/ via update-env's
+# extractGlobalprotectDebToOptTask. Pristine bytes satisfy gate 1 by
+# construction AND sidestep whatever gate 2 actually checks. On NixOS,
+# programs.nix-ld.enable=true (in nixos-config/common/configuration.nix)
+# supplies a real /lib64/ld-linux-x86-64.so.2 so pristine generic-Linux
+# binaries can exec. Crostini uses its native FHS loader; no nix-ld
+# needed there.
 #
 # Cert validation note: pangp's libwa* stack statically links OpenSSL and
 # uses bundled CA roots. The system trust store at /etc/ssl/certs is NOT
@@ -69,7 +81,7 @@
   # hosts that don't have a /opt extract should override to a path that
   # exists at switch time -- typically the store layout
   # "$out/opt/paloaltonetworks/globalprotect" if you accept that
-  # NixOS-only PanGPS WON'T pass the co-location check until a peer
+  # NixOS-only PanGPS WON'T pass the collocation gate until a peer
   # PanGPA also lives there (in practice: NixOS deployment of pangp
   # needs the .deb extracted into the same directory at install time,
   # same as Crostini). See header comment for rationale.

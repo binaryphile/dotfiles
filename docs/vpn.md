@@ -252,56 +252,67 @@ Stages of the deploy:
 
 Result: `gpd.service` runs PanGPS from the nix store, `WorkingDirectory=/var/lib/globalprotect` (writable, systemd-`StateDirectory`-managed), `ExecStartPre` symlinks read-only config files into the StateDirectory. PanGPA runs as a home-manager user-service, with `HOME` wrapped to `$HOME/.local/share/globalprotect` so it doesn't pollute the top-level home dir with `GP_HTML/` and `.GlobalProtect/`.
 
-### Critical: PanGPS App Integrity check + co-location workaround (pristine binaries in /opt)
+### Critical: PanGPS App Integrity check + collocation workaround (pristine binaries in /opt)
 
-Running PanGPS and PanGPA fails when PanGPA's bytes have been modified
-because PanGPS performs an **asymmetric SHA-384 integrity check** on
-PanGPA at every IPC connection. It reads `/proc/<peer>/exe`, hashes the
-file content, and verifies the RSA signature in
-`/opt/.../sign/PanGPA-sha384.sig` against `/opt/.../sign/gp-public.pem`.
-Mismatch -> close socket with:
+Two distinct rejection paths gate PanGPA -> PanGPS IPC. Only the first
+is characterised; the second is open at `tasks.dotfiles #26911`.
+
+**Gate 1 (verified): directory collocation.** At every IPC connection,
+PanGPS reads `realpath(/proc/<peer-pid>/exe)` and
+`realpath(/proc/self/exe)` and compares `dirname` of each. Mismatch
+produces:
+
+```
+Error( 312): Connected by process not from GP folder, app: <peer-path>
+Error( 212): Close socket.
+```
+
+The check makes no reference to the binaries' bytes or signatures.
+Empirically verified 2026-05-20 on Crostini (era memory
+`c9dfa3f9e2af`): byte-flipping a data byte of the PanGPS binary in
+place at `/opt/...` (different SHA-384 from pristine) paired with a
+pristine PanGPA at `/opt/...` is still accepted; relocating a pristine
+PanGPS to a different directory while PanGPA stays at `/opt/...`
+fires Error 312.
+
+**Gate 2 (uncharacterised): autoPatchelf'd binaries.** Even when
+collocated at `/opt/...`, autoPatchelf-built binaries get rejected
+with a different log path:
 
 ```
 Error(1322): App Integrity: Failed to verify PanGPA Signature
 CPanSocketOwnerFinder::IsConnectedByPanGPA: status = 0
-Error( 312): Connected by process not from GP folder, app: /opt/.../PanGPA
 Error( 212): Connected by non-PanGPA. Close socket.
 ```
 
-PanGPS itself is NOT integrity-checked -- observed 2026-05-27 on
-calumny, a running PanGPS with autoPatchelf-rewritten interpreter
-served the integrity check on PanGPA peers without self-rejecting.
-Only PanGPA's bytes matter for the gate.
+The mechanism behind Error 1322 has NOT been isolated.
+`autoPatchelfHook` rewrites the ELF `.interp` section and the
+binary's `RPATH`/`RUNPATH` in addition to whatever other bytes it
+touches, so the gate could be (a) a real signature/hash check that a
+single data-byte flip didn't reproduce, (b) an `.interp` value check,
+(c) an `RPATH` origin check, or (d) something else. The targeted
+isolation experiment (apply `patchelf --set-interpreter` only against
+collocated binaries, then `--set-rpath` only) is tracked at
+`tasks.dotfiles #26911`.
 
-The Error 312 "not from GP folder" line is misleading: it fires as a
-secondary log message whenever `IsConnectedByPanGPA` returns false,
-even when the actual `dirname(realpath(...))` co-location check would
-have passed. Single rejections emit multiple Error 1322 then multiple
-Error 312 then Error 212; the 1322 is primary, 312 is downstream.
+**Misframing to avoid (corrected 2026-06-03).** A prior cycle
+(2026-05-27) ran `openssl dgst -sha384 -verify` against pristine vs
+autoPatchelf'd PanGPA, observed `Verified OK` vs `bad signature`, and
+concluded "PanGPS performs an asymmetric SHA-384 integrity check on
+PanGPA." That conclusion was load-bearing but unsupported: the
+openssl-dgst result only proves the on-disk `.sig` file matches the
+binary, not that PanGPS uses that signature file at runtime. The
+associated "9+ hour run with autoPatchelf'd PanGPS not self-rejecting"
+aside was not independently verifiable. The verified gate is
+collocation only; the Error-1322 mechanism remains open at #26911.
 
-The earlier byte-flip experiment (2026-05-20) tested PanGPS-flipping
-only and concluded "hashes don't matter." PanGPA-flipping wasn't
-tested; that's the case the integrity gate rejects. Empirically
-re-verified 2026-05-27:
-
-```bash
-# pristine PanGPA from .deb (sha384 5bbe7d19...)
-openssl dgst -sha384 -verify /opt/.../sign/gp-public.pem \
-  -signature /opt/.../sign/PanGPA-sha384.sig <pristine PanGPA>
-# Verified OK
-
-# autoPatchelf'd PanGPA (sha384 732c6dbb...)
-openssl dgst -sha384 -verify /opt/.../sign/gp-public.pem \
-  -signature /opt/.../sign/PanGPA-sha384.sig <patched PanGPA>
-# bad signature ... Verification failure
-```
-
-**Fix**: deploy **pristine** `.deb` bytes for PanGPA (and for symmetry,
-PanGPS) into `/opt/paloaltonetworks/globalprotect/`. On NixOS, use
-`programs.nix-ld.enable = true` to provide a real
-`/lib64/ld-linux-x86-64.so.2` for the pristine binaries to load. On
-Crostini, the native Debian FHS already supplies that loader, so no
-nix-ld needed.
+**Fix**: deploy **pristine** `.deb` bytes for both PanGPS and PanGPA
+into `/opt/paloaltonetworks/globalprotect/`. This satisfies Gate 1
+(collocation) by construction AND sidesteps whatever Gate 2 actually
+checks. On NixOS, use `programs.nix-ld.enable = true` to provide a
+real `/lib64/ld-linux-x86-64.so.2` for the pristine binaries to load.
+On Crostini, the native Debian FHS already supplies that loader, so
+no nix-ld needed.
 
 ```bash
 # Extract the unpatched .deb subtree
@@ -368,14 +379,15 @@ system configuration (`nixos-config/common/configuration.nix`). nix-ld
 installs a real `/lib64/ld-linux-x86-64.so.2` that delegates to
 nix-store glibc and reads `$NIX_LD_LIBRARY_PATH` for additional libs.
 Pristine .deb binaries can then exec on NixOS without modification,
-preserving the PanGPS App Integrity signature on PanGPA.
+keeping them deployable at `/opt/...` collocated with each other.
 
-This replaces an earlier (incorrect) autoPatchelf-based approach: that
-approach rewrote PanGPA's ELF interpreter to point at a nix-store
-glibc, which fixed the loader problem but invalidated the binary's
-SHA-384 signature and caused PanGPS to reject every IPC connection
-with `Error(1322)`. See "Critical: PanGPS App Integrity check"
-section above.
+This replaces an earlier autoPatchelf-based approach: that approach
+rewrote PanGPA's ELF interpreter to point at a nix-store glibc, which
+fixed the loader problem but tripped Gate 2 above (`Error(1322): App
+Integrity: Failed to verify PanGPA Signature`). The exact mechanism
+behind that rejection has not been isolated -- see "Critical: PanGPS
+App Integrity check" above for the open characterisation work at
+`tasks.dotfiles #26911`.
 
 Marker-driven /opt staging is unchanged (`contexts/pangp.nix` deploys
 `home.file.".local/share/pangp/{source,dest}"`; `update-env`'s
@@ -411,11 +423,17 @@ file /lib64/ld-linux-x86-64.so.2
 
 sha384sum /opt/paloaltonetworks/globalprotect/PanGPA
 # expect: 5bbe7d19e937af306369cced4b91e56a4ba3b12570c2f38f2fc47e88e249945a33221b22c3bc2279cf069f65e0c193ed
+# (smoke check that the deployed bytes are the pristine .deb-shipped bytes;
+# the hash itself is not a gate PanGPS checks at runtime -- see "Critical:
+# PanGPS App Integrity check" above.)
 
-openssl dgst -sha384 -verify /opt/paloaltonetworks/globalprotect/sign/gp-public.pem \
-  -signature /opt/paloaltonetworks/globalprotect/sign/PanGPA-sha384.sig \
-  /opt/paloaltonetworks/globalprotect/PanGPA
-# expect: Verified OK
+sudo systemctl restart gpd.service
+systemctl --user restart gpa.service
+sudo tail /opt/paloaltonetworks/globalprotect/PanGPS.log
+# expect:
+#   Info ( 71): PanGPA is managed by systemd.
+#   Info ( 102): Start ServerThread
+# absence of Error(312) and Error(1322) means both gates pass.
 ```
 
 ##### NixOS deployment gaps (operational debt enumeration, 2026-05-27)
