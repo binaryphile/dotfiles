@@ -83,3 +83,50 @@ node_modules/
 *.safetensors
 *.gguf
 *.pkl
+
+# raster images (SVG is intentionally NOT included -- it's XML/text and
+# the diagram source-of-truth in jeeves/scripts/mermaid-sources/ and
+# elsewhere. WebP/PNG/etc rendered from SVG are upload artifacts, not
+# sources). If a project legitimately needs a raster image checked in
+# (logo, screenshot referenced from a README), unignore it in that
+# repo's local .gitignore via "!path/to/file.png".
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.bmp
+*.tiff
+*.tif
+*.ico
+*.avif
+*.heic
+*.heif
+
+# video
+*.mp4
+*.mov
+*.webm
+*.avi
+*.mkv
+*.m4v
+*.wmv
+
+# audio
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.m4a
+*.aac
+*.opus
+
+# PDFs (treat as binary; if a repo needs to ship a PDF, unignore locally)
+*.pdf
+
+# fonts
+*.ttf
+*.otf
+*.woff
+*.woff2
+*.eot
