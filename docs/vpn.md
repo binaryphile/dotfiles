@@ -15,9 +15,11 @@ The Nix derivation substitutes absolute store paths for `@vpn-slice@` and `@gpcl
 
 Since the 2026-05-08 CVE-2026-0257 cookie-mint hardening on PAN Prisma Access broke gpoc against the Digi portal (see "Symptom: gateway login returns HTTP 512" below), both clients live on the same machine and a toggle picks the active one. The toggle is implicit in `gpd.service`'s systemd state -- there's no separate state file.
 
+`gpd.service` is enabled-at-boot via the pangp activation hook (see "Install" below), so the pangp daemon survives Crostini restarts and the post-reboot default is always pangp. `vpn-mode gpoc` is a session-scoped flip — it does not survive reboot; the next boot brings gpd back up and lands the user in pangp mode again. To make gpoc the permanent default, `sudo systemctl disable gpd.service` separately.
+
 ```
 vpn-mode pangp   # start gpd+gpa (PAN proprietary client owns the tun device)
-vpn-mode gpoc    # stop gpd+gpa + kill any in-flight gpoc tunnel
+vpn-mode gpoc    # stop gpd+gpa + kill any in-flight gpoc tunnel (session-scoped)
 vpn-mode         # print current mode ('pangp' or 'gpoc')
 ```
 
@@ -113,6 +115,20 @@ flowchart TD
 **Fix (2026-05-11):** Restored `x-scheme-handler/globalprotectcallback` to `xdg.mimeApps.defaultApplications` in `linux-base.nix`. Removed the garcon symlink from `crostini/home.nix`; `xdg.desktopEntries.gpgui` already deploys to `~/.local/share/applications/` which is garcon's discovery path.
 
 ## Diagnosing failures
+
+**Symptom: VPN widget says down despite completed SAML; SAML form had no green "via pangp" banner**
+
+The browser opened, you completed SAML+Duo, the widget still reports down, and the tunnel never came up. Diagnostic: did the SAML form show the green ribbon "VPN auth via pangp" at the top? If NO, `vpn-connect` dispatched to gpoc instead of pangp.
+
+Since gpoc is broken upstream by CVE-2026-0257 (gateway returns HTTP 512 for every SAML cookie), the silent dispatch to gpoc means auth completes, cookie travels to gpoc's listener, gateway-login rejects, tunnel never establishes. The `vpn` widget reports down because no `tun0`/`pangp0`/`gpd0` interface ever came up.
+
+Common causes of unexpected gpoc dispatch:
+
+1. **`gpd.service` inactive after Crostini sleep/restart on an install predating the `home.activation.pangpSystemUnit` enable.** Check `systemctl is-active gpd.service`. Fix: `vpn down`, `vpn-mode pangp`, `vpn up`. Then `sudo systemctl enable gpd.service` once to make it persist (or re-run `home-manager switch` so the activation hook does it declaratively).
+2. **Explicit `vpn-mode gpoc` was called and not yet flipped back.** `vpn-mode` reports `gpoc`. Fix: `vpn-mode pangp`.
+3. **Crostini host shut down (ChromeOS sleep/restart).** Journal shows `maitred: Received shutdown request` followed by `Stopping gpd.service`. On reboot, the enabled-at-boot symlink in `multi-user.target.wants/gpd.service` brings gpd back. If the symlink is missing (older install), see cause 1.
+
+If the banner WAS visible but the tunnel still didn't come up, you're in pangp's gateway-login path -- check the next symptom or `sudo tail /var/lib/globalprotect/PanGPS.log`.
 
 **Symptom: gateway login returns HTTP 512 AFTER SAML cookie delivered**
 
@@ -232,7 +248,7 @@ update-env -1     # runs the pangp group: verify tarball, remove apt deb, then h
 Stages of the deploy:
 1. `aptRemoveGlobalprotectTask` -- uninstalls the deprecated apt-shipped globalprotect deb if it's present (idempotent).
 2. `homeManagerFlakeSwitchTask` runs `nix run ~/dotfiles#home-manager -- switch --flake ~/dotfiles#crostini`. No `--impure` flag: `pangp.nix`'s `src` is resolved by content hash via `pkgs.requireFile`, so nix-store searches by content address and pure-eval succeeds. First-time bootstrap requires `nix-store --add-fixed sha256 PanGPLinux-<ver>.tgz` once per machine (the proprietary tarball cannot be redistributed).
-3. Activation hook `home.activation.pangpSystemUnit` copies `${pangp}/lib/systemd/system/gpd.service` to `/etc/systemd/system/gpd.service`, runs `daemon-reload`, restarts the service. Uses `/usr/bin/sudo` (absolute path) because home-manager's activation env has minimal PATH.
+3. Activation hook `home.activation.pangpSystemUnit` copies `${pangp}/lib/systemd/system/gpd.service` to `/etc/systemd/system/gpd.service`, runs `daemon-reload`, `systemctl enable`s it (so the daemon survives Crostini sleep/wake and restarts), then restarts the service. Without the enable, every Crostini host-shutdown event (`maitred: Received shutdown request`) drops the user into implicit-gpoc-mode on next boot, which silently fails auth since gpoc is broken upstream. Uses `/usr/bin/sudo` (absolute path) because home-manager's activation env has minimal PATH.
 
 Result: `gpd.service` runs PanGPS from the nix store, `WorkingDirectory=/var/lib/globalprotect` (writable, systemd-`StateDirectory`-managed), `ExecStartPre` symlinks read-only config files into the StateDirectory. PanGPA runs as a home-manager user-service, with `HOME` wrapped to `$HOME/.local/share/globalprotect` so it doesn't pollute the top-level home dir with `GP_HTML/` and `.GlobalProtect/`.
 
@@ -572,7 +588,7 @@ pangp's `CPanDefaultBrowserLinux` writes the SAML form as a local `saml.html` fi
 1. **Host Chrome can't open local container files.** The `garcon_host_browser.desktop` handler is registered only for URL schemes (`http`, `https`, `ftp`, `mailto`); local file paths can't cross the Crostini boundary.
 2. **xdg-open's default text/html chain falls through to the terminal vim handler** when no graphical browser is found (firefox-esr post-purge, nix firefox not on the gpa.service PATH). Cf. `garcon --client --terminal -e vim <file>` in the strace.
 
-**Shim**: a one-line wrapper script that converts the file path to an HTTP URL on the existing `darkhttpd` (proxy-pac-server, already serving `127.0.0.1:8120`) and hands the URL to `garcon-url-handler` -- which routes to host Chrome via the standard Crostini bridge.
+**Shim**: a wrapper script that converts the file path to an HTTP URL on the existing `darkhttpd` (proxy-pac-server, already serving `127.0.0.1:8120`) and hands the URL to `garcon-url-handler` -- which routes to host Chrome via the standard Crostini bridge. The shim also injects a "VPN auth via pangp" banner into `saml.html` so the operator can tell from the auth window which client dispatched (see "Dual-client banner" below).
 
 ```bash
 # Wrapper at ~/.local/bin/saml-host-browser:
@@ -608,6 +624,20 @@ End-to-end flow with the shim in place:
 9. container's `gp.desktop` Exec calls nix-store `globalprotect defaultbrowser <url>`
 10. the CLI delivers the cookie to PanGPA, which forwards to PanGPS
 11. PanGPS completes gateway login; tunnel up on `gpd0`
+
+### Dual-client banner injection
+
+Once vpn-connect's two-client dispatch (gpoc vs pangp) exists, "did the right client run?" becomes an operator question with no in-band answer — `vpn-mode` reports its current state but vpn-connect's dispatch path is otherwise invisible during SAML. Silent dispatch to gpoc when the operator expected pangp is the failure mode that motivated the docs around `gpd.service`-enabled-at-boot (above) and the banner here.
+
+`saml-host-browser` injects a green banner ("VPN auth via pangp") into `saml.html` before exec'ing `garcon-url-handler`. The banner appears at the top of the SAML form in host Chrome during auth. **Absence of the banner during SAML auth = vpn-connect dispatched to gpoc instead of pangp** — gpoc's gpauth has its own in-process auth-server that doesn't pass through this shim.
+
+Mechanism (in the `"$samlRoot"/*)` case of `scripts/saml-host-browser`):
+
+1. grep-check `saml.html` for the literal `document.getElementById('myform').submit();` (PanGPA's auto-submit shape). On mismatch, log a warning to stderr and proceed without modification — proprietary HTML format changes shouldn't block auth, but should surface in logs for follow-up.
+2. `sed -i` injects a `<div>` immediately after `<body>` (green ribbon banner, `position:fixed`).
+3. `sed -i` wraps the auto-submit line in `setTimeout(...,1000)`. Without the delay, fast Okta re-auths (cookie still valid) navigate away from `saml.html` before the banner has rendered. The 1-second delay is the minimum that guarantees the banner is visible across the full range of IdP response latencies.
+
+PanGPA regenerates `saml.html` from scratch every auth cycle, so in-place edits don't accumulate. The shim is the only seam: pangp's local `saml.html` is the one HTML artifact under our control between gpa.service and host Chrome, and `sed`-style injection is the simplest mechanism that doesn't require proxying every HTTP byte.
 
 ### Callback-handler conflict: system gpgui.desktop vs gp.desktop
 

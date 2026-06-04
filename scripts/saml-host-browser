@@ -33,25 +33,50 @@
 # avoids the "every local .html file 404s from darkhttpd" footgun
 # that hijacking text/html system-wide would otherwise create.
 
+# injectBanner edits saml.html in place to add a green "VPN auth via
+# pangp" banner and wraps PanGPA's auto-submit in setTimeout. Absence
+# of the banner during SAML is the operator signal that vpn-connect
+# dispatched to gpoc instead (this shim only fires in the pangp path).
+# PanGPA regenerates saml.html every auth cycle, so in-place edits
+# don't accumulate. Format mismatch (PAN changes the auto-submit
+# shape) logs a warning to stderr and returns without modification.
+injectBanner() {
+  local file=$1
+  if ! grep -q "document.getElementById('myform').submit();" "$file" 2>/dev/null; then
+    echo "saml-host-browser: saml.html format mismatch; banner injection skipped" >&2
+    return
+  fi
+  local banner='<div style="position:fixed;top:0;left:0;right:0;background:#0a6;color:#fff;padding:8px;text-align:center;font-family:sans-serif;font-weight:bold;z-index:99999">VPN auth via <code style="background:#085;padding:2px 6px;border-radius:3px">pangp</code></div>'
+  sed -i "s|<body>|<body>${banner}|" "$file"
+  sed -i "s|document.getElementById('myform').submit();|setTimeout(function(){document.getElementById('myform').submit();},1000);|" "$file"
+}
+
+main() {
+  local file=${1:?missing file argument}
+  local samlRoot=$HOME/.local/share/globalprotect/GP_HTML
+  local real
+  real=$(readlink -f -- "$file" 2>/dev/null) || real=$file
+  case $real in
+    "$samlRoot"/*)
+      injectBanner "$real"
+      exec /usr/bin/garcon-url-handler "http://127.0.0.1:8120/saml-bundle/$(basename -- "$real")"
+      ;;
+    *)
+      # Generic text/html file -- dispatch to firefox if available, else
+      # fall back to a host Chrome file:// URL (will fail, but at least
+      # surfaces an obvious "can't open container file in host Chrome"
+      # rather than serving the pangp SAML URL with a 404 inside).
+      if command -v firefox >/dev/null 2>&1; then
+        exec firefox -- "$file"
+      fi
+      exec /usr/bin/garcon-url-handler "file://$real"
+      ;;
+  esac
+}
+
+# Sourced execution returns before strict mode + main, so test files can
+# `source scripts/saml-host-browser` to load functions without running main.
+return 2>/dev/null
+
 set -euo pipefail
-file=${1:?missing file argument}
-samlRoot=$HOME/.local/share/globalprotect/GP_HTML
-
-# Canonicalize so symlinks/relpaths resolve into samlRoot if applicable.
-real=$(readlink -f -- "$file" 2>/dev/null) || real=$file
-
-case $real in
-  "$samlRoot"/*)
-    exec /usr/bin/garcon-url-handler "http://127.0.0.1:8120/saml-bundle/$(basename -- "$real")"
-    ;;
-  *)
-    # Generic text/html file -- dispatch to firefox if available, else
-    # fall back to a host Chrome file:// URL (will fail, but at least
-    # surfaces an obvious "can't open container file in host Chrome"
-    # rather than serving the pangp SAML URL with a 404 inside).
-    if command -v firefox >/dev/null 2>&1; then
-      exec firefox -- "$file"
-    fi
-    exec /usr/bin/garcon-url-handler "file://$real"
-    ;;
-esac
+main "$@"

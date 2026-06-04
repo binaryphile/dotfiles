@@ -168,6 +168,7 @@ in
         [ -f "$sysOverride" ] && $DRY_RUN_CMD /usr/bin/sudo -n rm "$sysOverride"
         [ -f "$userOverride" ] && $DRY_RUN_CMD rm "$userOverride"
         $DRY_RUN_CMD /usr/bin/sudo -n systemctl daemon-reload
+        $DRY_RUN_CMD /usr/bin/sudo -n systemctl enable gpd.service
         $DRY_RUN_CMD /usr/bin/sudo -n systemctl restart gpd.service
       fi
     ''

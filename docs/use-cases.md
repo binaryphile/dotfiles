@@ -351,12 +351,13 @@ Operational procedures documented in the canonical doc set in ~/projects/jeeves/
   - 3a. SAML times out -> re-authenticate; resume at step 1
   - 4a. Auth callback not dispatched -> URL scheme handler misconfigured (see [docs/vpn.md](vpn.md)); resume at step 1
   - 4b. (pangp/Crostini) `/tmp/gpcallback.log` shows `gpclient::launch_gui Failed to feed auth data to the CLI` -> system `/usr/share/applications/gpgui.desktop` is still claiming the callback scheme over `gp.desktop`; re-run `update-env`'s system-desktop task; resume at step 1
+  - 4e. (pangp/Crostini) SAML form opened without the green "VPN auth via pangp" banner -> `vpn-connect` dispatched to gpoc instead of pangp; usually `gpd.service` inactive after a Crostini host-shutdown event (older install predating the activation hook's `systemctl enable`). Run `sudo systemctl enable gpd.service`, then `vpn down && vpn-mode pangp && vpn up`; resume at step 1
   - 4c. PanGPS rejects PanGPA with `Connected by non-PanGPA. Close socket.` -> daemon and agent live in different directories; co-locate both at `/opt/paloaltonetworks/globalprotect/` (see [docs/vpn.md: PanGPS co-location workaround](vpn.md)); resume at step 1
   - 4d. PanGPS log shows `Failed to connect to portal` while the shell can reach the same host -> daemon stuck after long uptime (sleep/wake/network swap cycles); `sudo systemctl restart gpd`; resume at step 1 (see [docs/vpn.md: PanGPS Failed to connect to portal with network reachable](vpn.md))
   - 5a. Reconnect loop hammers a dead gateway -> Ctrl-C, diagnose; fail
 - **Minimal Guarantee:** No tunnel; previous network state intact
 - **Success Guarantee:** VPN tunnel up. gpoc mode preserves split-tunnel routing; pangp pushes full-tunnel via `gpd0` (all traffic via Prisma Access), with internal DNS handling split-horizon hostnames.
-- **Technology:** Two GlobalProtect clients coexist (yuezk gpoc and proprietary pangp); `vpn-connect` reads UC-7a's selected mode and dispatches to the right one. SAML on Crostini in pangp mode uses the `saml-host-browser` shim to route the local `saml.html` through the existing `darkhttpd` (proxy-pac-server) to ChromeOS host Chrome via `garcon-url-handler`; the callback comes back through `gp.desktop`. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
+- **Technology:** Two GlobalProtect clients coexist (yuezk gpoc and proprietary pangp); `vpn-connect` reads UC-7a's selected mode and dispatches to the right one. SAML on Crostini in pangp mode uses the `saml-host-browser` shim to route the local `saml.html` through the existing `darkhttpd` (proxy-pac-server) to ChromeOS host Chrome via `garcon-url-handler`; the shim also injects a "via pangp" banner into the SAML form so silent gpoc-vs-pangp dispatch failures (banner absent = gpoc) are visible at auth time. Callback comes back through `gp.desktop`. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
 
 ---
 
@@ -383,7 +384,7 @@ Operational procedures documented in the canonical doc set in ~/projects/jeeves/
   - 4a. New active client also broken -> flip back via this UC; resume at step 1 with the original target
 - **Minimal Guarantee:** The toggle is atomic from the user's perspective -- either succeeds and the target is active, or fails with neither in a partial state
 - **Success Guarantee:** Exactly one VPN client's services are running; widgets (panel, sway probes) detect the tun device the active client owns without needing to know which client it is
-- **Technology:** `vpn-mode` script reading `systemctl is-active gpd.service` as the implicit state; `gpd.service` running = pangp mode, stopped = gpoc mode (gpoc launches on-demand via `vpn-connect`, no persistent service). See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
+- **Technology:** `vpn-mode` script reading `systemctl is-active gpd.service` as the implicit state; `gpd.service` running = pangp mode, stopped = gpoc mode (gpoc launches on-demand via `vpn-connect`, no persistent service). `gpd.service` is enabled-at-boot via the pangp activation hook, so the post-reboot default is always pangp; `vpn-mode gpoc` is session-scoped and does not survive reboot. See [design.md: VPN](design.md#vpn-uc-7) and [docs/vpn.md](vpn.md).
 
 ---
 
@@ -620,7 +621,7 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 | UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
-| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via nixos-config flake input, standalone linux via dotfiles flake input; SAML callback validated end-to-end on Crostini |
+| UC-7 Connect to Corporate VPN | Working | Dual-client: gpoc Rust rewrite (apt on Crostini; flake input on NixOS/standalone) + proprietary pangp (nix-managed via PanGPLinux tarball). `vpn-mode` toggles; `gpd.service` enabled-at-boot so post-reboot default is pangp. gpoc broken upstream by CVE-2026-0257; pangp current default. SAML callback + dual-client banner injection validated end-to-end on Crostini |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |

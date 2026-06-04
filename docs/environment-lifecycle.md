@@ -115,7 +115,7 @@ See [`op-run/README.md`](../op-run/README.md) for the full op-run flow.
 | UC-4e Enroll Machine for Work Credentials | Not started | New UC for scoped device enrollment |
 | UC-5 Make a Config Change | Working | |
 | UC-6 Start a New Session | Working | |
-| UC-7 Connect to Corporate VPN | Working | gpoc Rust rewrite; Crostini via apt, NixOS via flake input |
+| UC-7 Connect to Corporate VPN | Working | Dual-client (gpoc Rust rewrite + proprietary pangp); pangp is current default (gpoc broken upstream by CVE-2026-0257); `vpn-mode` toggle; Crostini via apt+nix tarball, NixOS via flake input |
 | UC-8 Access VPN from Host Browser | Working | tinyproxy + PAC, Crostini-specific |
 | UC-9 Phone Notifications | Working | notify-send wrapper bridges to ntfy.sh |
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
