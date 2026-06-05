@@ -49,7 +49,7 @@ in {
     source = "${shellcheckPlugin}/lib/shellcheck/plugins/libconvention-checks.so";
   };
 
-  # Global shellcheck config — the user-wide bash style conventions Ted
+  # Global shellcheck config -- the user-wide bash style conventions Ted
   # adopts across personal scripts. shellcheck reads this from
   # ~/.shellcheckrc before falling through to per-repo $PWD/.shellcheckrc
   # files. ALL repos (personal AND open-source binaryphile/*) rely on
@@ -72,7 +72,7 @@ in {
     # path while era-soak.service (infra/era-soak.service:7) and the
     # Grafana stack continued to use the canonical $XDG_STATE_HOME/era
     # fallback (~/.local/state/era). The override therefore caused the
-    # exact divergence it was written to prevent — era-serve's startup
+    # exact divergence it was written to prevent -- era-serve's startup
     # WARN ("ERA_STATE_DIR override detected") catches this failure mode
     # post-#5274. Leaving the env unset lets era's default resolution
     # (XDG_STATE_HOME ? $XDG_STATE_HOME/era : ~/.local/state/era) align

@@ -44,7 +44,7 @@
     version = mk-bash-src.shortRev or "unknown";
     src = mk-bash-src;
     dontBuild = true;
-    # Library only — the global `mk` binary was retired 2026-06-01 once
+    # Library only -- the global `mk` binary was retired 2026-06-01 once
     # git-update was replaced by try clauses in update-env. Per-project
     # ./mk scripts are the intended use of mk.bash.
     installPhase = ''

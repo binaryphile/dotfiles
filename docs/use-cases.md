@@ -508,13 +508,13 @@ Mirrors nixos-config UC-1a/UC-1b for headless sessions -- Crostini and SSH into 
 - **Trigger:** Ted starts a tool that requires credentials (e.g., Claude Code with MCP servers)
 - **Postcondition:** Tool running with declared credentials in its process environment; launcher integrity verified at shell init
 - **Stakeholders:**
-  - Ted — credentialed tools start without per-invocation friction
-  - Ted (security-conscious) — modifications to the launcher, project registry, or machine allowlist are surfaced at interactive-shell init; a launcher resolved outside `/nix/store/` is also surfaced
+  - Ted -- credentialed tools start without per-invocation friction
+  - Ted (security-conscious) -- modifications to the launcher, project registry, or machine allowlist are surfaced at interactive-shell init; a launcher resolved outside `/nix/store/` is also surfaced
 - **Extensions:**
   - *Shell init detects launcher / registry / allowlist hash drift:* `OpRunIntegrityCheck` (sourced from `bash/lib/op-run-integrity.bash`, called from the interactive branch of `bash/init.bash`) runs `sha256sum --check op-run/checksums` and emits a single warning to stderr naming the offending path(s). Shell startup is not blocked.
   - *Shell init detects a launcher not resolved from the nix store:* If `command -v op-run` resolves to a path NOT under `/nix/store/`, `OpRunIntegrityCheck` emits a warning. Shell startup is not blocked.
   - *Operator edits a hashed file (launcher, registry, allowlist):* `.githooks/pre-commit` refuses the commit unless `op-run/checksums` is staged with hashes matching the staged source content. Operator runs `scripts/op-run-checksum-update && git add op-run/checksums` to update. Bypass: `git commit --no-verify`.
-  - *Audit fallback log grows past size cap:* When the file at `${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log` exceeds `AuditLogMaxBytes` (default 1 MiB), the next fallback write rotates it to `audit.log.1` (overwriting any prior rotation) and the new `audit.log` opens with a `{"event":"rotated","at":"<ISO8601>","prev_size":<bytes>}` marker. `AuditLogMaxBytes=0` disables the cap (debugging escape hatch). Disk use bounded at ~2× the cap. Rotation failures never block a launch; the function returns 0 on any failure path.
+  - *Audit fallback log grows past size cap:* When the file at `${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log` exceeds `AuditLogMaxBytes` (default 1 MiB), the next fallback write rotates it to `audit.log.1` (overwriting any prior rotation) and the new `audit.log` opens with a `{"event":"rotated","at":"<ISO8601>","prev_size":<bytes>}` marker. `AuditLogMaxBytes=0` disables the cap (debugging escape hatch). Disk use bounded at ~2x the cap. Rotation failures never block a launch; the function returns 0 on any failure path.
 
 Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat-model.md`, `secrets-lifecycle.md`).
 

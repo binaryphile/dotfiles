@@ -949,7 +949,7 @@ eraSystemdEnableTask() {
 # The era.service drop-in that previously pointed ERA_STATE_DIR at
 # ~/.local/share/era-telemetry is removed: it diverged from
 # era-soak.service (canonical) and the Grafana stack (canonical),
-# producing the exact failure mode of #5274. Idempotent removal — leaves
+# producing the exact failure mode of #5274. Idempotent removal -- leaves
 # machines that never had the drop-in untouched.
 eraStateDirDropInTask() {
   local path=$HOME/.config/systemd/user/era.service.d/era-state-dir.conf

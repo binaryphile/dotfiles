@@ -15,7 +15,7 @@ The Nix derivation substitutes absolute store paths for `@vpn-slice@` and `@gpcl
 
 Since the 2026-05-08 CVE-2026-0257 cookie-mint hardening on PAN Prisma Access broke gpoc against the Digi portal (see "Symptom: gateway login returns HTTP 512" below), both clients live on the same machine and a toggle picks the active one. The toggle is implicit in `gpd.service`'s systemd state -- there's no separate state file.
 
-`gpd.service` is enabled-at-boot via the pangp activation hook (see "Install" below), so the pangp daemon survives Crostini restarts and the post-reboot default is always pangp. `vpn-mode gpoc` is a session-scoped flip — it does not survive reboot; the next boot brings gpd back up and lands the user in pangp mode again. To make gpoc the permanent default, `sudo systemctl disable gpd.service` separately.
+`gpd.service` is enabled-at-boot via the pangp activation hook (see "Install" below), so the pangp daemon survives Crostini restarts and the post-reboot default is always pangp. `vpn-mode gpoc` is a session-scoped flip -- it does not survive reboot; the next boot brings gpd back up and lands the user in pangp mode again. To make gpoc the permanent default, `sudo systemctl disable gpd.service` separately.
 
 ```
 vpn-mode pangp   # start gpd+gpa (PAN proprietary client owns the tun device)
@@ -192,7 +192,7 @@ Probably SIGPIPE. The downstream side of `gpauth | sudo gpclient ...` (e.g., sud
 
 PanGPS.log repeatedly shows lines like `Failed to connect to <portal-host> on 443 with return value -1 and socket error 115(Operation now in progress)`. The vpn-connect helper exits with `Error: Cannot connect to GlobalProtect Portal.` From the shell the same host IS reachable: `bash -c 'exec 3<>/dev/tcp/<host>/443'` succeeds, ping has 0% loss, and iptables-legacy/iptables-nft are clean across filter/nat/mangle. `ps -o etime -p $(pgrep PanGPS)` shows multi-day uptime.
 
-Variant — the GUI client (PanGPA) surfaces the same underlying failure as an auth-window-shows-failed: user clicks connect, the SAML browser window opens and immediately reports the auth attempt failed before any credentials are entered. The portal pre-login under the hood is what's stuck; the GUI just renders the downstream failure as an auth failure.
+Variant -- the GUI client (PanGPA) surfaces the same underlying failure as an auth-window-shows-failed: user clicks connect, the SAML browser window opens and immediately reports the auth attempt failed before any credentials are entered. The portal pre-login under the hood is what's stuck; the GUI just renders the downstream failure as an auth failure.
 
 Cause: PanGPS internal connection-pool/cache state degrades after long uptime across Crostini sleep/wake cycles and network swaps. Userspace `/dev/tcp` reaches the destination because each open creates a fresh socket; PanGPS's pooled/cached connection layer is the stuck one.
 
@@ -229,7 +229,7 @@ After restart, `vpn-connect` (or the widget click) makes it through SAML and `gp
 
 Empirical anchors:
 - 2026-05-28, penguin/Crostini, PanGPS PID 5d 19h uptime; CLI-path failure (vpn-connect exits "Cannot connect to GlobalProtect Portal"); restart resolved with no other changes.
-- 2026-06-01, penguin/Crostini, PanGPS PID 2d 22h uptime; GUI-path failure (PanGPA auth window shows failed immediately on widget click); restart resolved. Shorter uptime than the first instance — uptime is a loose predictor, not a tight one; the precipitating event is likely sleep/wake count or network swap count rather than wall time. Investigation tracked at tasks.jeeves #11009.
+- 2026-06-01, penguin/Crostini, PanGPS PID 2d 22h uptime; GUI-path failure (PanGPA auth window shows failed immediately on widget click); restart resolved. Shorter uptime than the first instance -- uptime is a loose predictor, not a tight one; the precipitating event is likely sleep/wake count or network swap count rather than wall time. Investigation tracked at tasks.jeeves #11009.
 
 Mirrored to [jeeves/guides/globalprotect-vpn-guide.md](https://bitbucket.org/accelecon/jeeves/src/main/guides/globalprotect-vpn-guide.md) for team visibility; this entry is the authoritative source and stays in sync via the dotfiles cycle.
 
@@ -645,13 +645,13 @@ End-to-end flow with the shim in place:
 
 ### Dual-client banner injection
 
-Once vpn-connect's two-client dispatch (gpoc vs pangp) exists, "did the right client run?" becomes an operator question with no in-band answer — `vpn-mode` reports its current state but vpn-connect's dispatch path is otherwise invisible during SAML. Silent dispatch to gpoc when the operator expected pangp is the failure mode that motivated the docs around `gpd.service`-enabled-at-boot (above) and the banner here.
+Once vpn-connect's two-client dispatch (gpoc vs pangp) exists, "did the right client run?" becomes an operator question with no in-band answer -- `vpn-mode` reports its current state but vpn-connect's dispatch path is otherwise invisible during SAML. Silent dispatch to gpoc when the operator expected pangp is the failure mode that motivated the docs around `gpd.service`-enabled-at-boot (above) and the banner here.
 
-`saml-host-browser` injects a green banner ("VPN auth via pangp") into `saml.html` before exec'ing `garcon-url-handler`. The banner appears at the top of the SAML form in host Chrome during auth. **Absence of the banner during SAML auth = vpn-connect dispatched to gpoc instead of pangp** — gpoc's gpauth has its own in-process auth-server that doesn't pass through this shim.
+`saml-host-browser` injects a green banner ("VPN auth via pangp") into `saml.html` before exec'ing `garcon-url-handler`. The banner appears at the top of the SAML form in host Chrome during auth. **Absence of the banner during SAML auth = vpn-connect dispatched to gpoc instead of pangp** -- gpoc's gpauth has its own in-process auth-server that doesn't pass through this shim.
 
 Mechanism (in the `"$samlRoot"/*)` case of `scripts/saml-host-browser`):
 
-1. grep-check `saml.html` for the literal `document.getElementById('myform').submit();` (PanGPA's auto-submit shape). On mismatch, log a warning to stderr and proceed without modification — proprietary HTML format changes shouldn't block auth, but should surface in logs for follow-up.
+1. grep-check `saml.html` for the literal `document.getElementById('myform').submit();` (PanGPA's auto-submit shape). On mismatch, log a warning to stderr and proceed without modification -- proprietary HTML format changes shouldn't block auth, but should surface in logs for follow-up.
 2. `sed -i` injects a `<div>` immediately after `<body>` (green ribbon banner, `position:fixed`).
 3. `sed -i` wraps the auto-submit line in `setTimeout(...,1000)`. Without the delay, fast Okta re-auths (cookie still valid) navigate away from `saml.html` before the banner has rendered. The 1-second delay is the minimum that guarantees the banner is visible across the full range of IdP response latencies.
 
@@ -679,7 +679,7 @@ This is asymmetric with the `vpn-mode` toggle: gpoc-mode reverses the move. Fold
 ### Install (NixOS work machine)
 
 Drop the tarball at a known path (e.g., `~/pangp/PanGPLinux-6.3.3-c31.tgz`). Declare
-it as a flake input in `nixos-config/flake.nix` (not dotfiles/flake.nix — the NixOS
+it as a flake input in `nixos-config/flake.nix` (not dotfiles/flake.nix -- the NixOS
 flake owns the pangp derivation for NixOS hosts):
 
 ```nix

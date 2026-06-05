@@ -771,7 +771,7 @@ EOF
 # because the function's `install -d -m 700 $stateDir` would reset the
 # mode at every call (verified). PATH-prepend in the subshell gives a
 # clean, deterministic fault that bash command-lookup will use (subshell
-# has its own hash table — no stale cache to invalidate).
+# has its own hash table -- no stale cache to invalidate).
 test_auditFileFallback_mv_failure_survives_strict_mode() {
   local Dir; tesht.MktempDir Dir || return 128
   trap "rm -rf $Dir" RETURN
