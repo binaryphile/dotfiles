@@ -144,11 +144,16 @@ eraProbe() {
 
 vpnProbe() {
   # tun0 = gpoc (openconnect); gpd0 = official pangp client.
-  # Require state=UP — interface persists after tear-down on both clients;
-  # presence alone is a stale signal that turns the widget into a liar.
+  # Match LOWER_UP in the kernel flag set (bracketed <...> field of
+  # `ip -o link show`) — indicates link-layer carrier active. For tun
+  # devices that means userspace holds the fd; for ethernet it's physical
+  # carrier sense. The textual `state` field is NOT used because tun
+  # devices report `state UNKNOWN` (no carrier-sense layer), which
+  # previously false-negative'd this probe when pangp's gpd0 was live.
+  # Tear-down case still rejected: a torn-down tun loses LOWER_UP.
   local new=off
-  if ip -o link show tun0 2>/dev/null | grep -q 'state UP' \
-     || ip -o link show gpd0 2>/dev/null | grep -q 'state UP'; then
+  if ip -o link show tun0 2>/dev/null | grep -q LOWER_UP \
+     || ip -o link show gpd0 2>/dev/null | grep -q LOWER_UP; then
     new=on
   fi
 

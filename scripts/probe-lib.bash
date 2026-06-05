@@ -74,13 +74,21 @@ readState() {
   fi
 }
 
-# vpnUp returns true if the VPN tunnel interface exists AND is UP (carrier).
-# An interface can persist in DOWN state after a tear-down (gpoc leaves tun0
-# around on disconnect; pangp leaves gpd0 around between connect cycles).
-# tun0 = gpoc (openconnect); gpd0 = official pangp client.
+# vpnUp returns true if the VPN tunnel interface exists AND its link carrier
+# is up. An interface can persist in DOWN state after a tear-down (gpoc
+# leaves tun0 around on disconnect; pangp leaves gpd0 around between connect
+# cycles). tun0 = gpoc (openconnect); gpd0 = official pangp client.
+#
+# Probe matches the LOWER_UP flag in the kernel netlink flag set (the bracketed
+# <...> field of `ip -o link show`). LOWER_UP indicates the link-layer carrier
+# is active: for tun devices that means userspace holds the fd open and is
+# passing traffic; for ethernet it's physical carrier sense. The textual
+# `state` field is NOT used because tun devices report `state UNKNOWN` (no
+# carrier-sense layer to drive the up/down distinction), which previously
+# caused this probe to false-negative when pangp's gpd0 was live.
 vpnUp() {
-  $ip -o link show tun0 2>/dev/null | $grep -q 'state UP' \
-    || $ip -o link show gpd0 2>/dev/null | $grep -q 'state UP'
+  $ip -o link show tun0 2>/dev/null | $grep -q LOWER_UP \
+    || $ip -o link show gpd0 2>/dev/null | $grep -q LOWER_UP
 }
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
