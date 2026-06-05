@@ -232,6 +232,26 @@ Liquidprompt is nix-packaged and sourced via `command -v liquidprompt` (not an a
 
 `bash/lib/initutil.bash` (~55 lines) provides: Alias/reveal wrapper, IsFile, TestAndSource, TestAndTouch, ShellIs* detection, SplitSpace/Globbing control, and function/variable cleanup tracking.
 
+#### History mechanism (UC-I6)
+
+Three cooperating pieces in `settings/interactive.bash`:
+
+1. **PROMPT_COMMAND chain: `history -a; history -n; <eternal-log echo>`**
+   - `history -a` appends *this* shell's new in-memory entries to `~/.bash_history` after every command.
+   - `history -n` reads entries other shells have appended since the last read -- the cross-window sync mechanism. Without this step, shell B's Ctrl-R never sees shell A's commands.
+   - The eternal-log echo appends one `<pid> <user> <history 1>` line per command to `~/.bash_eternal_history` (append-only, no rewrites, no truncation).
+
+2. **`historymerge` (dedup-on-exit, EXIT trap)** -- reads `~/.bash_history`, dedupes by command content while preserving original order, writes back. Implemented as `nl | sort -k2 | tac | uniq -f1 | sort -n | cut -f2`. Three invariants guarantee durability:
+   - Pipeline runs under `set -o pipefail` inside a subshell -- any stage failure aborts before any rewrite.
+   - Temp file is PID-suffixed (`~/.bash_history.new.$$`) so concurrent shell exits don't collide on the same `mv` target.
+   - `[[ -s $tmp ]]` guard refuses to clobber `~/.bash_history` with empty content.
+
+   The third guard fixes a class of wipe seen empirically once (2026-06-05): host VM shutdown (ChromeOS "Stop Linux") sends SIGHUP to N tmux-child shells at once, all run `historymerge` concurrently, racing creates of `~/.bash_history_new` with shared O_TRUNC produced an empty result that `mv` cemented onto `.bash_history`. Once empty, every subsequent shell exit perpetuated the emptiness (pipeline of an empty file is empty). Recovery: rebuild from `~/.bash_eternal_history` (see UC-I6 6a). Prevention: the three invariants above.
+
+3. **HIST* settings**: `histappend` (append on exit, never overwrite), `HISTCONTROL=ignorespace:erasedups` (in-memory dedup), `HISTIGNORE` (skip housekeeping commands), `HISTTIMEFORMAT='%F %T '` (timestamped entries).
+
+**Known limit**: `history -n` tracks a file-position counter (`history_lines_in_file`) in each bash process. If `historymerge` rewrites the file *shorter* during shell B's lifetime, B's counter is past the new EOF and subsequent `history -n` calls read nothing. Open a new shell to resync. This is a property of bash's history-management semantics, not a defect of this config.
+
 See [uc-init.md](uc-init.md) for full use case documentation of the init system.
 
 ### Nix/bash boundary
@@ -379,7 +399,7 @@ git add op-run/checksums
 
 #### Audit-log fallback rotation
 
-When the era publish (`auditTransport`) times out, errors, or finds era missing, `op-run` falls back to writing audit records to `${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log`. After each fallback write, if the file exceeds `AuditLogMaxBytes` (default 1 MiB), it is renamed to `audit.log.1` (overwriting any prior `.1`), and the new `audit.log` opens with a one-line rotation marker (`{"event":"rotated","at":"<ISO8601>","prev_size":<bytes>}`). Disk use is bounded at ~2× the cap.
+When the era publish (`auditTransport`) times out, errors, or finds era missing, `op-run` falls back to writing audit records to `${XDG_STATE_HOME:-~/.local/state}/op-run/audit.log`. After each fallback write, if the file exceeds `AuditLogMaxBytes` (default 1 MiB), it is renamed to `audit.log.1` (overwriting any prior `.1`), and the new `audit.log` opens with a one-line rotation marker (`{"event":"rotated","at":"<ISO8601>","prev_size":<bytes>}`). Disk use is bounded at ~2x the cap.
 
 Operator override: `AuditLogMaxBytes=<bytes>` sets the cap; `AuditLogMaxBytes=0` disables it entirely (debugging escape hatch); non-numeric / negative input silently falls back to the default. Rotation failures (mv error, missing `jq`, marker-write error) never block a launch; the function returns 0 on any failure path.
 

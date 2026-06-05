@@ -185,13 +185,18 @@ Modifies init config: adds app modules, changes settings, updates integrations.
   1. Vi editing mode active
   2. History preserves commands across sessions with timestamps
   3. Eternal history log maintained (~/.bash_eternal_history)
-  4. Duplicate history entries removed on shell exit
-  5. Login messages suppressed
-  6. umask set to 022
+  4. Cross-window history sync -- a command run in shell A is visible to shell B's Ctrl-R search next prompt cycle
+  5. Duplicate history entries removed on shell exit
+  6. `~/.bash_history` is never replaced with empty content (clobber-safety guard)
+  7. Login messages suppressed
+  8. umask set to 022
+- **Extensions:**
+  - 4a. Shell B never sees A's command if the file was rewritten (truncated) between B's last `history -n` and now -- bash tracks a line-position counter that doesn't survive whole-file replacement. Open a new shell to recover. (Limit of `history -n` semantics, not a bug.)
+  - 6a. Host VM abruptly shut down while shells are exiting (e.g. ChromeOS "Stop Linux") -- N shells run the dedup-on-exit trap concurrently; the PID-suffixed temp file prevents the cross-shell `mv` stampede that previously left `~/.bash_history` empty. Recovery from a pre-guard wipe: rebuild from `~/.bash_eternal_history` via `awk 'NF>=6 { for(i=6;i<=NF;i++) printf "%s%s",$i,(i<NF?" ":"\n") }' ~/.bash_eternal_history > ~/.bash_history`.
 - **Postconditions:**
-  - **Success:** Vi editing, persistent cross-session history, clean login
+  - **Success:** Vi editing; persistent cross-session and cross-window history; history file durable against concurrent shell-exit races
   - **Failure:** Partial config; most settings independent
-- **Technology:** settings/interactive.bash, settings/login.bash, settings/base.bash
+- **Technology:** settings/interactive.bash (historymerge function + PROMPT_COMMAND with `history -a; history -n`), settings/login.bash, settings/base.bash
 
 ---
 
