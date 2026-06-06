@@ -368,6 +368,7 @@ stage2() {
   #  |       Default branch: main. Cloned and symlinked.           |
   #  |   +-> toc               - TOC DBR pipeline lib (codeberg)   |
   #  |   +-> tmux-claude       - tmux plugin for claude panes      |
+  #  |   +-> agent-orchestration - coordination spec + reference   |
   #  |   +-> flake-locks       - pin all locks to same nixpkgs rev |
   #  +-------------------------------------------------------------+
 
@@ -483,6 +484,17 @@ stage2() {
   # makes the CLI usable from non-tmux shells too.
   try task.Ln ~/projects/tmux-claude/scripts/tmux-claude ~/.local/bin/tmux-claude
 
+  section agent-orchestration
+  try githubCloneAndLinkTask agent-orchestration
+  # nix-wrapper symlinks: every invocation of `node`, `npx`, or `claude`
+  # from within the project transparently runs inside `nix develop`, which
+  # picks up the nodejs_22 buildInput declared in flake.nix.
+  each try task.Ln nix-wrapper <<'  END'
+    ~/projects/agent-orchestration/bin/claude
+    ~/projects/agent-orchestration/bin/node
+    ~/projects/agent-orchestration/bin/npx
+  END
+
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
   #  |   +-> urma-next        - main application (+ MCP)            |
@@ -555,6 +567,7 @@ stage2() {
 
   section flake-locks
   try flakeLockPinTask
+  try flakeLockHookTask
 
   #  +-------------------------------------------------------------+
   #  | PHASE 6: Applications & VPN                                 |
@@ -1269,6 +1282,68 @@ flakeLockPinTask() {
     done < <(flakeManagedDirs)
   }
   cmd flakeLocksPin
+}
+
+# Install a pre-commit guard in every managed flake.lock dir so drift can't
+# slip past `git commit` between update-env runs. The hook is a thin shim
+# that execs ~/dotfiles/scripts/flake-lock-pin-check, which reads era's
+# canonical flake.lock and refuses if the staged nixpkgs.locked.rev differs.
+# Skips dirs whose project sets core.hooksPath (e.g. tandem-protocol) and
+# dirs with a foreign pre-commit hook already present -- compose manually
+# in those cases.
+flakeLockHookTask() {
+  desc 'install pre-commit flake.lock guard in all managed dirs'
+
+  local checkScript=~/dotfiles/scripts/flake-lock-pin-check
+
+  flakeManagedDirs() {
+    local f
+    while IFS= read -r f; do
+      [[ -f $f/flake.lock ]] || continue
+      git -C "$f" ls-files --error-unmatch flake.nix &>/dev/null || continue
+      echo "$f"
+    done < <(find ~/projects ~/dotfiles \
+      -not -path '*/.git/*' \
+      -not -path '*/node_modules/*' \
+      -not -path '*/vendor/*' \
+      -name flake.nix -exec dirname {} \; 2>/dev/null)
+  }
+
+  flakeLockHooksInstalled() {
+    [[ -x $checkScript ]] || return 1
+    local f hook hooksPath
+    while IFS= read -r f; do
+      hooksPath=$(git -C "$f" config --get core.hooksPath 2>/dev/null || true)
+      [[ -n $hooksPath ]] && continue   # skip projects with custom hooksPath
+      hook=$f/.git/hooks/pre-commit
+      [[ -x $hook ]] || return 1
+      grep -qF flake-lock-pin-check "$hook" 2>/dev/null || return 1
+    done < <(flakeManagedDirs)
+  }
+  ok flakeLockHooksInstalled
+
+  flakeLockHooksInstall() {
+    [[ -x $checkScript ]] || { echo "missing $checkScript" >&2; return 1; }
+    local f hook hooksPath
+    while IFS= read -r f; do
+      hooksPath=$(git -C "$f" config --get core.hooksPath 2>/dev/null || true)
+      if [[ -n $hooksPath ]]; then
+        echo "info: $f uses core.hooksPath=$hooksPath; compose check manually" >&2
+        continue
+      fi
+      hook=$f/.git/hooks/pre-commit
+      if [[ -e $hook ]] && ! grep -qF flake-lock-pin-check "$hook" 2>/dev/null; then
+        echo "info: $f has foreign pre-commit hook; not overwriting" >&2
+        continue
+      fi
+      cat >"$hook" <<HOOK
+#!/usr/bin/env bash
+exec $checkScript "\$@"
+HOOK
+      chmod +x "$hook"
+    done < <(flakeManagedDirs)
+  }
+  cmd flakeLockHooksInstall
 }
 
 writeMcpJsonTask() {
