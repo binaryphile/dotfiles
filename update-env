@@ -567,7 +567,6 @@ stage2() {
 
   section flake-locks
   try flakeLockPinTask
-  try flakeLockHookTask
 
   #  +-------------------------------------------------------------+
   #  | PHASE 6: Applications & VPN                                 |
@@ -1284,67 +1283,11 @@ flakeLockPinTask() {
   cmd flakeLocksPin
 }
 
-# Install a pre-commit guard in every managed flake.lock dir so drift can't
-# slip past `git commit` between update-env runs. The hook is a thin shim
-# that execs ~/dotfiles/scripts/flake-lock-pin-check, which reads era's
-# canonical flake.lock and refuses if the staged nixpkgs.locked.rev differs.
-# Skips dirs whose project sets core.hooksPath (e.g. tandem-protocol) and
-# dirs with a foreign pre-commit hook already present -- compose manually
-# in those cases.
-flakeLockHookTask() {
-  desc 'install pre-commit flake.lock guard in all managed dirs'
-
-  local checkScript=~/dotfiles/scripts/flake-lock-pin-check
-
-  flakeManagedDirs() {
-    local f
-    while IFS= read -r f; do
-      [[ -f $f/flake.lock ]] || continue
-      git -C "$f" ls-files --error-unmatch flake.nix &>/dev/null || continue
-      echo "$f"
-    done < <(find ~/projects ~/dotfiles \
-      -not -path '*/.git/*' \
-      -not -path '*/node_modules/*' \
-      -not -path '*/vendor/*' \
-      -name flake.nix -exec dirname {} \; 2>/dev/null)
-  }
-
-  flakeLockHooksInstalled() {
-    [[ -x $checkScript ]] || return 1
-    local f hook hooksPath
-    while IFS= read -r f; do
-      hooksPath=$(git -C "$f" config --get core.hooksPath 2>/dev/null || true)
-      [[ -n $hooksPath ]] && continue   # skip projects with custom hooksPath
-      hook=$f/.git/hooks/pre-commit
-      [[ -x $hook ]] || return 1
-      grep -qF flake-lock-pin-check "$hook" 2>/dev/null || return 1
-    done < <(flakeManagedDirs)
-  }
-  ok flakeLockHooksInstalled
-
-  flakeLockHooksInstall() {
-    [[ -x $checkScript ]] || { echo "missing $checkScript" >&2; return 1; }
-    local f hook hooksPath
-    while IFS= read -r f; do
-      hooksPath=$(git -C "$f" config --get core.hooksPath 2>/dev/null || true)
-      if [[ -n $hooksPath ]]; then
-        echo "info: $f uses core.hooksPath=$hooksPath; compose check manually" >&2
-        continue
-      fi
-      hook=$f/.git/hooks/pre-commit
-      if [[ -e $hook ]] && ! grep -qF flake-lock-pin-check "$hook" 2>/dev/null; then
-        echo "info: $f has foreign pre-commit hook; not overwriting" >&2
-        continue
-      fi
-      cat >"$hook" <<HOOK
-#!/usr/bin/env bash
-exec $checkScript "\$@"
-HOOK
-      chmod +x "$hook"
-    done < <(flakeManagedDirs)
-  }
-  cmd flakeLockHooksInstall
-}
+# NOTE: the pre-commit flake.lock-drift guard lives in
+# ~/dotfiles/.githooks/pre-commit (checkFlakeLockPin). Because
+# core.hooksPath is set globally to ~/dotfiles/.githooks, every
+# repo on this machine inherits the guard with no per-repo install.
+# No separate update-env task is needed.
 
 writeMcpJsonTask() {
   local dir=$1

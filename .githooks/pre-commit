@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# pre-commit -- three gates:
+# pre-commit -- four gates:
 #   (a) Reject env vars in claude/settings.json mcpServers
 #       (MCP servers requiring credentials must use op-run)
 #   (b) Reject staged binary file additions/modifications (UC-14)
 #   (c) Reject op-run-hashed file changes without a matching
 #       op-run/checksums update (UC-11, #2906)
+#   (d) Reject staged flake.lock whose nixpkgs rev disagrees with
+#       era's canonical rev (cross-project alignment drift)
 #
 # All gates can be bypassed with: git commit --no-verify.
 #
@@ -106,10 +108,37 @@ checkOpRunDrift() {
     exit 1
 }
 
+checkFlakeLockPin() {
+    git diff --cached --name-only -- flake.lock | grep -qxF flake.lock || return 0
+
+    local canonical=$HOME/projects/era/flake.lock
+    [[ -f $canonical ]] || return 0   # canonical not present -- cannot enforce
+
+    local canonicalRev stagedRev
+    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev // empty' "$canonical")
+    [[ -n $canonicalRev ]] || return 0
+
+    stagedRev=$(git show :flake.lock 2>/dev/null | jq -r '.nodes.nixpkgs.locked.rev // empty')
+    [[ $stagedRev == "$canonicalRev" ]] && return 0
+
+    {
+        echo "pre-commit: flake.lock nixpkgs rev does not match era canonical"
+        echo "  staged:    ${stagedRev:-<missing or unparsable>}"
+        echo "  canonical: $canonicalRev  (from ~/projects/era/flake.lock)"
+        echo
+        echo "  Fix:    update-env       (re-pins all managed flake.lock files)"
+        echo "    or:   git restore flake.lock  (discard the drift)"
+        echo "  Bypass: git commit --no-verify (only when advancing canonical;"
+        echo "                                  update era first)"
+    } >&2
+    exit 1
+}
+
 main() {
     checkSettingsJson
     checkBinary
     checkOpRunDrift
+    checkFlakeLockPin
 }
 
 # IFS / noglob / -u / pipefail apply at source time so functions tested via
