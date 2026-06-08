@@ -54,6 +54,25 @@ main() {
   export GIT_CONFIG_COUNT=1
   export GIT_CONFIG_KEY_0=rebase.autoStash
   export GIT_CONFIG_VALUE_0=true
+
+  # Self-update: pull dotfiles/main, re-exec if update-env itself changed.
+  # UPDATE_ENV_REEXEC (0|1) prevents infinite re-exec loops.
+  # Skip if dotfiles has uncommitted work (don't blow away in-flight edits)
+  # or if we already re-exec'd.
+  local reexec=${UPDATE_ENV_REEXEC:-0}
+  if (( !reexec )) && git -C ~/dotfiles diff --quiet 2>/dev/null && git -C ~/dotfiles diff --cached --quiet 2>/dev/null; then
+    local oldHash newHash
+    oldHash=$(sha256sum ~/dotfiles/update-env | awk '{print $1}')
+    if git -C ~/dotfiles pull --ff-only --quiet 2>/dev/null; then
+      newHash=$(sha256sum ~/dotfiles/update-env | awk '{print $1}')
+      if [[ $oldHash != $newHash ]]; then
+        echo "[update-env] self-updated from main; re-executing" >&2
+        export UPDATE_ENV_REEXEC=1
+        exec "$0" "${OriginalArgs_[@]}"
+      fi
+    fi
+  fi
+
   Platform=$(${platform:-detectPlatform})
   readonly Platform
 
@@ -1365,8 +1384,12 @@ gitExcludeTask() {
 
 githubCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
-  task.GitClone https://github.com/binaryphile/$repo ~/projects/$repo $branch
-  try git -C ~/projects/"$repo" remote set-url origin "git@github.com:binaryphile/$repo.git"
+  # Use SSH URL up-front. The pre-existing HTTPS-then-set-url-to-SSH dance
+  # broke on hosts without a configured github credential helper (gitconfig
+  # is read-only under home-manager, so `gh auth setup-git` can't write to
+  # it). SSH works because the host already has a github SSH key for the
+  # push URL after clone -- this just uses it from the start.
+  task.GitClone git@github.com:binaryphile/$repo ~/projects/$repo $branch
   try gitUpdate ~/projects/$repo
 }
 
@@ -1911,6 +1934,7 @@ return 2>/dev/null  # stop here if sourced, for interactive debugging
 
 IsShortRun=0
 Stage=all
+OriginalArgs_=("$@")    # captured before parsing for self-update re-exec
 
 # parse options
 while [[ ${1:-} == -?* ]]; do
