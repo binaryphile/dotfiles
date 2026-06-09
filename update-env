@@ -479,6 +479,8 @@ stage2() {
     ~/projects/era/evtctl-forward@.service ~/.config/systemd/user/evtctl-forward@.service
     ~/projects/era/evtctl-canary-watch@.service ~/.config/systemd/user/evtctl-canary-watch@.service
     ~/projects/era/evtctl-canary-watch@.timer ~/.config/systemd/user/evtctl-canary-watch@.timer
+    ~/dotfiles/evtctl-forward/dropins/evtctl-forward@urma.service.d/canary-interval.conf ~/.config/systemd/user/evtctl-forward@urma.service.d/canary-interval.conf
+    ~/dotfiles/evtctl-forward/dropins/evtctl-canary-watch@urma.service.d/canary-watch-threshold.conf ~/.config/systemd/user/evtctl-canary-watch@urma.service.d/canary-watch-threshold.conf
   END
   each try <<'  END'
     eraStateDirDropInTask
