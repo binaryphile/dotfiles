@@ -470,6 +470,11 @@ stage2() {
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
+  lib.Glob ~/projects/share/commands/* |
+    keepIf isFile |
+    map path '$path ~/.claude/commands/$(basename $path)' |
+    each task.Ln
+
   each try <<'  END'
     eraMcpCleanupTask
     eraServiceCleanupTask
