@@ -126,6 +126,64 @@ in
     Install.WantedBy = [ "default.target" ];
   };
 
+  # ensure-pangp-active.service -- convergence oneshot that asserts both gpd
+  # (system) and gpa (user) are running. Fires at session start via the
+  # default.target WantedBy edge (catches cold-start case) and via the
+  # ensure-pangp-active.timer below (catches container-resume case where
+  # default.target is NOT re-entered -- empirically verified 2026-06-05 that
+  # cros-garcon survives in-place across ChromeOS suspend/wake; tasks.
+  # dotfiles #27152 Phase 3a Step 1 artifact ~/pangp-27152-verification/
+  # lifecycle-decision.md).
+  #
+  # Uses sudo -n for the system-service start (same NOPASSWD path the
+  # activation hook uses; available on Crostini per the established
+  # contexts/pangp.nix convention). The `|| true` lets the oneshot
+  # complete cleanly even when gpd is already running (start is idempotent
+  # at the systemd level but the operator may have stopped it via vpn-mode
+  # gpoc -- in that case the start would be expected to succeed, so this
+  # is just defensive against transient sudo errors).
+  systemd.user.services.ensure-pangp-active = lib.mkIf cfg.enableSystemDaemonOnDebian {
+    Unit = {
+      Description = "Ensure pangp services (gpd system + gpa user) are running";
+      Documentation = [ "tasks.dotfiles-#27152" ];
+      After = [ "default.target" ];
+      PartOf = [ "default.target" ];
+    };
+
+    Service = {
+      Type = "oneshot";
+      ExecStart = [
+        "/usr/bin/sudo -n /bin/systemctl start gpd.service"
+        "/bin/systemctl --user start gpa.service"
+      ];
+      RemainAfterExit = true;
+    };
+
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # ensure-pangp-active.timer -- 5-minute backstop. The default.target
+  # WantedBy on the service catches cold-start (boot/session-init). The
+  # timer catches the container-resume case where default.target is NOT
+  # re-entered. Persistent=true is load-bearing -- if the timer would have
+  # fired during host suspend, it fires immediately on resume, catching
+  # the missed activation.
+  systemd.user.timers.ensure-pangp-active = lib.mkIf cfg.enableSystemDaemonOnDebian {
+    Unit = {
+      Description = "Periodic backstop: ensure pangp services running";
+      Documentation = [ "tasks.dotfiles-#27152" ];
+    };
+
+    Timer = {
+      OnBootSec = "1min";
+      OnUnitActiveSec = "5min";
+      Unit = "ensure-pangp-active.service";
+      Persistent = true;
+    };
+
+    Install.WantedBy = [ "timers.target" ];
+  };
+
   # Register the globalprotectcallback:// URI handler. mkForce because
   # linux-base.nix may declare a default (gpgui.desktop, for the OSS
   # client); pangp needs gp.desktop so the SAML callback URL bounces into
@@ -161,16 +219,32 @@ in
       liveUnit=/etc/systemd/system/gpd.service
       sysOverride=/etc/systemd/system/gpd.service.d/override.conf
       userOverride=$HOME/.config/systemd/user/gpa.service.d/override.conf
+      # Inside the cmp-gate: content-drift-dependent operations only.
+      # cp + override-cleanup + daemon-reload + restart are expensive AND
+      # only justified by an actual unit-content delta. restart-on-content-
+      # drift drops a live tunnel; that's acceptable because the new content
+      # was the whole point of the redeploy.
       if [ ! -e "$liveUnit" ] || ! cmp -s "$newUnit" "$liveUnit"; then
         $DRY_RUN_CMD /usr/bin/sudo -n cp "$newUnit" "$liveUnit"
         # Remove the transitional override.conf files. HM-deployed units
         # now carry equivalent settings (ExecStart=/opt/.../, XDG env).
         [ -f "$sysOverride" ] && $DRY_RUN_CMD /usr/bin/sudo -n rm "$sysOverride"
         [ -f "$userOverride" ] && $DRY_RUN_CMD rm "$userOverride"
-        $DRY_RUN_CMD /usr/bin/sudo -n systemctl daemon-reload
-        $DRY_RUN_CMD /usr/bin/sudo -n systemctl enable gpd.service
-        $DRY_RUN_CMD /usr/bin/sudo -n systemctl restart gpd.service
+        $DRY_RUN_CMD /usr/bin/sudo -n ${pkgs.systemd}/bin/systemctl daemon-reload
+        $DRY_RUN_CMD /usr/bin/sudo -n ${pkgs.systemd}/bin/systemctl restart gpd.service
       fi
+      # Outside the cmp-gate: idempotent state-convergence commands that
+      # MUST run on every activation regardless of unit-content drift.
+      # Without these, an HM switch where unit content didn't change won't
+      # re-converge gpd to "enabled + running" -- which was the failure mode
+      # behind tasks.dotfiles #27152 (gpd inactive 26+ hours despite being
+      # enabled, because nothing re-started it after an earlier `vpn-mode
+      # gpoc` stopped it and subsequent switches skipped the cmp-gate).
+      # `start` not `restart`: idempotent no-op on a running gpd; cannot
+      # drop a live tunnel; starts a stopped gpd to converge state.
+      $DRY_RUN_CMD /usr/bin/sudo -n ${pkgs.systemd}/bin/systemctl enable gpd.service
+      $DRY_RUN_CMD /usr/bin/sudo -n ${pkgs.systemd}/bin/systemctl start gpd.service
+      $DRY_RUN_CMD ${pkgs.systemd}/bin/systemctl --user start gpa.service
     ''
   );
   };
