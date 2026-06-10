@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-commit -- four gates:
+# pre-commit -- five gates:
 #   (a) Reject env vars in claude/settings.json mcpServers
 #       (MCP servers requiring credentials must use op-run)
 #   (b) Reject staged binary file additions/modifications (UC-14)
@@ -7,6 +7,9 @@
 #       op-run/checksums update (UC-11, #2906)
 #   (d) Reject staged flake.lock whose nixpkgs rev disagrees with
 #       era's canonical rev (cross-project alignment drift)
+#   (e) When committing in the icarus repo with project-plan.md staged,
+#       refuse if task-audit inventory-status-check reports drift
+#       (tandem-protocol "Cycle-inventory sync" rule; #29322)
 #
 # All gates can be bypassed with: git commit --no-verify.
 #
@@ -134,11 +137,53 @@ checkFlakeLockPin() {
     exit 1
 }
 
+checkIcarusInventoryDrift() {
+    local toplevel
+    toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+    [[ $(basename "$toplevel") == icarus ]] || return 0
+
+    git diff --cached --name-only -- project-plan.md | grep -qxF project-plan.md || return 0
+
+    command -v task-audit >/dev/null 2>&1 || {
+        echo "pre-commit: task-audit not on PATH; skipping icarus inventory drift check" >&2
+        return 0
+    }
+
+    # Linter writes informative output to stdout; route to stderr so it
+    # surfaces in the commit-time UX without confusing tooling that may
+    # be capturing the hook's stdout.
+    local rc=0
+    task-audit inventory-status-check "$toplevel/project-plan.md" >&2 || rc=$?
+    case $rc in
+        0) return 0 ;;
+        1)
+            {
+                echo
+                echo "pre-commit: BLOCKED -- icarus project-plan.md inventory drift detected"
+                echo
+                echo "  The cycle-inventory rows above are out of sync with tasks.icarus."
+                echo "  Per tandem-protocol README \"Closeout questions\" / \"Cycle-inventory sync\":"
+                echo "  inventory MUST be updated (Delivered / FAILED / SUPERSEDED + commit SHA)"
+                echo "  BEFORE the closeout interaction event publishes."
+                echo
+                echo "  Fix:    amend the drifting rows in project-plan.md and re-stage"
+                echo "  Bypass: git commit --no-verify (use sparingly)"
+            } >&2
+            exit 1
+            ;;
+        *)
+            echo "pre-commit: task-audit inventory-status-check failed (rc=$rc); allowing commit" >&2
+            return 0
+            ;;
+    esac
+}
+
 main() {
     checkSettingsJson
     checkBinary
     checkOpRunDrift
     checkFlakeLockPin
+    checkIcarusInventoryDrift
 }
 
 # IFS / noglob / -u / pipefail apply at source time so functions tested via
