@@ -538,7 +538,6 @@ stage2() {
     stashCloneAndLinkTask urma-next urma idigi develop
     scaffoldTask ~/projects/urma
     obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
-    writeMcpJsonTask ~/projects/urma
   END
   # try: these repos are VPN-dependent; check "[[ -d .git ]]" fails when not yet
   # cloned, which would abort the run under set -e without try.
@@ -1314,36 +1313,6 @@ flakeLockPinTask() {
 # core.hooksPath is set globally to ~/dotfiles/.githooks, every
 # repo on this machine inherits the guard with no per-repo install.
 # No separate update-env task is needed.
-
-writeMcpJsonTask() {
-  local dir=$1
-  desc   "write .mcp.json to $dir"
-  check  "[[ -d '$dir' ]]"
-
-  # Content-aware ok-test: redeploys when the embedded heredoc changes.
-  # Matches the hash/diff pattern used by claudeMemoryRedirectsTask.
-  writeMcpJsonUpToDate() {
-    [[ -f $dir/.mcp.json ]] && diff -q $dir/.mcp.json <(writeMcpJsonContent) >/dev/null 2>&1
-  }
-  ok writeMcpJsonUpToDate
-
-  writeMcpJson() { writeMcpJsonContent >$dir/.mcp.json; }
-  cmd writeMcpJson
-}
-
-writeMcpJsonContent() {
-  cat <<'EOF'
-{
-  "mcpServers": {
-    "atlassian": {
-      "type": "stdio",
-      "command": "op-run",
-      "args": ["uvx", "mcp-atlassian-with-bitbucket"]
-    }
-  }
-}
-EOF
-}
 
 stashCloneAndLinkTask() {
   local repo=$1 dir=${2:-$1} project=${3:-idigi} branch=${4:-main}
