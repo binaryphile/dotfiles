@@ -86,9 +86,46 @@ readState() {
 # `state` field is NOT used because tun devices report `state UNKNOWN` (no
 # carrier-sense layer to drive the up/down distinction), which previously
 # caused this probe to false-negative when pangp's gpd0 was live.
+#
+# Semantic scope (tasks.dotfiles #27152 F1/F10):
+# vpnUp reports INTERFACE-STATE -- userspace endpoint attached to a tun
+# device (or ethernet carrier sense). It does NOT prove end-to-end VPN
+# USABILITY. A wedged tunnel client that still holds the tun fd will keep
+# LOWER_UP asserted while traffic flows nowhere. The widget's design
+# intent is interface-state; promotion to usability semantics would
+# require a supplementary probe (route reachability, gateway ping, or
+# `globalprotect show --status` parse).
+#
+# Caller surface (the canonical consumers; both must move together if
+# either is changed because the function API and the persisted state
+# artifact are coupled via the panel's refresh()):
+#   - scripts/panel:vpnProbe -- runs the same probe, writes result to
+#     $State/vpn for tmux widget rendering
+#   - scripts/panel:dm1Module / stashModule / gitlabModule / nexusModule
+#     -- call vpnUp directly to gate visibility of VPN-dependent widgets
+#   - scripts/panel:popupSummary -- reads $State/vpn to render the popup
+#   - nixos-config/scripts/widget-status:vpn -- renders the waybar VPN
+#     widget (calls vpnClient for the tooltip's client distinction)
+# Anyone reading $State/vpn directly (the persisted artifact) is a
+# downstream consumer of this function's semantics; updating one without
+# the other will drift them.
 vpnUp() {
-  $ip -o link show tun0 2>/dev/null | $grep -q LOWER_UP \
-    || $ip -o link show gpd0 2>/dev/null | $grep -q LOWER_UP
+  [[ $(vpnClient) != offline ]]
+}
+
+# vpnClient prints which VPN client owns the active tunnel: "gpoc",
+# "pangp", or "offline". Renderers that want the active-client
+# distinction in tooltips/status use this; vpnUp's bool predicate
+# composes on top. When both interfaces report LOWER_UP (transient
+# state during a client switch), gpoc wins by check order.
+vpnClient() {
+  if $ip -o link show tun0 2>/dev/null | $grep -q LOWER_UP; then
+    echo gpoc
+  elif $ip -o link show gpd0 2>/dev/null | $grep -q LOWER_UP; then
+    echo pangp
+  else
+    echo offline
+  fi
 }
 
 # pingHost is a fast TCP-port-443 reachability check (ICMP is
