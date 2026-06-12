@@ -521,6 +521,15 @@ stage2() {
     ~/projects/agent-orchestration/bin/npx
   END
 
+  section icarus
+  try githubCloneAndLinkTask icarus
+  # nix-wrapper symlinks: chrome-devtools-mcp invocations from this folder
+  # need `npx` on PATH; nix develop provides nodejs_22 via flake.nix.
+  each try task.Ln nix-wrapper <<'  END'
+    ~/projects/icarus/bin/node
+    ~/projects/icarus/bin/npx
+  END
+
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
   #  |   +-> urma-next        - main application (+ MCP)            |
