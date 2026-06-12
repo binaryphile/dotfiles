@@ -203,6 +203,9 @@ stage1() {
     .ssh            ~/ssh
     secrets/netrc   ~/.netrc
   END
+  desc  'create ~/scratch directory'
+  ok    "[[ -d ~/scratch ]]"
+  cmd   "mkdir -p ~/scratch"
   local groupList
   groupList=$(platformTaskGroups "$Platform")
 
