@@ -30,13 +30,14 @@ CrostiniDir=/mnt/chromeos/MyFiles/Downloads/crostini
 
 usageText() {
   cat <<'EOF'
-Usage: update-env [-1 [hostname] | -2 | -c] [-s] [-x]
+Usage: update-env [-1 [hostname] | -2 | -c] [-s] [-x] [--strict]
 
   -1, --stage1 [hostname]  Stage 1: system, packages, credentials
   -2, --stage2             Stage 2: projects, dev tools, config
   -c, --credential         Credential setup only (SSH key, signing key, secrets)
   -s, --short              Short run (skip unchanged tasks)
   -x, --trace              Enable bash trace output
+      --strict             Hard-fail preflight on missing downstream commands
   -h, --help               Show this help
 
   Bare 'update-env' runs both stages sequentially.
@@ -91,6 +92,14 @@ main() {
   esac
 
   case $Stage in
+    1|2|all )
+      if hasGroup "$(platformTaskGroups "$Platform")" hm; then
+        preflightCheckCommands "${IsStrictPreflight:-0}"
+      fi
+      ;;
+  esac
+
+  case $Stage in
     1          ) stage1; stage1Epilogue;;
     2          ) stage2Preflight; stage2;;
     credential ) credentialPreflight; credentialStage;;
@@ -141,6 +150,44 @@ preflightCrostiniLxcfs() {
   echo "  Repair (direct path):    bash ~/projects/jeeves/guides/scripts/crostini-procfs-doctor --repair" >&2
   echo "  Guide:                   ~/projects/jeeves/guides/crostini-recovery-guide.md" >&2
   exit 1
+}
+
+# preflightCheckCommands verifies that commands referenced by downstream
+# home-manager activations are available on PATH at update-env runtime.
+# Default behavior is warn-only; with strict=1 (--strict), exits non-zero.
+#
+# Anchor: pangpSystemUnit activation failed because `systemctl` was absent
+# from home-manager's activation PATH. The fix (dotfiles commit 0a888eb)
+# replaced bare `systemctl` calls with `${pkgs.systemd}/bin/systemctl` in
+# the nix expression. This preflight surfaces the same failure-class
+# BEFORE home-manager runs, so the operator can either widen PATH or
+# update the activation hooks to reference nix-managed binary paths.
+#
+# Hardcoded command list audited against current contexts/*.nix usage
+# (systemctl in pangp/onepassword/crostini activations; sudo in pangp
+# system-service install + crostini opGroupSetup). Add commands here
+# when new activations introduce new system-command dependencies.
+preflightCheckCommands() {
+  local strict=${1:-0}
+  local cmd missing=()
+  for cmd in systemctl sudo; do
+    command -v "$cmd" &>/dev/null || missing+=("$cmd")
+  done
+  (( ${#missing[@]} == 0 )) && return 0
+
+  local m
+  for m in "${missing[@]}"; do
+    echo "warning: required command not on PATH: $m" >&2
+    echo "  downstream home-manager activations invoke '$m' during activation." >&2
+    echo "  consider using nix-managed \${pkgs.<pkg>}/bin/<cmd> pattern in" >&2
+    echo "  home-manager activations (anchor: pangpSystemUnit fix at dotfiles" >&2
+    echo "  commit 0a888eb)." >&2
+  done
+
+  if (( strict )); then
+    echo "fatal: --strict preflight set and required commands missing: ${missing[*]}" >&2
+    exit 1
+  fi
 }
 
 # Stage 1: critical path -- working shell after completion + exec bash
@@ -1918,6 +1965,7 @@ unset -v TaskBashBootstrapRev TaskBashBootstrapSha256
 return 2>/dev/null  # stop here if sourced, for interactive debugging
 
 IsShortRun=0
+IsStrictPreflight=0
 Stage=all
 OriginalArgs_=("$@")    # captured before parsing for self-update re-exec
 
@@ -1931,6 +1979,8 @@ while [[ ${1:-} == -?* ]]; do
       task.SetShortRun on
       IsShortRun=1
       ;;
+
+    --strict ) IsStrictPreflight=1;;
 
     -1|--stage1     ) Stage=1;;
     -2|--stage2     ) Stage=2;;

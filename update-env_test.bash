@@ -415,6 +415,50 @@ test_hasGroupWithPlatformTaskGroups() {
   tesht.Run ${!case@}
 }
 
+## preflightCheckCommands -- guard against home-manager activation walking
+## into a missing system command at runtime. The anchor is the pangp
+## systemctl-absence failure (dotfiles commit 0a888eb); these tests pin
+## the warn-vs-strict surface and the anchor reference shape.
+
+test_preflightCheckCommands_silentWhenAllPresent() {
+  ## act
+  local got rc
+  got=$(preflightCheckCommands 0 2>&1) && rc=$? || rc=$?
+
+  ## assert
+  (( rc == 0 )) || { echo "rc=$rc, want 0"; return 1; }
+  [[ -z $got ]] || { echo "got non-empty output, want empty: $got"; return 1; }
+}
+
+test_preflightCheckCommands_warnsOnMissingNonStrict() {
+  ## arrange -- empty PATH so no commands resolve
+  local PATH=/nonexistent
+
+  ## act
+  local got rc
+  got=$(preflightCheckCommands 0 2>&1) && rc=$? || rc=$?
+
+  ## assert -- warn-only does NOT fail rc
+  (( rc == 0 )) || { echo "rc=$rc, want 0 (warn-only)"; return 1; }
+  [[ $got == *systemctl* ]]  || { echo "missing 'systemctl' in output: $got"; return 1; }
+  [[ $got == *sudo* ]]       || { echo "missing 'sudo' in output: $got"; return 1; }
+  [[ $got == *0a888eb* ]]    || { echo "missing anchor commit ref: $got"; return 1; }
+  [[ $got == *pkgs.*bin* ]]  || { echo "missing nix-managed binary recommendation: $got"; return 1; }
+}
+
+test_preflightCheckCommands_failsInStrictMode() {
+  ## arrange -- empty PATH so no commands resolve
+  local PATH=/nonexistent
+
+  ## act -- strict mode (exit 1 inside the $(...) subshell propagates as rc)
+  local got rc
+  got=$(preflightCheckCommands 1 2>&1) && rc=$? || rc=$?
+
+  ## assert
+  (( rc != 0 )) || { echo "rc=$rc, want non-zero (strict)"; return 1; }
+  [[ $got == *fatal* ]] || { echo "missing 'fatal' marker: $got"; return 1; }
+}
+
 ## loosely -- state management, domain-critical (broken = no error handling)
 ## Tests verify flag restoration survives the exact failure mode that
 ## occurred: $(set +o) in a subshell loses errexit. Also tests nested
