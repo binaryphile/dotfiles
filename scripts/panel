@@ -467,7 +467,7 @@ clickModule() {
       fi
       ;;
     vpn)
-      if ip link show tun0 >/dev/null 2>&1; then
+      if vpnUp; then
         vpn down
       else
         vpn up

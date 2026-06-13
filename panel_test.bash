@@ -209,3 +209,37 @@ test_batModule() {
 
   tesht.Run "${!case@}"
 }
+
+
+## clickModule (vpn case) — #27694
+
+test_clickModule_vpn() {
+  local -A case1=(
+    [name]='vpnUp true dispatches vpn down'
+    [vpnUpRc]=0
+    [want]='vpn called: down'
+  )
+
+  local -A case2=(
+    [name]='vpnUp false dispatches vpn up'
+    [vpnUpRc]=1
+    [want]='vpn called: up'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    vpnUp() { return "$vpnUpRc"; }
+    vpn() { echo "vpn called: $*"; }
+    export -f vpnUp vpn
+    export vpnUpRc
+
+    local got
+    got=$(clickModule vpn)
+
+    tesht.AssertGot "$got" "$want"
+  }
+
+  tesht.Run "${!case@}"
+}

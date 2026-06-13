@@ -31,12 +31,22 @@ cmdUp() {
 }
 
 cmdDown() {
+  # Idempotent dual-down (#27694): both client-paths run with error
+  # suppression; stdout reports which actually fired. Predicate-free
+  # to sidestep the kernel-state (vpnUp) vs control-plane-state
+  # (globalprotect show --status) divergence — running both idempotent
+  # down sequences works regardless of which client (if any) is up.
+  local did=0
   if tmux has-session -t "$Session" 2>/dev/null; then
-    tmux kill-session -t "$Session"
-    echo "vpn stopped"
-  else
-    echo "vpn session not running"
+    tmux kill-session -t "$Session" 2>/dev/null
+    echo "vpn (gpoc) tmux session stopped"
+    did=1
   fi
+  if globalprotect disconnect >/dev/null 2>&1; then
+    echo "vpn (pangp) disconnect requested"
+    did=1
+  fi
+  (( did )) || echo "vpn was already down"
 }
 
 cmdAttach() { tmux attach -t "$Session"; }
@@ -71,4 +81,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
