@@ -25,6 +25,8 @@ vpn-mode         # print current mode ('pangp' or 'gpoc')
 
 `vpn-connect` reads `vpn-mode` and dispatches: `globalprotect connect --portal access.digi.com` for pangp, or the existing `gpauth | gpclient` retry loop for gpoc. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp) and `tun0` (gpoc) state UP independently -- no widget changes needed across the toggle.
 
+`vpn down` is the symmetric exit path. Idempotent dual-down (#27694): runs both `tmux kill-session -t vpn` (gpoc cleanup) and `globalprotect disconnect 2>/dev/null` (pangp cleanup) unconditionally with error suppression, and reports which path(s) actually fired via stdout. Predicate-free by design — the cross-client predicate divergence (control-plane status vs kernel LOWER_UP) can disagree during teardown, so dispatching either side would mis-route; running both idempotent down sequences sidesteps the divergence. Operator-visible behavior under the toggle: the tmux VPN widget's click toggles via this command (`scripts/panel:clickModule` calls `vpnUp` to decide direction).
+
 Packaging:
 - gpoc -- apt-installed (yuezk's upstream nix derivation has a Rust build that's heavy enough to want to skip), installed by `update-env`'s gpoc group.
 - pangp -- nix-managed via `~/dotfiles/pangp.nix` + `~/dotfiles/contexts/pangp.nix` home-manager module. The source tarball `PanGPLinux-<ver>.tgz` from PAN's customer portal must live at `~/crostini/` (Crostini) or the equivalent NixOS path (edit flake.nix's `pangp` let-binding).

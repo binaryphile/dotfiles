@@ -421,6 +421,17 @@ State is implicit in `gpd.service`'s systemd state -- no separate state file:
 
 `scripts/vpn-connect` reads `vpn-mode` and runs the right client. pangp branch: `exec globalprotect connect --portal access.digi.com` (PAN's daemon handles tunnel persistence via its own `Restart=on-failure`). gpoc branch: the existing `gpauth | gpclient connect` pipeline with retry-on-disconnect loop. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp's interface) and `tun0` (gpoc's) independently -- the dispatch is invisible at the widget layer.
 
+#### vpn down dispatch (UC-7 exit path)
+
+`scripts/vpn` `cmdDown` is **idempotent dual-down across both clients** (#27694). Both down sequences run unconditionally with error suppression -- no predicate decides which to invoke:
+
+- gpoc path: `tmux kill-session -t vpn` if the wrapped-vpn-connect tmux session exists.
+- pangp path: `globalprotect disconnect 2>/dev/null` if the `globalprotect` binary is on PATH.
+
+`cmdDown` reports which paths actually fired via stdout (`vpn (gpoc) tmux session stopped`, `vpn (pangp) disconnect requested`, or `vpn was already down`). Predicate-free intentionally: the predicate divergence between kernel-state (`vpnUp` reads LOWER_UP) and control-plane-state (`globalprotect show --status`) can disagree during tunnel teardown / link-flap, so dispatching by either side could mis-route. Running both idempotent down sequences sidesteps the divergence entirely. The remaining `cmdStatus()` vs `vpnUp()` predicate divergence is tracked separately at `tasks.jeeves #32960`.
+
+The panel widget's click handler (`scripts/panel:clickModule` `vpn)` case) consumes `vpnUp` as its is-VPN-up predicate (#27694), symmetric with the widget-rendering probe; previously used a tun0-only existence check that misfired under pangp mode.
+
 #### gpoc packaging
 
 yuezk's Rust rewrite of `globalprotect-openconnect`. nixpkgs ships only an old C++/Qt 1.4.9 build that drags in qtwebengine. gpoc is sourced differently per platform:

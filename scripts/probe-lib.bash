@@ -103,6 +103,10 @@ readState() {
 #     $State/vpn for tmux widget rendering
 #   - scripts/panel:dm1Module / stashModule / gitlabModule / nexusModule
 #     -- call vpnUp directly to gate visibility of VPN-dependent widgets
+#   - scripts/panel:clickModule (vpn case) -- calls vpnUp to decide whether
+#     the user's click should dispatch `vpn down` (currently up) or
+#     `vpn up` (currently down); previously used a tun0-only existence
+#     check that misfired under pangp mode
 #   - scripts/panel:popupSummary -- reads $State/vpn to render the popup
 #   - nixos-config/scripts/widget-status:vpn -- renders the waybar VPN
 #     widget (calls vpnClient for the tooltip's client distinction)
