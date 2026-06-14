@@ -50,7 +50,7 @@ set +o noglob
 shopt -s nullglob
 files=( $PANGP_RO/* )
 sign_files=( $PANGP_RO/sign/* )
-stale_candidates=( ./*.log ./*.dat ./*.txt )
+stale_candidates=( ./*.log ./*.log.old ./*.dat ./*.txt )
 shopt -u nullglob
 set -o noglob
 
@@ -82,7 +82,7 @@ for f in ${files[@]}; do
     continue
   fi
   case $name in
-    *.log|*.dat|*.txt)
+    *.log|*.log.old|*.dat|*.txt)
       # #34261: replace nix-store-targeted symlinks for runtime-
       # mutable files. The symlink target IS readable (-e true) so
       # a broken-symlink test wouldn't catch this — the defect
