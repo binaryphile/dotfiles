@@ -455,6 +455,9 @@ stage2() {
     ~/projects/jeeves/bin/node
     ~/projects/jeeves/bin/npx
   END
+  desc  'set git hooksPath to .githooks (UC-14 binary-rejection pre-commit)'
+  ok    "[[ $(git -C ~/projects/jeeves config core.hooksPath) == .githooks ]]"
+  cmd   "git -C ~/projects/jeeves config core.hooksPath .githooks"
 
   section fluentfp
   try githubCloneAndLinkTask fluentfp
