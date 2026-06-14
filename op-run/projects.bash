@@ -14,6 +14,7 @@
 
 declare -Agr ProjectPath=(
   [urma]=~/projects/urma
+  [jeeves]=~/projects/jeeves
 )
 
 # ProjectAccount accepts anything OP_ACCOUNT accepts: shorthand, sign-in
@@ -23,10 +24,12 @@ declare -Agr ProjectPath=(
 # Use the sign-in address directly for those.
 declare -Agr ProjectAccount=(
   [urma]=digi.1password.com
+  [jeeves]=digi.1password.com
 )
 
 declare -Agr ProjectVault=(
   [urma]=urma-atlassian
+  [jeeves]=urma-atlassian
 )
 
 # urma: Bitbucket Server (stash.digi.com) via _PERSONAL_TOKEN, plus
@@ -41,6 +44,15 @@ declare -Agr ProjectVault=(
 
 declare -Agr ProjectEnvSpec=(
   [urma]="BITBUCKET_URL=https://stash.digi.com
+BITBUCKET_USERNAME=tlilley
+BITBUCKET_PERSONAL_TOKEN=op://urma-atlassian/bitbucket/credential
+CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
+CONFLUENCE_USERNAME=tlilley@digi.com
+CONFLUENCE_PERSONAL_TOKEN=op://urma-atlassian/confluence/credential
+JIRA_URL=https://onedigi.atlassian.net
+JIRA_USERNAME=tlilley@digi.com
+JIRA_API_TOKEN=op://urma-atlassian/jira/credential"
+  [jeeves]="BITBUCKET_URL=https://stash.digi.com
 BITBUCKET_USERNAME=tlilley
 BITBUCKET_PERSONAL_TOKEN=op://urma-atlassian/bitbucket/credential
 CONFLUENCE_URL=https://onedigi.atlassian.net/wiki
