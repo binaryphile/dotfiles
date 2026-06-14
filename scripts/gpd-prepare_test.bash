@@ -190,15 +190,40 @@ test_staleSymlinkWithoutSourcePrototype() {
   PANGP_RO=$ro STATE_DIRECTORY=$state NIX_STORE_PREFIX=$nix \
     "$PWD/scripts/gpd-prepare"
 
-  # Expected: pre-scan removed the stale symlink. Since $PANGP_RO
-  # has no PanGPS.log, the main loop doesn't recreate the file.
-  # Result: $state/PanGPS.log is absent (PanGPS will create at runtime).
+  # Expected: pre-scan removed the stale symlink; canonical-log
+  # touch loop materialized $state/PanGPS.log as empty writable file
+  # (the PanGPS-SEGV-defense behavior added 2026-06-13 v4).
   local result
   if [[ -L $state/PanGPS.log ]]; then result=symlink
-  elif [[ -e $state/PanGPS.log ]]; then result=file
+  elif [[ -f $state/PanGPS.log && -w $state/PanGPS.log ]]; then result=writable-file
   else result=absent
   fi
-  tesht.AssertGot "$result" "absent"
+  tesht.AssertGot "$result" "writable-file"
+}
+
+
+## canonical .log files materialized when absent (PanGPS-SEGV defense)
+
+# Regression test for #34261 v4: PanGPS 6.3.3-638 SEGVs at startup
+# when canonical .log files are absent. The pre-scan correctly
+# removes stale nix-store symlinks; gpd-prepare must then materialize
+# empty writable .log files so PanGPS has open targets on startup.
+test_canonicalLogsCreatedAfterPreScan() {
+  local Dir
+  tesht.MktempDir Dir || return 128
+  local ro=$Dir/src state=$Dir/state nix=$Dir/fake-nix-store
+  mkdir -p $ro $ro/sign $state
+  echo "lib content" > $ro/libwaapi.so
+
+  PANGP_RO=$ro STATE_DIRECTORY=$state NIX_STORE_PREFIX=$nix \
+    "$PWD/scripts/gpd-prepare"
+
+  local missing=()
+  for f in PanGPS.log PanGPS.log.old pan_gp_event.log \
+           PanGpHip.log PanGpHipMp.log pan_gp_trb.log; do
+    [[ -f $state/$f && -w $state/$f ]] || missing+=( $f )
+  done
+  tesht.AssertGot "${missing[*]:-all-present}" "all-present"
 }
 
 

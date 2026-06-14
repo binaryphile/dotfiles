@@ -101,6 +101,20 @@ for f in ${files[@]}; do
   esac
 done
 
+# PanGPS 6.3.3-638 SEGVs at startup when expected log files are
+# absent (verified empirically 2026-06-13 — daemon crashed repeatedly
+# until PanGPS.log + pan_gp_event.log + PanGPS.log.old were touched
+# into existence). pangp's older .deb shipped these as empty seeds
+# in $PANGP_RO; the new .deb extraction drops them, so gpd-prepare
+# must materialize them itself AFTER the main loop runs (so .deb
+# prototypes, if shipped, are honored first).
+for canonical_log in PanGPS.log PanGPS.log.old pan_gp_event.log \
+                     PanGpHip.log PanGpHipMp.log pan_gp_trb.log; do
+  [[ -e $canonical_log ]] && continue
+  touch $canonical_log
+  chmod u+w $canonical_log
+done
+
 # Stage sign/ subdir contents (signature files; read-only by nature).
 mkdir -p sign
 for f in ${sign_files[@]}; do
