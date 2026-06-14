@@ -184,44 +184,19 @@ pkgs.stdenv.mkDerivation {
     # The symlink loop is idempotent (skips existing entries), so it's
     # safe across restarts and survives prior state-file creation.
     #
-    # We can't use ExecStartPre=/bin/sh -c '...' because nix store paths
-    # change every rebuild; bake the script into the derivation and
-    # reference its store path from the unit.
+    # gpd-prepare classifies files by writability: read-only artifacts
+    # (libs, certs, scripts, .service files) are symlinked from
+    # $PANGP_RO; runtime-mutable artifacts (*.log, *.dat, *.txt) are
+    # copied as writable, with nix-store-targeted symlinks for
+    # runtime-mutable files actively replaced (the #34261 defect class
+    # — PanGPS silently couldn't append to its log because the symlink
+    # target was in read-only nix-store). Script extracted to
+    # scripts/gpd-prepare for tesht coverage (#34261); install it +
+    # wire $PANGP_RO via systemd Environment= so the unit's ExecStartPre
+    # finds its source dir at runtime regardless of nix-store rebuild
+    # path changes.
     mkdir -p $out/libexec
-    cat > $out/libexec/gpd-prepare <<PREPARE_EOF
-#! ${pkgs.runtimeShell}
-# Pre-flight setup for PanGPS: stage read-only files from the nix store
-# into /var/lib/globalprotect (systemd's StateDirectory for gpd.service)
-# so PanGPS finds its static config alongside its writable state files.
-set -eu
-# systemd's default PATH for services doesn't include coreutils; prepend
-# it explicitly so mkdir/ln/basename/rm resolve. Without this the unit
-# fails ExecStartPre with "mkdir: command not found" (calumny 2026-05-26).
-export PATH="${pkgs.coreutils}/bin:\$PATH"
-PANGP_RO=$out/opt/paloaltonetworks/globalprotect
-STATE_DIR=\$STATE_DIRECTORY
-[ -n "\$STATE_DIR" ] || STATE_DIR=/var/lib/globalprotect
-mkdir -p "\$STATE_DIR"
-cd "\$STATE_DIR"
-# Symlink every file shipped by the .deb (libs, certs, scripts, license,
-# signatures, sysv-init wrapper, .desktop). Skip if already present so
-# we don't overwrite user-modified pangps.xml.
-for f in "\$PANGP_RO"/*; do
-  name=\$(basename "\$f")
-  [ -e "\$name" ] && continue
-  ln -s "\$f" "\$name"
-done
-# Also stage the sign/ subdir contents (signature files).
-mkdir -p sign
-for f in "\$PANGP_RO"/sign/*; do
-  name=\$(basename "\$f")
-  [ -e "sign/\$name" ] && continue
-  ln -s "\$f" "sign/\$name"
-done
-# Also handle the pre_exec_gps.sh original behavior (clean stale pidfile).
-rm -f /var/run/PanGPS.pid 2>/dev/null || true
-PREPARE_EOF
-    chmod +x $out/libexec/gpd-prepare
+    install -Dm755 ${./scripts/gpd-prepare} $out/libexec/gpd-prepare
 
     # Now compose gpd.service. ExecStart points at the /opt PanGPS
     # (staged by update-env's extractGlobalprotectDebToOptTask) so the
@@ -241,6 +216,14 @@ PREPARE_EOF
 Description=GlobalProtect VPN client daemon (PanGPS)
 
 [Service]
+# PATH for ExecStartPre — systemd's default service PATH excludes
+# coreutils; gpd-prepare needs mkdir/cp/ln/rm/readlink/basename
+# (calumny 2026-05-26 failure: "mkdir: command not found").
+# PANGP_RO points the script at the .deb source-of-truth subtree;
+# changes per nix-store rebuild but the unit is regenerated each
+# build, so the path stays consistent with the deployed script.
+Environment=PATH=${pkgs.coreutils}/bin:/usr/bin:/bin
+Environment=PANGP_RO=$out/opt/paloaltonetworks/globalprotect
 Type=simple
 ExecStartPre=$out/libexec/gpd-prepare
 ExecStart=${runtimeBase}/PanGPS

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# gpd-prepare — pre-flight setup for PanGPS (gpd.service ExecStartPre).
+#
+# Stage read-only artifacts from $PANGP_RO into $STATE_DIRECTORY as
+# symlinks; copy runtime-mutable artifacts (*.log, *.dat, *.txt) as
+# writable files; remove nix-store-targeted symlinks for runtime-
+# mutable files (the #34261 defect class — PanGPS silently couldn't
+# append to its log because the symlink target was in read-only
+# nix-store).
+#
+# EXECUTION INVARIANT: runs BEFORE PanGPS starts (current
+# ExecStartPre semantic in gpd.service). The cp/replace logic
+# assumes PanGPS is not holding these files open; any future hook
+# reusing gpd-prepare while PanGPS is active risks rewriting an
+# inode PanGPS has open.
+#
+# Env vars (all have sensible defaults):
+#   PANGP_RO          source dir for pangp .deb contents
+#   STATE_DIRECTORY   destination dir (systemd's StateDirectory)
+#   NIX_STORE_PREFIX  predicate prefix for detecting nix-store-
+#                     targeted symlinks; test affordance
+#
+# Test-time: tesht sets PANGP_RO + STATE_DIRECTORY to tmpdir paths
+# and NIX_STORE_PREFIX to "$tmpdir/fake-nix-store" so the
+# nix-store-symlink-replacement branch fires against fixture
+# symlinks that don't literally start with /nix/store.
+
+set -eu
+IFS=$'\n'
+set -o noglob
+
+PANGP_RO=${PANGP_RO:-/opt/paloaltonetworks/globalprotect}
+STATE_DIRECTORY=${STATE_DIRECTORY:-/var/lib/globalprotect}
+
+# NIX_STORE_PREFIX env var (test affordance). Normalize:
+# default if unset, strip trailing slash, fall back to default if
+# empty so the predicate's "$prefix/*" pattern is well-formed.
+NIX_STORE_PREFIX=${NIX_STORE_PREFIX:-/nix/store}
+NIX_STORE_PREFIX=${NIX_STORE_PREFIX%/}
+[[ -n $NIX_STORE_PREFIX ]] || NIX_STORE_PREFIX=/nix/store
+
+mkdir -p $STATE_DIRECTORY
+cd $STATE_DIRECTORY
+
+# Glob expansion for $PANGP_RO/* and $PANGP_RO/sign/*. Locally enable
+# globbing per the IFS+noglob discipline (see scripts/lib.bash).
+set +o noglob
+shopt -s nullglob
+files=( $PANGP_RO/* )
+sign_files=( $PANGP_RO/sign/* )
+shopt -u nullglob
+set -o noglob
+
+for f in ${files[@]}; do
+  name=${f##*/}
+  # Skip subdirectories — handled separately (sign/ below). Without
+  # this guard, the *) branch would create a symlink named "sign"
+  # pointing at $PANGP_RO/sign, and the subsequent sign/ loop would
+  # create files INSIDE the source dir (read-only nix-store) via
+  # the dangling reference.
+  if [[ -d $f && ! -L $f ]]; then
+    continue
+  fi
+  case $name in
+    *.log|*.dat|*.txt)
+      # #34261: replace nix-store-targeted symlinks for runtime-
+      # mutable files. The symlink target IS readable (-e true) so
+      # a broken-symlink test wouldn't catch this — the defect
+      # surfaced as PanGPS silently failing to append to logs.
+      if [[ -L $name && $(readlink $name) == $NIX_STORE_PREFIX/* ]]; then
+        rm -f $name
+      fi
+      [[ -e $name ]] && continue
+      cp -- $f $name
+      chmod u+w $name
+      ;;
+    *)
+      [[ -e $name ]] && continue
+      ln -s -- $f $name
+      ;;
+  esac
+done
+
+# Stage sign/ subdir contents (signature files; read-only by nature).
+mkdir -p sign
+for f in ${sign_files[@]}; do
+  name=${f##*/}
+  [[ -e sign/$name ]] && continue
+  ln -s -- $f sign/$name
+done
+
+# Inherit pre_exec_gps.sh original behavior: clean stale pidfile.
+rm -f /var/run/PanGPS.pid 2>/dev/null || true
