@@ -43,14 +43,33 @@ NIX_STORE_PREFIX=${NIX_STORE_PREFIX%/}
 mkdir -p $STATE_DIRECTORY
 cd $STATE_DIRECTORY
 
-# Glob expansion for $PANGP_RO/* and $PANGP_RO/sign/*. Locally enable
+# Glob expansion for $PANGP_RO/* + $PANGP_RO/sign/* + $STATE_DIRECTORY's
+# runtime-mutable entries (for the pre-scan below). Locally enable
 # globbing per the IFS+noglob discipline (see scripts/lib.bash).
 set +o noglob
 shopt -s nullglob
 files=( $PANGP_RO/* )
 sign_files=( $PANGP_RO/sign/* )
+stale_candidates=( ./*.log ./*.dat ./*.txt )
 shopt -u nullglob
 set -o noglob
+
+# #34261 pre-scan: remove stale nix-store-targeted symlinks for any
+# runtime-mutable entry already in $STATE_DIRECTORY, REGARDLESS of
+# whether $PANGP_RO currently ships a prototype for it. The defect
+# can persist across pangp-package upgrades: an older .deb shipped
+# .log prototypes that gpd-prepare symlinked into $STATE_DIRECTORY;
+# the newer .deb doesn't ship them, but the old symlinks remain on
+# disk pointing at potentially-GC'd nix-store paths. Without this
+# pre-scan, the main loop (iterating $PANGP_RO/*) never sees these
+# entries and they stay broken.
+for entry in ${stale_candidates[@]}; do
+  name=${entry#./}
+  [[ -L $name ]] || continue
+  if [[ $(readlink $name) == $NIX_STORE_PREFIX/* ]]; then
+    rm -f $name
+  fi
+done
 
 for f in ${files[@]}; do
   name=${f##*/}

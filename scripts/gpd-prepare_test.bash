@@ -162,6 +162,46 @@ test_realTargetSymlinkPreserved() {
 }
 
 
+## stale broken symlink to nix-store when $PANGP_RO no longer ships the file
+
+# Regression test for the #34261 v2 architecture revision (post-impl
+# /loopback 3a→1c interaction id=34743): the production failure mode
+# is a /var/lib/globalprotect/PanGPS.log symlink to an OLD nix-store
+# path where the .deb shipped a *.log prototype; the NEW pangp .deb
+# extraction doesn't ship *.log prototypes, so the main loop iterating
+# $PANGP_RO/* never sees PanGPS.log and never removes the stale
+# symlink. The pre-scan in gpd-prepare handles this case.
+test_staleSymlinkWithoutSourcePrototype() {
+  local Dir
+  tesht.MktempDir Dir || return 128
+  local ro=$Dir/src state=$Dir/state nix=$Dir/fake-nix-store
+  # $PANGP_RO has NO PanGPS.log (mimics new .deb's no-log-prototypes
+  # extraction shape).
+  mkdir -p $ro $ro/sign
+  echo "lib content" > $ro/libwaapi.so
+
+  # Pre-existing stale symlink pointing at fake-nix-store (the file
+  # there might or might not exist — broken-symlink edge case).
+  mkdir -p $nix $state
+  echo "stale log proto" > $nix/PanGPS.log
+  chmod 0444 $nix/PanGPS.log
+  ln -s $nix/PanGPS.log $state/PanGPS.log
+
+  PANGP_RO=$ro STATE_DIRECTORY=$state NIX_STORE_PREFIX=$nix \
+    "$PWD/scripts/gpd-prepare"
+
+  # Expected: pre-scan removed the stale symlink. Since $PANGP_RO
+  # has no PanGPS.log, the main loop doesn't recreate the file.
+  # Result: $state/PanGPS.log is absent (PanGPS will create at runtime).
+  local result
+  if [[ -L $state/PanGPS.log ]]; then result=symlink
+  elif [[ -e $state/PanGPS.log ]]; then result=file
+  else result=absent
+  fi
+  tesht.AssertGot "$result" "absent"
+}
+
+
 ## idempotency: second run is a no-op
 
 test_idempotent() {
