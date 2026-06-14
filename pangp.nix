@@ -222,7 +222,7 @@ Description=GlobalProtect VPN client daemon (PanGPS)
 # PANGP_RO points the script at the .deb source-of-truth subtree;
 # changes per nix-store rebuild but the unit is regenerated each
 # build, so the path stays consistent with the deployed script.
-Environment=PATH=${pkgs.coreutils}/bin:/usr/bin:/bin
+Environment=PATH=${pkgs.coreutils}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PANGP_RO=$out/opt/paloaltonetworks/globalprotect
 Type=simple
 ExecStartPre=$out/libexec/gpd-prepare
