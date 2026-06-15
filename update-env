@@ -21,10 +21,21 @@ set -o noglob
 # global -- designed to be shadowed by local declarations in tests via bash
 # dynamic scoping. See bash style guide # Injectable dependencies.
 #
-# Variables containing IFS characters (newlines under IFS=$'\n') are marked so
-# the reader knows to quote them. Two conventions, mutually exclusive:
-#   - Trailing underscore: oldIfs_, cmd_. Name alone doesn't signal IFS content.
-#   - *List suffix: groupList, hostList. Suffix signals multi-value (implies IFS).
+# Variables that need to stay quoted at use site are marked by name so the
+# reader knows. Two conditions force quoting under IFS=$'\n'; set -o noglob:
+#   (a) value can contain IFS characters (newlines) — unquoted use word-
+#       splits the value across multiple positional args.
+#   (b) value can be empty — unquoted empty expansion DISAPPEARS as a
+#       positional arg, shifting downstream args (set -u catches unset,
+#       not empty).
+# Two marker conventions, mutually exclusive:
+#   - Trailing underscore: oldIfs_, cmd_. Generic marker for either condition.
+#   - *List suffix: groupList, hostList. Multi-value marker (implies IFS;
+#     covers condition (a)).
+# Unmarked variables MUST be guaranteed non-empty AND IFS-free at every use
+# site so they are safe to expand unquoted. Prefer initialization (local
+# i=0, local s='') over the _ suffix where the empty case can be eliminated
+# by construction; the suffix is for cases where emptiness is load-bearing.
 #
 # Variable declarations that are name references borrow the environment namespace, e.g.
 # "local -n ARRAY=$1".
