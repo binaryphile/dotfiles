@@ -735,7 +735,23 @@ These statuses form a 5-class partition: every check function pushes findings of
 
 The top-level shape is a flat array. No envelope. Clients filter via `jq '.[] | select(.status != "OK")'` for drift-only.
 
-**Deferred (v2 follow-up)**: per-project shellcheckrc, MCP registration, slash-commands globs, memory redirects, agent.toml presence, per-project nix-wrapper symlinks, systemd services, op-run/checksums, project-clones-present (23 directories). Filed as follow-up task at #18166 closeout.
+**Coverage boundary (explicit)**:
+
+- **Unaudited `task.Ln` declarations**: lines containing `$` are emitted as `UNAUDITED|taskLnDeclarations|<literal text>` findings rather than silently dropped. Static-expansion-only avoids the risk of auditing a configuration that doesn't match stage-1's actual expansion environment. Operator sees the count of skipped declarations directly; `allOk` treats `UNAUDITED` like `OK` for exit-code semantics (advisory, not drift).
+
+- **Deferred (v2 follow-up)**: per-project shellcheckrc, MCP registration, slash-commands globs, memory redirects, agent.toml presence, per-project nix-wrapper symlinks, systemd services, op-run/checksums, project-clones-present (23 directories). Filed as follow-up task at #18166 closeout. **A v1 `rc=0` does not assert that these surfaces are converged.**
+
+**JSON schema envelope** (since #18166 grader R1):
+
+```json
+{
+  "schemaVersion": 1,
+  "toolVersion": "0.2",
+  "findings": [{"status":"...","category":"...","detail":"..."}]
+}
+```
+
+`schemaVersion` bumps when the envelope or finding-object shape breaks backward compatibility. Additive fields (`omitempty`-style) do NOT bump. `toolVersion` is the script's own `Version` constant — useful for downstream consumers to disambiguate behavior changes within the same `schemaVersion`.
 
 **Test strategy**: `update-env-audit_test.bash` uses `tesht` with `tesht.MktempDir` for synthetic filesystem fixtures. Khorikov classical-school posture: controller-integration on the public check functions; real filesystem (no internal mocks); per-category positive (all-OK) + negative (one-drift) cases plus end-to-end main rc tests. See use-cases.md UC-15.
 

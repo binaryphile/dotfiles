@@ -20,7 +20,8 @@ set -euo pipefail
 IFS=$'\n'
 
 Prog=$(basename "$0")
-Version=0.1
+Version=0.2
+SchemaVersion=1
 
 # Configuration knobs (env-overridable for tests).
 UpdateEnvFile=${UPDATE_ENV_AUDIT_SOURCE:-$HOME/dotfiles/update-env}
@@ -70,12 +71,17 @@ expandTilde() {
   printf '%s' "${1/#\~/$HOME}"
 }
 
-# parseTaskLnDeclarations -- emit (source|linkname) pairs from update-env's
-# task.Ln declarations. Handles two forms:
+# parseTaskLnAll -- emit kind-tagged task.Ln declarations from update-env.
+# Each line is "<kind>|<payload>" where:
+#   A|<src>|<link>     -- audited (literal paths, no $ expansion needed)
+#   U|<literal-text>   -- unaudited (declaration contains $var; not
+#                         resolvable from a static parse without a
+#                         deterministic expansion environment matching
+#                         stage-1)
+# Recognized declaration forms:
 #   1. Plain:      [try ]task.Ln <src> <link>
 #   2. Heredoc:    each task.Ln <<'END' / <src> <link> / END
-# Skips pairs containing $ (unresolvable without runtime expansion).
-parseTaskLnDeclarations() {
+parseTaskLnAll() {
   local file=$1
   local inHeredoc=0 line src link
   while IFS= read -r line; do
@@ -87,8 +93,11 @@ parseTaskLnDeclarations() {
       # Heredoc body: split on whitespace, src first, link second.
       IFS=$' \t' read -r src link _ <<<"$line"
       [[ -z ${src:-} || -z ${link:-} ]] && continue
-      [[ $src == *'$'* || $link == *'$'* ]] && continue
-      printf '%s|%s\n' "$src" "$link"
+      if [[ $src == *'$'* || $link == *'$'* ]]; then
+        printf 'U|%s %s\n' "$src" "$link"
+      else
+        printf 'A|%s|%s\n' "$src" "$link"
+      fi
       continue
     fi
 
@@ -100,8 +109,11 @@ parseTaskLnDeclarations() {
     if [[ $line =~ ^[[:space:]]*(try[[:space:]]+)?task\.Ln[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+) ]]; then
       src=${BASH_REMATCH[2]}
       link=${BASH_REMATCH[3]}
-      [[ $src == *'$'* || $link == *'$'* ]] && continue
-      printf '%s|%s\n' "$src" "$link"
+      if [[ $src == *'$'* || $link == *'$'* ]]; then
+        printf 'U|%s %s\n' "$src" "$link"
+      else
+        printf 'A|%s|%s\n' "$src" "$link"
+      fi
     fi
   done < "$file"
 }
@@ -130,8 +142,9 @@ END
 
 # CATEGORY 2: Bin symlinks -- broken-link detection.
 checkBinSymlinksBroken() {
-  local src link
-  while IFS='|' read -r src link; do
+  local kind src link
+  while IFS='|' read -r kind src link; do
+    [[ $kind == A ]] || continue
     link=$(expandTilde "$link")
     [[ $link == "$HOME/.local/bin/"* ]] || continue
     if [[ -L $link && ! -e $link ]]; then
@@ -140,13 +153,14 @@ checkBinSymlinksBroken() {
       addFinding OK binSymlinksBroken "$link"
     fi
     # Absent links are silently skipped here -- that's category 1's domain.
-  done < <(parseTaskLnDeclarations "$UpdateEnvFile")
+  done < <(parseTaskLnAll "$UpdateEnvFile")
 }
 
 # CATEGORY 3: Bin symlinks -- target equality.
 checkBinSymlinksTargets() {
-  local src link expected actual
-  while IFS='|' read -r src link; do
+  local kind src link expected actual
+  while IFS='|' read -r kind src link; do
+    [[ $kind == A ]] || continue
     link=$(expandTilde "$link")
     [[ $link == "$HOME/.local/bin/"* ]] || continue
     [[ -L $link ]] || continue
@@ -157,7 +171,20 @@ checkBinSymlinksTargets() {
     else
       addFinding DRIFT binSymlinksTargets "$link: expected $expected, got $actual"
     fi
-  done < <(parseTaskLnDeclarations "$UpdateEnvFile")
+  done < <(parseTaskLnAll "$UpdateEnvFile")
+}
+
+# CATEGORY 8: Unaudited task.Ln declarations -- surface the coverage boundary.
+# Variable-expanded declarations (containing $) are not statically auditable
+# and would require a deterministic stage-1 expansion environment to evaluate
+# safely. Emit one UNAUDITED finding per skipped declaration so coverage is
+# explicit. Does not fail audit by itself (UNAUDITED treated like OK for rc).
+checkUnauditedDeclarations() {
+  local kind text
+  while IFS='|' read -r kind text; do
+    [[ $kind == U ]] || continue
+    addFinding UNAUDITED taskLnDeclarations "$text"
+  done < <(parseTaskLnAll "$UpdateEnvFile")
 }
 
 # CATEGORY 4: Retired-binary absence.
@@ -254,15 +281,20 @@ renderText() {
   each renderTextLine < <(printf '%s\n' "${Findings[@]}")
 }
 
-# renderJson -- flat JSON array of {status, category, detail} objects.
+# renderJson -- versioned envelope:
+#   {"schemaVersion": 1, "toolVersion": "<v>", "findings": [...]}
+# schemaVersion bumps when the envelope or finding-object shape breaks
+# backward compatibility. Additive fields (omitempty-style) don't bump.
 renderJson() {
   if (( ${#Findings[@]} == 0 )); then
-    printf '[]\n'
+    jq -n -c --argjson sv $SchemaVersion --arg tv "$Version" \
+      '{schemaVersion: $sv, toolVersion: $tv, findings: []}'
     return
   fi
   local entry status category detail
   local jqArgs=(-n -c)
-  local jqFilter='[' first=1
+  local jqFilter='{schemaVersion: $sv, toolVersion: $tv, findings: ['
+  local first=1
   local -i idx=0
   for entry in "${Findings[@]}"; do
     IFS='|' read -r status category detail <<<"$entry"
@@ -275,16 +307,19 @@ renderJson() {
     jqArgs+=(--arg "s$idx" "$status" --arg "c$idx" "$category" --arg "d$idx" "$detail")
     idx+=1
   done
-  jqFilter+=']'
+  jqFilter+=']}'
+  jqArgs+=(--argjson sv "$SchemaVersion" --arg tv "$Version")
   jq "${jqArgs[@]}" "$jqFilter"
 }
 
-# allOk -- rc 0 if every finding is OK; rc 1 otherwise.
+# allOk -- rc 0 if every finding is OK or UNAUDITED; rc 1 otherwise.
+# UNAUDITED is treated like OK for exit-code purposes because skipped
+# declarations are a coverage advisory, not a drift detection.
 allOk() {
   local entry status
   for entry in "${Findings[@]+${Findings[@]}}"; do
     IFS='|' read -r status _ _ <<<"$entry"
-    [[ $status != OK ]] && return 1
+    [[ $status == OK || $status == UNAUDITED ]] || return 1
   done
   return 0
 }
@@ -309,6 +344,7 @@ main() {
   checkGitHooksPath
   checkClaudeMdMarkers
   checkFlakeLockCanonical
+  checkUnauditedDeclarations
 
   if (( outputJson )); then
     renderJson

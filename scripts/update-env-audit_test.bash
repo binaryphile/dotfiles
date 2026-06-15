@@ -324,9 +324,17 @@ test_renderJson_shape() {
 
   runAudit "$Dir" --json
 
+  # Envelope: {schemaVersion, toolVersion, findings: [...]} where each
+  # finding has {status, category, detail}.
   local got
-  got=$(jq -e 'type == "array" and (length > 0) and all(.[]; has("status") and has("category") and has("detail"))' \
-    <<<"$OutputT" >/dev/null && echo yes || echo no)
+  got=$(jq -e '
+    type == "object"
+    and has("schemaVersion") and (.schemaVersion == 1)
+    and has("toolVersion")
+    and has("findings")
+    and (.findings | type == "array" and (length > 0))
+    and (.findings | all(.[]; has("status") and has("category") and has("detail")))
+  ' <<<"$OutputT" >/dev/null && echo yes || echo no)
   tesht.AssertGot "$got" "yes"
 }
 
@@ -340,6 +348,116 @@ test_renderText_shape() {
   local malformed
   malformed=$(awk 'NF && !/^\[(OK|MISSING|BROKEN|RESIDUAL|DRIFT)\] [a-zA-Z0-9]+: /' <<<"$OutputT" | wc -l)
   tesht.AssertGot "$malformed" "0"
+}
+
+# --- Unaudited declarations (coverage boundary surface) ---
+
+test_unauditedDeclarations_static_only() {
+  local Dir; tesht.MktempDir Dir || return 128
+  # update-env stub with only literal declarations -- no $ expansion needed.
+  makeUpdateEnvStub "$Dir/update-env" "/abs/src /abs/dst"
+
+  runAudit "$Dir"
+
+  local got
+  got=$(countMatches '^\[UNAUDITED\]')
+  tesht.AssertGot "$got" "0"
+}
+
+test_unauditedDeclarations_present() {
+  local Dir; tesht.MktempDir Dir || return 128
+  # update-env stub with both a literal and a variable-expanded declaration.
+  cat > "$Dir/update-env" <<'STUB'
+#!/usr/bin/env bash
+each task.Ln <<'END'
+  /abs/literal/src           /abs/literal/dst
+  contexts/"$Platform"       ~/dotfiles/context
+END
+STUB
+
+  runAudit "$Dir"
+
+  # Should emit exactly one UNAUDITED finding (the $Platform line).
+  local got
+  got=$(countMatches '^\[UNAUDITED\] taskLnDeclarations')
+  tesht.AssertGot "$got" "1"
+}
+
+test_unauditedDeclarations_do_not_fail_rc() {
+  local Dir; tesht.MktempDir Dir || return 128
+  # Clean fixture except for one UNAUDITED declaration.
+  mkdir -p "$Dir/dotfiles" "$Dir/.local/bin" "$Dir/.claude/commands" "$Dir/projects/era"
+  for f in .bashrc .profile .bash_profile .shellcheckrc config local ssh .netrc; do
+    ln -s "$Dir/t" "$Dir/$f"
+  done
+  ln -s "$Dir/t" "$Dir/dotfiles/context"
+  touch "$Dir/t"
+  cat > "$Dir/update-env" <<'STUB'
+#!/usr/bin/env bash
+each task.Ln <<'END'
+  contexts/"$Platform"       ~/dotfiles/context
+END
+STUB
+  cat > "$Dir/.claude/CLAUDE.md" <<EOF
+@~/projects/era/docs/era.md
+@~/projects/tesht/docs/tesht.md
+@~/projects/tandem-protocol/README.md
+EOF
+  makeGitRepo "$Dir/dotfiles" .githooks
+  makeGitRepo "$Dir/projects/jeeves" .githooks
+  makeGitRepo "$Dir/projects/finances" .githooks
+  makeFlakeLock "$Dir/projects/era/flake.lock" deadbeefcafebabe
+
+  runAudit "$Dir"
+
+  # UNAUDITED present + everything else OK -> rc=0 (UNAUDITED is advisory).
+  tesht.AssertGot "$RcT" "0"
+  local unauditedN
+  unauditedN=$(countMatches '^\[UNAUDITED\] taskLnDeclarations')
+  tesht.AssertGot "$unauditedN" "1"
+}
+
+# --- Historical drift fixtures (the two findings that motivated the cycle) ---
+
+test_historicalDrift_sync_shellcheckrc_broken() {
+  local Dir; tesht.MktempDir Dir || return 128
+  # Simulate the original BROKEN sync-shellcheckrc finding:
+  # update-env declares a task.Ln to a script that was retired; stage-1
+  # ran before the retirement, creating the link; cleanup didn't happen.
+  mkdir -p "$Dir/.local/bin" "$Dir/dotfiles/scripts"
+  # The retired script is GONE (matches post-727b09c reality).
+  # The dangling link is present (legacy stage-1 output).
+  ln -s "$Dir/dotfiles/scripts/sync-shellcheckrc" "$Dir/.local/bin/sync-shellcheckrc"
+  makeUpdateEnvStub "$Dir/update-env" \
+    "$Dir/dotfiles/scripts/sync-shellcheckrc $Dir/.local/bin/sync-shellcheckrc"
+
+  runAudit "$Dir"
+
+  tesht.AssertGot "$RcT" "1"
+  local got
+  got=$(countMatchesFixed "[BROKEN] binSymlinksBroken: $Dir/.local/bin/sync-shellcheckrc")
+  tesht.AssertGot "$got" "1"
+}
+
+test_historicalDrift_scaffold_target_drift() {
+  local Dir; tesht.MktempDir Dir || return 128
+  # Simulate the original DRIFT scaffold finding:
+  # update-env declares the link at $Dir/dotfiles/scripts/scaffold; the
+  # operator's actual link points at $Dir/projects/share/scaffold/scaffold.
+  # Both source files exist (so no BROKEN); they're different files.
+  mkdir -p "$Dir/.local/bin" "$Dir/dotfiles/scripts" "$Dir/projects/share/scaffold"
+  touch "$Dir/dotfiles/scripts/scaffold"
+  touch "$Dir/projects/share/scaffold/scaffold"
+  ln -s "$Dir/projects/share/scaffold/scaffold" "$Dir/.local/bin/scaffold"
+  makeUpdateEnvStub "$Dir/update-env" \
+    "$Dir/dotfiles/scripts/scaffold $Dir/.local/bin/scaffold"
+
+  runAudit "$Dir"
+
+  tesht.AssertGot "$RcT" "1"
+  local got
+  got=$(countMatchesFixed "[DRIFT] binSymlinksTargets: $Dir/.local/bin/scaffold: expected $Dir/dotfiles/scripts/scaffold, got $Dir/projects/share/scaffold/scaffold")
+  tesht.AssertGot "$got" "1"
 }
 
 # --- main rc semantics ---

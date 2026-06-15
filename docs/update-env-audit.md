@@ -44,9 +44,14 @@ In text mode each finding renders as `[STATUS] category: detail`. In JSON each i
 
 For the bin-symlink categories (`binSymlinksBroken`, `binSymlinksTargets`), the expected (source, link) pairs come from parsing `update-env`'s own `task.Ln` lines at audit-run time. If update-env adds or removes a `task.Ln` call, the next audit picks it up. There's no hand-maintained table that can drift.
 
-## Deferred (v2 follow-up)
+## Coverage boundary
 
-These categories were scoped out of v1 to keep the cycle bounded. The follow-up task tracks them: per-project shellcheckrc, MCP registration, slash-commands globs, memory redirects, agent.toml presence, per-project nix-wrapper, systemd services, op-run/checksums, project-clones-present (the full 23-directory list).
+**v1 audits the seven check categories listed above. It does not claim comprehensive environment compliance.** Two surfaces deliberately exclude themselves from v1's verdict:
+
+- **Variable-expanded `task.Ln` declarations**: any declaration in `update-env` whose source or link contains `$` (e.g., `contexts/"$Platform"`) cannot be statically resolved without a deterministic stage-1 expansion environment. The audit emits one `UNAUDITED` finding per skipped declaration so the coverage boundary is operator-visible; `UNAUDITED` is advisory and does not fail the audit's exit code.
+- **Eight deferred check categories** (v2 follow-up): per-project shellcheckrc, MCP registration, slash-commands globs, memory redirects, agent.toml presence, per-project nix-wrapper, systemd services, op-run/checksums, project-clones-present (the full 23-directory list).
+
+A clean `rc=0` from `update-env-audit` means **"the seven v1 categories all OK"**, not "the operator's full home environment is converged". For broader coverage, track the v2 follow-up task.
 
 ## See also
 
