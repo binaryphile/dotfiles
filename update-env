@@ -576,6 +576,11 @@ stage2() {
 
   section icarus
   try githubCloneAndLinkTask icarus
+  # scaffoldTask deploys bin/nix-wrapper (and .envrc + direnv-allow) so the
+  # node/npx wrapper symlinks below resolve. icarus's .gitignore excludes
+  # bin/nix-wrapper deliberately -- the script is machine-deployed, not
+  # committed (closes tasks.jeeves #18187).
+  try scaffoldTask ~/projects/icarus
   # nix-wrapper symlinks: chrome-devtools-mcp invocations from this folder
   # need `npx` on PATH; nix develop provides nodejs_22 via flake.nix.
   each try task.Ln nix-wrapper <<'  END'
