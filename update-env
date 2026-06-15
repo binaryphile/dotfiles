@@ -403,10 +403,6 @@ stage2() {
   section mk.bash
   try githubCloneAndLinkTask mk.bash
   try obsidianSnippetsTask ~/projects/mk.bash/.obsidian/snippets
-  each try task.Ln nix-wrapper <<'  END'
-    ~/projects/mk.bash/bin/node
-    ~/projects/mk.bash/bin/npx
-  END
   try task.Ln ~/projects/mk.bash/mk.bash ~/.local/bin/mk.bash
   # Global `mk` binary retired 2026-06-01: git-update functionality replaced
   # by try clauses in update-env. Library still installed for per-project ./mk
@@ -450,11 +446,6 @@ stage2() {
   section jeeves
   try bitbucketCloneAndLinkTask jeeves
   try obsidianSnippetsTask ~/projects/jeeves/.obsidian/snippets
-  each try task.Ln nix-wrapper <<'  END'
-    ~/projects/jeeves/bin/go
-    ~/projects/jeeves/bin/node
-    ~/projects/jeeves/bin/npx
-  END
   desc  'set git hooksPath to .githooks (UC-14 binary-rejection pre-commit)'
   ok    "[[ $(git -C ~/projects/jeeves config core.hooksPath) == .githooks ]]"
   cmd   "git -C ~/projects/jeeves config core.hooksPath .githooks"
@@ -481,17 +472,10 @@ stage2() {
   section blog
   try githubCloneAndLinkTask binaryphile.github.io
   try obsidianSnippetsTask ~/projects/binaryphile.github.io/.obsidian/snippets
-  each try task.Ln nix-wrapper <<'  END'
-    ~/projects/binaryphile.github.io/bin/ruby
-    ~/projects/binaryphile.github.io/bin/bundler
-    ~/projects/binaryphile.github.io/bin/node
-    ~/projects/binaryphile.github.io/bin/npx
-  END
 
   section tandem-protocol
   try codebergCloneAndLinkTask tandem-protocol
   try obsidianSnippetsTask ~/projects/tandem-protocol/.obsidian/snippets
-  try task.Ln nix-wrapper ~/projects/tandem-protocol/bin/go
   desc   'remove stale /g command (renamed to /grade)'
   ok     '[[ ! -e ~/.claude/commands/g.md ]]'
   cmd    'rm -f ~/.claude/commands/g.md'
@@ -565,23 +549,9 @@ stage2() {
 
   section agent-orchestration
   try githubCloneAndLinkTask agent-orchestration
-  # nix-wrapper symlinks: every invocation of `node`, `npx`, or `claude`
-  # from within the project transparently runs inside `nix develop`, which
-  # picks up the nodejs_22 buildInput declared in flake.nix.
-  each try task.Ln nix-wrapper <<'  END'
-    ~/projects/agent-orchestration/bin/claude
-    ~/projects/agent-orchestration/bin/node
-    ~/projects/agent-orchestration/bin/npx
-  END
 
   section icarus
   try githubCloneAndLinkTask icarus
-  # nix-wrapper symlinks: chrome-devtools-mcp invocations from this folder
-  # need `npx` on PATH; nix develop provides nodejs_22 via flake.nix.
-  each try task.Ln nix-wrapper <<'  END'
-    ~/projects/icarus/bin/node
-    ~/projects/icarus/bin/npx
-  END
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
