@@ -689,6 +689,56 @@ Global pre-commit hook that refuses to commit binary files anywhere Ted works, w
 
 **Origin**: the era project accumulated ~110 MB of historical Go-binary blobs (era-ort 142.6 MB, two ~15 MB era-hook revisions) before they were removed via `git filter-repo`. The guard prevents that class of accident from recurring. era's own `.gitignore` already lists each `bin/era-*` binary by name -- the global guard is the defense-in-depth layer for repos that don't yet have per-project hygiene.
 
+### update-env-audit (UC-15)
+
+Standalone bash script at `scripts/update-env-audit` (with `scripts/update-env-audit_test.bash`) that reports compliance state of update-env stage-1 convergence on the operator's home environment. Output is text by default (one line per finding) or JSON via `--json`. Exit 0 = all clean, exit 1 = any non-OK finding.
+
+**Drift class taxonomy** (the prefixes the renderer emits):
+
+| Status | Meaning |
+|---|---|
+| `OK` | Check passed; declared state matches actual state. |
+| `MISSING` | A declared artifact (symlink, marker, file) is absent. |
+| `BROKEN` | A symlink exists but its target does not (`-L` && `! -e`). The dangling-link class. |
+| `RESIDUAL` | A retired artifact (script, command, binary) is still present and should be removed. |
+| `DRIFT` | A symlink, config value, or pinned rev exists but disagrees with the declared target. |
+
+These statuses form a 5-class partition: every check function pushes findings of these exact prefixes; the renderer prepends the prefix in text mode and emits the field as `"status"` in JSON.
+
+**v1 check categories** (7):
+
+1. **Phase-1 symlinks presence**: `~/.bashrc`, `~/.profile`, `~/.bash_profile`, `~/.shellcheckrc`, `~/config`, `~/local`, `~/ssh`, `~/.netrc`, `~/dotfiles/context`. Predicate: `[[ -L $path ]]`. OK or MISSING.
+
+2. **Bin symlinks: broken-link detection**: every declared `~/.local/bin/*` symlink — flag any where `[[ -L $path && ! -e $path ]]`. Catches the dangling-link class that retired-script removals leave behind. (Original sync-shellcheckrc finding falls here.)
+
+3. **Bin symlinks: target equality**: every declared `~/.local/bin/*` symlink — `readlink $path` must equal the target update-env declares for that link. Catches the wrong-target-but-valid class. (Original scaffold finding falls here.)
+
+4. **Retired-binary absence**: known-dead paths that should NOT exist (`~/.local/bin/mk` since 2026-06-01, `~/.claude/commands/g.md`, ...). Predicate: `[[ ! -e $path ]]`. OK or RESIDUAL.
+
+5. **git `hooksPath` consistency**: managed repos that update-env wires to `.githooks` (`dotfiles`, `jeeves`, `finances`). `git -C <repo> config core.hooksPath` must equal `.githooks`. OK or DRIFT.
+
+6. **CLAUDE.md import markers**: `~/.claude/CLAUDE.md` must contain the era / tesht / tandem-protocol grep markers update-env appends in stage 2 (`@~/projects/era/docs/era.md`, `@~/projects/tesht/docs/tesht.md`, `@~/projects/tandem-protocol/README.md`). OK or MISSING per marker.
+
+7. **flake.lock canonical-rev pinning**: every `flake.lock` under `~/projects/*` and `~/dotfiles` — `jq -r '.nodes.nixpkgs.locked.rev'` must equal era's canonical (`~/projects/era/flake.lock`). Same predicate as the dotfiles pre-commit hook's `checkFlakeLockPin` gate. OK or DRIFT.
+
+**Source of truth for declared symlinks**: the bin-symlink target table (used by checks 2 and 3) is extracted from `update-env` itself at audit-run time — `grep`/`awk` over the `task.Ln <src> <dst>` lines yields the canonical (target, linkname) pairs. The audit never hand-duplicates the symlink declarations; if update-env adds or removes a `task.Ln` call, the audit picks it up on the next run without code changes. This avoids the maintenance trap where a hand-maintained table drifts from the actual stage-1 declarations.
+
+**JSON output schema** (one element per finding):
+
+```json
+{
+  "status":   "OK|MISSING|BROKEN|RESIDUAL|DRIFT",
+  "category": "phase1Symlinks|binSymlinksBroken|binSymlinksTargets|retiredBinaries|gitHooksPath|claudeMdMarkers|flakeLockCanonical",
+  "detail":   "<free-text path / mismatch / context>"
+}
+```
+
+The top-level shape is a flat array. No envelope. Clients filter via `jq '.[] | select(.status != "OK")'` for drift-only.
+
+**Deferred (v2 follow-up)**: per-project shellcheckrc, MCP registration, slash-commands globs, memory redirects, agent.toml presence, per-project nix-wrapper symlinks, systemd services, op-run/checksums, project-clones-present (23 directories). Filed as follow-up task at #18166 closeout.
+
+**Test strategy**: `update-env-audit_test.bash` uses `tesht` with `tesht.MktempDir` for synthetic filesystem fixtures. Khorikov classical-school posture: controller-integration on the public check functions; real filesystem (no internal mocks); per-category positive (all-OK) + negative (one-drift) cases plus end-to-end main rc tests. See use-cases.md UC-15.
+
 ### Calendar (UC-1)
 
 Work calendar synced from OWA via published ICS URL. Three components:
