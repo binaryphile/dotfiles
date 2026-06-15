@@ -201,7 +201,6 @@ stage1() {
     .config         ~/config
     .local          ~/local
     .ssh            ~/ssh
-    secrets/netrc   ~/.netrc
   END
   desc  'create ~/scratch directory'
   ok    "[[ -d ~/scratch ]]"
@@ -216,6 +215,22 @@ stage1() {
   if hasGroup "$groupList" hostname; then
     crostiniHostnameSetup
     task.Ln $CrostiniDir/secrets ~/secrets
+    # ~/.netrc -> secrets/netrc depends on $CrostiniDir/secrets being seeded
+    # via restoreSecrets (crostini path only); non-crostini hosts skip both
+    # the parent secrets link and this child to avoid dangling links
+    # (tasks.jeeves #18188).
+    task.Ln secrets/netrc ~/.netrc
+  fi
+
+  # One-time cleanup: ~/.netrc symlink was historically created in the system
+  # block (pre-#18188), leaving a dangling link on non-crostini hosts where
+  # ~/secrets/netrc was never seeded. Remove on hosts that no longer match
+  # the hostname group. SUNSET: drop this block after 2026-09-15 (3 months
+  # post-cycle; active hosts will have run stage-1 by then).
+  if ! hasGroup "$groupList" hostname; then
+    desc  'remove stale ~/.netrc symlink (left behind by pre-#18188 stage-1)'
+    ok    '[[ ! -L ~/.netrc ]]'
+    cmd   'rm -f ~/.netrc'
   fi
 
   #  +-------------------------------------------------------------+
