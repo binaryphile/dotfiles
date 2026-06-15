@@ -289,11 +289,17 @@ stage1() {
     try runSigningKeyPreflight
   fi
 
-  each task.Ln <<'  END'
-    ~/dotfiles/update-env               ~/.local/bin/update-env
-    ~/dotfiles/scripts/scaffold         ~/.local/bin/scaffold
-    ~/dotfiles/scripts/sync-shellcheckrc ~/.local/bin/sync-shellcheckrc
-  END
+  try task.Ln ~/dotfiles/update-env ~/.local/bin/update-env
+
+  # One-time cleanup: sync-shellcheckrc script was retired in commit 727b09c
+  # (2026-06-01); update-env's prior stage-1 task.Ln created the symlink on
+  # hosts that ran update-env before the retirement, and existence-only
+  # idempotence never repaired the dangling link. Predicate-gated removal
+  # converges all hosts on the next post-cycle run (tasks.jeeves #18178).
+  desc  'remove stale ~/.local/bin/sync-shellcheckrc (script retired 2026-06-01)'
+  ok    '[[ ! -e ~/.local/bin/sync-shellcheckrc && ! -L ~/.local/bin/sync-shellcheckrc ]]'
+  cmd   'rm -f ~/.local/bin/sync-shellcheckrc'
+
   claudeBaseCopyTask
 }
 
@@ -621,6 +627,10 @@ stage2() {
 
   section share
   try stashCloneAndLinkTask share share ~tlilley
+  # share's scaffold/scaffold is the CLI scaffold the operator uses; it ships
+  # in the share repo (work-account, VPN-required). Personal hosts without
+  # share access do not get the symlink (try absorbs the failure path).
+  try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
 
   section flake-locks
   try flakeLockPinTask
@@ -1241,7 +1251,8 @@ claudeMemoryRedirectsTask() {
 }
 
 # Deploy shared .shellcheckrc to a neutral config path and symlink work project
-# roots to it. Personal repos get committed copies via sync-shellcheckrc.
+# roots to it. Personal repos use the global ~/.shellcheckrc (deployed via
+# home-manager) — sync-shellcheckrc retired 2026-06-01 (commit 727b09c).
 shellcheckrcTask() {
   local src=${shellcheckrc_src:-$HOME/dotfiles/.shellcheckrc}
   local neutral=${shellcheckrc_neutral:-$HOME/.config/shellcheck/shellcheckrc}
