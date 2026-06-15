@@ -1,0 +1,326 @@
+#!/usr/bin/env bash
+# update-env-audit -- compliance audit for update-env stage-1 convergence.
+#
+# Reports findings of class OK / MISSING / BROKEN / RESIDUAL / DRIFT across
+# 7 check categories (see docs/update-env-audit.md). Exit 0 if all OK,
+# exit 1 if any non-OK finding. Use --json for machine-readable output.
+#
+# Naming Policy:
+#
+# Standalone script -- function names use camelCase (one-off tool, not the
+# task.bash / mk.bash framework convention).
+# Local variable names begin with lowercase (e.g., localVariable).
+# Global names begin with uppercase (e.g., GlobalVariable).
+# Findings accumulator entries use literal '|' as field separator.
+
+# Test guard -- sourcing the script for tests skips main.
+[[ ${__UPDATE_ENV_AUDIT_TESTING:-} ]] && return 2>/dev/null
+
+set -euo pipefail
+IFS=$'\n'
+
+Prog=$(basename "$0")
+Version=0.1
+
+# Configuration knobs (env-overridable for tests).
+UpdateEnvFile=${UPDATE_ENV_AUDIT_SOURCE:-$HOME/dotfiles/update-env}
+DotfilesDir=${UPDATE_ENV_AUDIT_DOTFILES:-$HOME/dotfiles}
+ProjectsDir=${UPDATE_ENV_AUDIT_PROJECTS:-$HOME/projects}
+ClaudeMdFile=${UPDATE_ENV_AUDIT_CLAUDE_MD:-$HOME/.claude/CLAUDE.md}
+EraCanonicalFlakeLock=${UPDATE_ENV_AUDIT_ERA_FLAKE_LOCK:-$HOME/projects/era/flake.lock}
+
+# shellcheck disable=SC2034
+read -rd '' Usage_ <<END || true
+Usage:
+
+  $Prog [OPTIONS]
+
+  Audit update-env stage-1 convergence. Reports OK / MISSING / BROKEN /
+  RESIDUAL / DRIFT findings across 7 check categories. Exit 0 if every
+  finding is OK, exit 1 if any non-OK finding exists.
+
+  Options:
+
+    --json          machine-readable JSON output (default: text)
+    -h | --help     show this message and exit
+    -v | --version  show the program version and exit
+    -x | --trace    enable debug tracing
+END
+
+# Findings accumulator -- one entry per finding: "STATUS|category|detail".
+Findings=()
+
+addFinding() {
+  Findings+=("$1|$2|$3")
+}
+
+# each <fn> -- read stdin one line at a time, call <fn> with the line as arg.
+# Skips empty lines. Inline helper to avoid sourcing fp.bash.
+each() {
+  local fn=$1 line
+  while IFS= read -r line; do
+    [[ -z $line ]] && continue
+    "$fn" "$line"
+  done
+}
+
+# expandTilde -- expand leading ~ to $HOME for path-equality comparisons.
+# Does not handle ~user form.
+expandTilde() {
+  printf '%s' "${1/#\~/$HOME}"
+}
+
+# parseTaskLnDeclarations -- emit (source|linkname) pairs from update-env's
+# task.Ln declarations. Handles two forms:
+#   1. Plain:      [try ]task.Ln <src> <link>
+#   2. Heredoc:    each task.Ln <<'END' / <src> <link> / END
+# Skips pairs containing $ (unresolvable without runtime expansion).
+parseTaskLnDeclarations() {
+  local file=$1
+  local inHeredoc=0 line src link
+  while IFS= read -r line; do
+    if (( inHeredoc )); then
+      if [[ $line =~ ^[[:space:]]*END[[:space:]]*$ ]]; then
+        inHeredoc=0
+        continue
+      fi
+      # Heredoc body: split on whitespace, src first, link second.
+      IFS=$' \t' read -r src link _ <<<"$line"
+      [[ -z ${src:-} || -z ${link:-} ]] && continue
+      [[ $src == *'$'* || $link == *'$'* ]] && continue
+      printf '%s|%s\n' "$src" "$link"
+      continue
+    fi
+
+    if [[ $line =~ each[[:space:]]+task\.Ln[[:space:]]*\<\<\'?[[:space:]]*END ]]; then
+      inHeredoc=1
+      continue
+    fi
+
+    if [[ $line =~ ^[[:space:]]*(try[[:space:]]+)?task\.Ln[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+) ]]; then
+      src=${BASH_REMATCH[2]}
+      link=${BASH_REMATCH[3]}
+      [[ $src == *'$'* || $link == *'$'* ]] && continue
+      printf '%s|%s\n' "$src" "$link"
+    fi
+  done < "$file"
+}
+
+# CATEGORY 1: Phase-1 symlinks presence.
+checkPhase1Symlinks() {
+  phase1Check() {
+    if [[ -L $1 ]]; then
+      addFinding OK phase1Symlinks "$1"
+    else
+      addFinding MISSING phase1Symlinks "$1"
+    fi
+  }
+  each phase1Check <<END
+$HOME/.bashrc
+$HOME/.profile
+$HOME/.bash_profile
+$HOME/.shellcheckrc
+$HOME/config
+$HOME/local
+$HOME/ssh
+$HOME/.netrc
+$DotfilesDir/context
+END
+}
+
+# CATEGORY 2: Bin symlinks -- broken-link detection.
+checkBinSymlinksBroken() {
+  local src link
+  while IFS='|' read -r src link; do
+    link=$(expandTilde "$link")
+    [[ $link == "$HOME/.local/bin/"* ]] || continue
+    if [[ -L $link && ! -e $link ]]; then
+      addFinding BROKEN binSymlinksBroken "$link -> $(readlink "$link") (target missing)"
+    elif [[ -L $link ]]; then
+      addFinding OK binSymlinksBroken "$link"
+    fi
+    # Absent links are silently skipped here -- that's category 1's domain.
+  done < <(parseTaskLnDeclarations "$UpdateEnvFile")
+}
+
+# CATEGORY 3: Bin symlinks -- target equality.
+checkBinSymlinksTargets() {
+  local src link expected actual
+  while IFS='|' read -r src link; do
+    link=$(expandTilde "$link")
+    [[ $link == "$HOME/.local/bin/"* ]] || continue
+    [[ -L $link ]] || continue
+    expected=$(expandTilde "$src")
+    actual=$(readlink "$link")
+    if [[ $actual == "$expected" ]]; then
+      addFinding OK binSymlinksTargets "$link"
+    else
+      addFinding DRIFT binSymlinksTargets "$link: expected $expected, got $actual"
+    fi
+  done < <(parseTaskLnDeclarations "$UpdateEnvFile")
+}
+
+# CATEGORY 4: Retired-binary absence.
+checkRetiredBinaries() {
+  retiredCheck() {
+    if [[ -e $1 ]]; then
+      addFinding RESIDUAL retiredBinaries "$1"
+    else
+      addFinding OK retiredBinaries "$1"
+    fi
+  }
+  each retiredCheck <<END
+$HOME/.local/bin/mk
+$HOME/.claude/commands/g.md
+END
+}
+
+# CATEGORY 5: git hooksPath consistency on managed repos.
+checkGitHooksPath() {
+  hooksPathCheck() {
+    local path
+    if [[ ! -d $1/.git ]]; then
+      addFinding MISSING gitHooksPath "$1 (not a git repo)"
+      return
+    fi
+    path=$(git -C "$1" config core.hooksPath 2>/dev/null || true)
+    if [[ $path == .githooks ]]; then
+      addFinding OK gitHooksPath "$1"
+    else
+      addFinding DRIFT gitHooksPath "$1: expected .githooks, got ${path:-(unset)}"
+    fi
+  }
+  each hooksPathCheck <<END
+$DotfilesDir
+$ProjectsDir/jeeves
+$ProjectsDir/finances
+END
+}
+
+# CATEGORY 6: CLAUDE.md import markers.
+checkClaudeMdMarkers() {
+  if [[ ! -r $ClaudeMdFile ]]; then
+    addFinding MISSING claudeMdMarkers "$ClaudeMdFile (not readable)"
+    return
+  fi
+  markerCheck() {
+    if grep -qF -- "$1" "$ClaudeMdFile"; then
+      addFinding OK claudeMdMarkers "$1"
+    else
+      addFinding MISSING claudeMdMarkers "$1"
+    fi
+  }
+  each markerCheck <<'END'
+@~/projects/era/docs/era.md
+@~/projects/tesht/docs/tesht.md
+@~/projects/tandem-protocol/README.md
+END
+}
+
+# CATEGORY 7: flake.lock nixpkgs canonical-rev pinning.
+checkFlakeLockCanonical() {
+  if [[ ! -r $EraCanonicalFlakeLock ]]; then
+    addFinding MISSING flakeLockCanonical "$EraCanonicalFlakeLock (canonical not readable)"
+    return
+  fi
+  local canonical
+  canonical=$(jq -r '.nodes.nixpkgs.locked.rev // empty' "$EraCanonicalFlakeLock" 2>/dev/null || true)
+  if [[ -z $canonical ]]; then
+    addFinding MISSING flakeLockCanonical "$EraCanonicalFlakeLock (no nixpkgs.locked.rev)"
+    return
+  fi
+  local lockfile rev
+  while IFS= read -r lockfile; do
+    # Skip the canonical itself to avoid OK-against-self noise.
+    [[ $lockfile == "$EraCanonicalFlakeLock" ]] && continue
+    rev=$(jq -r '.nodes.nixpkgs.locked.rev // empty' "$lockfile" 2>/dev/null || true)
+    [[ -z $rev ]] && continue   # flake without a nixpkgs pin is not a drift case
+    if [[ $rev == "$canonical" ]]; then
+      addFinding OK flakeLockCanonical "$lockfile"
+    else
+      addFinding DRIFT flakeLockCanonical "$lockfile: expected ${canonical:0:12}, got ${rev:0:12}"
+    fi
+  done < <(find -L "$ProjectsDir" "$DotfilesDir" -maxdepth 3 -type f -name flake.lock 2>/dev/null)
+}
+
+# renderText -- one line per finding.
+renderText() {
+  renderTextLine() {
+    local status category detail
+    IFS='|' read -r status category detail <<<"$1"
+    printf '[%s] %s: %s\n' "$status" "$category" "$detail"
+  }
+  (( ${#Findings[@]} == 0 )) && return
+  each renderTextLine < <(printf '%s\n' "${Findings[@]}")
+}
+
+# renderJson -- flat JSON array of {status, category, detail} objects.
+renderJson() {
+  if (( ${#Findings[@]} == 0 )); then
+    printf '[]\n'
+    return
+  fi
+  local entry status category detail
+  local jqArgs=(-n -c)
+  local jqFilter='[' first=1
+  local -i idx=0
+  for entry in "${Findings[@]}"; do
+    IFS='|' read -r status category detail <<<"$entry"
+    if (( first )); then
+      first=0
+    else
+      jqFilter+=','
+    fi
+    jqFilter+="{\"status\":\$s$idx,\"category\":\$c$idx,\"detail\":\$d$idx}"
+    jqArgs+=(--arg "s$idx" "$status" --arg "c$idx" "$category" --arg "d$idx" "$detail")
+    idx+=1
+  done
+  jqFilter+=']'
+  jq "${jqArgs[@]}" "$jqFilter"
+}
+
+# allOk -- rc 0 if every finding is OK; rc 1 otherwise.
+allOk() {
+  local entry status
+  for entry in "${Findings[@]+${Findings[@]}}"; do
+    IFS='|' read -r status _ _ <<<"$entry"
+    [[ $status != OK ]] && return 1
+  done
+  return 0
+}
+
+main() {
+  local outputJson=0
+  while [[ ${1:-} == -?* ]]; do
+    case $1 in
+      --json )         outputJson=1; shift ;;
+      -h | --help )    printf '%s\n' "$Usage_"; exit 0 ;;
+      -v | --version ) printf '%s version %s\n' "$Prog" "$Version"; exit 0 ;;
+      -x | --trace )   set -x; shift ;;
+      -- )             shift; break ;;
+      * )              printf '%s\n\n%s\n' "$Usage_" "unknown option: $1" >&2; exit 2 ;;
+    esac
+  done
+
+  checkPhase1Symlinks
+  checkBinSymlinksBroken
+  checkBinSymlinksTargets
+  checkRetiredBinaries
+  checkGitHooksPath
+  checkClaudeMdMarkers
+  checkFlakeLockCanonical
+
+  if (( outputJson )); then
+    renderJson
+  else
+    renderText
+  fi
+
+  if allOk; then
+    exit 0
+  else
+    exit 1
+  fi
+}
+
+main "$@"
