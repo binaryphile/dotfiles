@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# Safe-expansion discipline (file-top per shellcheck-convention-plugin SC9010).
+# Strict mode (`set -eufo pipefail`) is deferred to main() — bash style guide
+# §1 "defer strict mode until after option parsing" — but IFS+noglob can be
+# set at file top without affecting option parsing (which uses ${1:-} idioms).
+IFS=$'\n'
+set -o noglob
+
 # update-env -- create and maintain my work environment
 
 # Naming Policy:
