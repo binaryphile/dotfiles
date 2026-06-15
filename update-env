@@ -978,8 +978,7 @@ bitbucketCloneAndLinkTask() {
 
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
-  task.GitClone https://codeberg.org/binaryphile/$repo ~/projects/$repo $branch
-  try git -C ~/projects/$repo remote set-url origin "git@codeberg.org:binaryphile/$repo.git"
+  task.GitClone git@codeberg.org:binaryphile/$repo.git ~/projects/$repo $branch
   try gitUpdate ~/projects/$repo
 }
 
