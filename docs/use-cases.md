@@ -606,6 +606,34 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 
 ---
 
+### UC-15: Audit update-env Stage-1 Convergence
+
+- **Primary Actor:** Ted (operator)
+- **Secondary Actors:** `update-env-audit` script, filesystem, git, jq
+- **Goal:** Mechanically verify that update-env stage-1 has converged the operator's home environment to its declared state, without relying on ad-hoc manual inspection
+- **Scope:** Dotfiles environment (Ted's home; managed bin symlinks, git config, CLAUDE.md imports, flake.lock pins)
+- **Level:** User goal (supports UC-4 by exposing UC-4's convergence as inspectable state)
+- **Trigger:** Ted suspects drift (broken symlink observed, env behavior inconsistent across machines) or wants a periodic compliance check
+- **Preconditions:** UC-4 completed (stage 1 has run at least once); `~/dotfiles/scripts/update-env-audit` on PATH or invocable by full path
+- **Stakeholders:**
+  - Ted -- needs to distinguish "stage-1 ran but didn't converge" from "stage-1 hasn't run recently"; needs the report to be machine-readable for downstream automation
+  - Future cycles -- need a deterministic baseline for "is my environment broken?" without manual re-audit
+- **Main Success Scenario:**
+  1. Ted runs `update-env-audit` (text) or `update-env-audit --json` (machine)
+  2. The script runs each of the v1 check categories (Phase-1 symlinks present, bin symlinks not dangling, bin symlinks pointing where update-env declares, retired binaries absent, git `hooksPath` consistent on managed repos, CLAUDE.md import markers present, flake.lock nixpkgs revs aligned with era canonical)
+  3. Each check pushes findings of class OK / MISSING / BROKEN / RESIDUAL / DRIFT into an accumulator
+  4. The accumulator is rendered as one line per finding (text mode) or as a JSON array of `{status, category, detail}` objects (`--json` mode)
+  5. The script exits 0 if every finding is OK, 1 if any non-OK finding exists
+- **Extensions:**
+  - 2a. *update-env adds a new symlink not yet in v1 check list*: audit silently misses it; remediation is filing the v2 follow-up (deferred categories) or adding to the v1 source-of-truth parse if the new symlink falls into a v1 category
+  - 4a. *Operator wants only one category*: deferred to a future flag (`--category <name>`); v1 runs all categories
+  - 5a. *Operator wants the audit to fix drift, not just report it*: deferred via `--fix` flag (out of scope per #18166 task body)
+- **Minimal Guarantee:** When invoked with no arguments, prints a finding report to stdout and exits with rc=0 or rc=1 reflecting overall compliance; never silently exits 0 on detected drift
+- **Success Guarantee:** Operator distinguishes converged-and-clean from drifted-with-detail without manual re-audit; the drift detail is precise enough to drive remediation (path, expected vs actual, etc.)
+- **Technology:** `~/dotfiles/scripts/update-env-audit` (bash; standalone, no mk.bash framework). Tested via `~/dotfiles/scripts/update-env-audit_test.bash` (tesht; controller-integration with real-filesystem fixtures via `tesht.MktempDir`). See [design.md: update-env-audit](design.md#update-env-audit-uc-15).
+
+---
+
 ## Status
 
 | Use Case | Status | Notes |
@@ -629,3 +657,4 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2 |
 | UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |
 | UC-14 Guard Against Accidental Binary Commits | Working | Global pre-commit hook + binary-extension gitignore active (deployed via home-manager); no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |
+| UC-15 Audit update-env Stage-1 Convergence | v1 implemented (7 check categories) | `~/dotfiles/scripts/update-env-audit` — text + `--json` output; `OK/MISSING/BROKEN/RESIDUAL/DRIFT` taxonomy; tesht coverage via real-filesystem fixtures; v2 deferred (per-project shellcheckrc, MCP, slash commands, memory redirects, agent.toml, nix-wrapper, systemd services, op-run/checksums, project-clones-present) |
