@@ -22,12 +22,8 @@ let
   };
 in
 {
-  imports = [ ../linux-base.nix ../claude.nix ../pangp.nix ];
-
-  # NixOS desktop: gpd.service is enabled from system-level
-  # configuration.nix via `systemd.packages = [ pkgs.pangp ]`.
-  # Leave the home-manager activation hook disabled here.
-  services.pangp.enableSystemDaemonOnDebian = false;
+  imports = [ ../linux-base.nix ../claude.nix ]
+    ++ lib.optionals (pangp != null) [ ../pangp.nix ];
 
   home.username = lib.mkDefault "ted";
   home.homeDirectory = lib.mkDefault "/home/ted";
