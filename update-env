@@ -33,9 +33,13 @@ set -o noglob
 #   - *List suffix: groupList, hostList. Multi-value marker (implies IFS;
 #     covers condition (a)).
 # Unmarked variables MUST be guaranteed non-empty AND IFS-free at every use
-# site so they are safe to expand unquoted. Prefer initialization (local
-# i=0, local s='') over the _ suffix where the empty case can be eliminated
-# by construction; the suffix is for cases where emptiness is load-bearing.
+# site so they are safe to expand unquoted. Prefer non-empty initialization
+# (local i=0) over the _ suffix where the empty case can be eliminated by
+# construction. Empty-string initialization (local s='') does NOT defeat the
+# empty case — s still needs the suffix. Initialization defeats the empty
+# case only when the initial value is non-empty AND every assignment path
+# preserves non-emptiness; the suffix is for cases where emptiness is
+# load-bearing.
 #
 # Variable declarations that are name references borrow the environment namespace, e.g.
 # "local -n ARRAY=$1".
@@ -97,7 +101,7 @@ main() {
 
   if [[ ! -d ~/dotfiles/contexts/$Platform ]]; then
     local groupList
-    groupList=$(platformTaskGroups "$Platform")
+    groupList=$(platformTaskGroups $Platform)
     if hasGroup "$groupList" hm; then
       echo "fatal: detected platform '$Platform' but contexts/$Platform does not exist" >&2
       echo "Check detectPlatform or create the context directory." >&2
@@ -111,8 +115,8 @@ main() {
 
   case $Stage in
     1|2|all )
-      if hasGroup "$(platformTaskGroups "$Platform")" hm; then
-        preflightCheckCommands "${IsStrictPreflight:-0}"
+      if hasGroup "$(platformTaskGroups $Platform)" hm; then
+        preflightCheckCommands ${IsStrictPreflight:-0}
       fi
       ;;
   esac
@@ -145,7 +149,7 @@ platformTaskGroups() {
   case $platform in crostini|debian|desktop|macos ) groups+=(nix);; esac
   case $platform in crostini|debian|macos ) groups+=(hm);; esac
   case $platform in crostini )          groups+=(credential);; esac
-  echo "${groups[*]}"
+  echo ${groups[*]}
 }
 
 # hasGroup tests whether a newline-separated group list contains a group name.
@@ -189,7 +193,7 @@ preflightCheckCommands() {
   local strict=${1:-0}
   local cmd missing=()
   for cmd in systemctl sudo; do
-    command -v "$cmd" &>/dev/null || missing+=("$cmd")
+    command -v $cmd &>/dev/null || missing+=("$cmd")
   done
   (( ${#missing[@]} == 0 )) && return 0
 
@@ -224,7 +228,7 @@ stage1() {
   ok    "[[ -d ~/scratch ]]"
   cmd   "mkdir -p ~/scratch"
   local groupList
-  groupList=$(platformTaskGroups "$Platform")
+  groupList=$(platformTaskGroups $Platform)
 
   if hasGroup "$groupList" apt; then
     aptUpgradeTask
@@ -407,7 +411,7 @@ stage2() {
   # Re-run home-manager to converge (idempotent -- no-op if stage 1
   # already applied the same config).
   local groupList
-  groupList=$(platformTaskGroups "$Platform")
+  groupList=$(platformTaskGroups $Platform)
   if hasGroup "$groupList" hm; then
     section home-manager
     homeManagerFlakeSwitchTask $Platform
@@ -754,8 +758,8 @@ aptInstallGpocTask() {
     local url="https://github.com/yuezk/GlobalProtect-openconnect/releases/download/v${version}/${deb}"
     local tmp
     tmp=$(mktemp -d) || { echo "failed to create temp directory" >&2; return 1; }
-    $curl -fsSL "$url" -o "$tmp/$deb" || { rm -rf "$tmp"; echo "failed to download gpoc" >&2; return 1; }
-    verifySha256 "$sha256" "$tmp/$deb" || {
+    $curl -fsSL $url -o "$tmp/$deb" || { rm -rf "$tmp"; echo "failed to download gpoc" >&2; return 1; }
+    verifySha256 $sha256 "$tmp/$deb" || {
       rm -rf "$tmp"
       echo "gpoc hash mismatch -- possible tampering" >&2
       return 1
@@ -855,8 +859,8 @@ extractGlobalprotectDebToOptTask() {
   fi
 
   local pangpSource pangpDest
-  pangpSource=$(< "$srcMarker")
-  pangpDest=$(< "$destMarker")
+  pangpSource=$(< $srcMarker)
+  pangpDest=$(< $destMarker)
 
   # Defensive: markers may exist but be empty (interrupted home-manager
   # activation) or point at a path that no longer exists (nix-store GC
@@ -932,11 +936,11 @@ installPangpSystemDesktopTask() {
 
   installPangpDesktop() {
     if [[ -f "$gpguiSys" ]]; then
-      sudo mv "$gpguiSys" "$gpguiSys.disabled"
+      sudo mv $gpguiSys "$gpguiSys.disabled"
     fi
     [[ -f "$gpDesktopUser" ]] || { echo "$gpDesktopUser missing; ensure pangp home-manager module has applied" >&2; return 1; }
-    sudo cp "$gpDesktopUser" "$gpDesktopSys"
-    sudo update-desktop-database "$sysApps"
+    sudo cp $gpDesktopUser $gpDesktopSys
+    sudo update-desktop-database $sysApps
   }
   cmd installPangpDesktop
 }
@@ -970,7 +974,7 @@ bitbucketCloneAndLinkTask() {
 codebergCloneAndLinkTask() {
   local repo=$1 branch=${2:-main}
   task.GitClone https://codeberg.org/binaryphile/$repo ~/projects/$repo $branch
-  try git -C ~/projects/"$repo" remote set-url origin "git@codeberg.org:binaryphile/$repo.git"
+  try git -C ~/projects/$repo remote set-url origin "git@codeberg.org:binaryphile/$repo.git"
   try gitUpdate ~/projects/$repo
 }
 
@@ -1163,7 +1167,7 @@ claudeBaseCopyTask() {
   claudeBaseUpToDate() {
     [[ -f $dst ]] && ! [[ -L $dst ]] || return 1
     [[ -f $hashFile ]] || return 1
-    [[ "$($sha256sum "$src" | cut -d' ' -f1)" == "$(< "$hashFile")" ]]
+    [[ "$($sha256sum $src | cut -d' ' -f1)" == "$(< $hashFile)" ]]
   }
   ok claudeBaseUpToDate
 
@@ -1171,7 +1175,7 @@ claudeBaseCopyTask() {
     mkdir -p $(dirname $dst)
     local tmp
     tmp=$(mktemp) && cp $src "$tmp" && mv -f "$tmp" $dst
-    $sha256sum "$src" | cut -d' ' -f1 >"$hashFile"
+    $sha256sum $src | cut -d' ' -f1 >$hashFile
   }
   cmd claudeBaseCopy
 }
@@ -1186,13 +1190,13 @@ claudeEraConfigTask() {
   check "[[ -f $era ]] && [[ -f $base ]]"
 
   claudeEraUpToDate() {
-    [[ -f $base ]] && grep -qF 'Do not use the Claude Code auto-memory system' "$base"
+    [[ -f $base ]] && grep -qF 'Do not use the Claude Code auto-memory system' $base
   }
   ok claudeEraUpToDate
 
   claudeEraAppend() {
-    printf '\n' >>"$base"
-    cat "$era" >>"$base"
+    printf '\n' >>$base
+    cat $era >>$base
   }
   cmd claudeEraAppend
 }
@@ -1208,12 +1212,12 @@ claudeTeshtConfigTask() {
   check "[[ -f $src ]] && [[ -f $base ]]"
 
   claudeTeshtUpToDate() {
-    [[ -f $base ]] && grep -qF '@~/projects/tesht/docs/tesht.md' "$base"
+    [[ -f $base ]] && grep -qF '@~/projects/tesht/docs/tesht.md' $base
   }
   ok claudeTeshtUpToDate
 
   claudeTeshtAppend() {
-    printf '\n# tesht\n@~/projects/tesht/docs/tesht.md\n' >>"$base"
+    printf '\n# tesht\n@~/projects/tesht/docs/tesht.md\n' >>$base
   }
   cmd claudeTeshtAppend
 }
@@ -1227,12 +1231,12 @@ claudeTandemConfigTask() {
   check "[[ -f $src ]] && [[ -f $base ]]"
 
   claudeTandemUpToDate() {
-    [[ -f $base ]] && grep -qF '@~/projects/tandem-protocol/README.md' "$base"
+    [[ -f $base ]] && grep -qF '@~/projects/tandem-protocol/README.md' $base
   }
   ok claudeTandemUpToDate
 
   claudeTandemAppend() {
-    printf '\n# Tandem Protocol\n@~/projects/tandem-protocol/README.md\n' >>"$base"
+    printf '\n# Tandem Protocol\n@~/projects/tandem-protocol/README.md\n' >>$base
   }
   cmd claudeTandemAppend
 }
@@ -1272,7 +1276,7 @@ claudeMemoryRedirectsTask() {
     for dir in $(memoryProjectDirs); do
       encoded=${dir//\//-}
       f=$memBase/$encoded/memory/MEMORY.md
-      [[ -f $f ]] && diff -q "$f" "$redirectSrc" >/dev/null 2>&1 || return 1
+      [[ -f $f ]] && diff -q "$f" $redirectSrc >/dev/null 2>&1 || return 1
     done
   }
   ok claudeRedirectsUpToDate
@@ -1281,8 +1285,8 @@ claudeMemoryRedirectsTask() {
     installRedirect() {
       local dir=$1 encoded=${1//\//-}
       local memDir=$memBase/$encoded/memory
-      mkdir -p "$memDir"
-      cp "$redirectSrc" "$memDir/MEMORY.md"
+      mkdir -p $memDir
+      cp $redirectSrc "$memDir/MEMORY.md"
     }
     memoryProjectDirs | each installRedirect
   }
@@ -1345,7 +1349,7 @@ flakeLockPinTask() {
     local canonical=~/projects/era/flake.lock
     [[ -f $canonical ]] || return 1
     local canonicalRev
-    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$canonical")
+    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' $canonical)
     [[ -n $canonicalRev && $canonicalRev != null ]] || return 1
     local f rev
     while IFS= read -r f; do
@@ -1367,8 +1371,8 @@ flakeLockPinTask() {
     local canonical=~/projects/era/flake.lock
     [[ -f $canonical ]] || { echo "no canonical flake.lock at $canonical" >&2; return 1; }
     local canonicalNode canonicalRev
-    canonicalNode=$(jq '.nodes.nixpkgs.locked' "$canonical")
-    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' "$canonical")
+    canonicalNode=$(jq '.nodes.nixpkgs.locked' $canonical)
+    canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' $canonical)
     [[ -n $canonicalNode && $canonicalNode != null ]] || { echo "cannot extract nixpkgs locked node from canonical" >&2; return 1; }
     local f tmp
     while IFS= read -r f; do
@@ -1412,16 +1416,16 @@ stashCloneAndLinkTask() {
       local stash
       stash=$(mktemp -d "${dest}.XXXXXX")
       rmdir "$stash"
-      mv "$dest" "$stash"
-      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest" || {
-        rm -rf "$dest"
-        mv "$stash" "$dest"
+      mv $dest "$stash"
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10' git clone --branch $branch "git@stash.digi.com:$project/$repo.git" $dest || {
+        rm -rf $dest
+        mv "$stash" $dest
         return 1
       }
       cp -a "$stash/." "$dest/"
       rm -rf "$stash"
     else
-      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10' git clone --branch "$branch" "git@stash.digi.com:$project/$repo.git" "$dest"
+      GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10' git clone --branch $branch "git@stash.digi.com:$project/$repo.git" $dest
     fi
   }
   cmd stashClone
@@ -1457,7 +1461,7 @@ githubCloneAndLinkTask() {
 # Uses $sha256sum (injectable -- wraps shasum -a 256 on macOS).
 verifySha256() {
   local hash=$1 file=$2
-  printf '%s  %s\n' "$hash" "$file" | $sha256sum -c - >/dev/null 2>&1
+  printf '%s  %s\n' $hash $file | $sha256sum -c - >/dev/null 2>&1
 }
 
 # nix
@@ -1489,19 +1493,19 @@ nixInstallerAsset() {
 installNix() {
   local version=3.17.3
   local asset
-  asset=$(nixInstallerAsset "${uname_s:-$(uname -s)}" "${uname_m:-$(uname -m)}") || return 1
+  asset=$(nixInstallerAsset ${uname_s:-$(uname -s)} ${uname_m:-$(uname -m)}) || return 1
   local binary sha256
   binary=${asset%% *}
   sha256=${asset##* }
   local url="https://github.com/DeterminateSystems/nix-installer/releases/download/v${version}/${binary}"
   local tmp
   tmp=$(mktemp -d) || { echo "failed to create temp directory" >&2; return 1; }
-  $curl -fsSL "$url" -o "$tmp/$binary" || {
+  $curl -fsSL $url -o "$tmp/$binary" || {
     rm -rf "$tmp"
     echo "failed to download nix-installer" >&2
     return 1
   }
-  verifySha256 "$sha256" "$tmp/$binary" || {
+  verifySha256 $sha256 "$tmp/$binary" || {
     rm -rf "$tmp"
     echo "nix-installer hash mismatch -- possible tampering" >&2
     return 1
@@ -1545,11 +1549,11 @@ writeNixConfTask() {
   desc  'write declarative nix.conf'
   runas root
 
-  nixConfUpToDate() { [[ -f $path ]] && diff -q "$path" "$tmp" >/dev/null 2>&1; }
+  nixConfUpToDate() { [[ -f $path ]] && diff -q $path "$tmp" >/dev/null 2>&1; }
   ok nixConfUpToDate
 
   local cmd_
-  printf -v cmd_ 'install -m 644 -- %q %q' "$tmp" "$path"
+  printf -v cmd_ 'install -m 644 -- %q %q' "$tmp" $path
   cmd "$cmd_"
 }
 
@@ -1591,8 +1595,8 @@ curlTask() {
   exist  $filename
 
   curlfsSL() {
-    mkdir -p -- "$(dirname "$filename")"
-    $curl -fsSL -- "$url" >"$filename"
+    mkdir -p -- "$(dirname $filename)"
+    $curl -fsSL -- $url >$filename
   }
   cmd curlfsSL
 }
@@ -1614,7 +1618,7 @@ restoreSecrets() {
   local secretsDir="$HOME/secrets"
   local cacheDir="$CrostiniDir/secrets/$hostname"
 
-  mkdirp $secretsDir && chmod 700 "$secretsDir"
+  mkdirp $secretsDir && chmod 700 $secretsDir
 
   # Tier 1: local secrets exist
   if [[ -n $(lib.Glob $secretsDir/*) ]]; then
@@ -1627,9 +1631,9 @@ restoreSecrets() {
     local stageDir
     stageDir=$(mktemp -d "$secretsDir.stage.XXXXXX")
     chmod 700 "$stageDir"
-    if cp "$cacheDir"/* "$stageDir"/ 2>/dev/null; then
+    if cp $cacheDir/* "$stageDir"/ 2>/dev/null; then
       chmod 600 "$stageDir"/* 2>/dev/null
-      mv "$stageDir"/* "$secretsDir"/ 2>/dev/null
+      mv "$stageDir"/* $secretsDir/ 2>/dev/null
       rmdir "$stageDir" 2>/dev/null
       return 0
     fi
@@ -1780,7 +1784,7 @@ mkdirp() { mkdir -p "$(readlink -f "$1" 2>/dev/null || echo "$1")"; }
 crostiniHostnameSetup() {
   local backing=${CrostiniBacking:-/mnt/chromeos/MyFiles/Downloads}
   [[ -d $backing ]] || { echo fatal: ChromeOS shared storage not mounted at $backing >&2; echo "Enable file sharing in ChromeOS Settings > Linux" >&2; return 1; }
-  mkdir -p "$CrostiniDir"
+  mkdir -p $CrostiniDir
   if [[ -n $Hostname ]]; then
     lib.ValidateHostname $Hostname || return 1
     echo $Hostname >$CrostiniDir/hostname
@@ -1815,11 +1819,11 @@ resolveSourceDir() {
   local src=${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}
   local dir
   while [[ -L $src ]]; do
-    dir=$(cd -P -- "$(dirname -- "$src")" 2>/dev/null && pwd) || return 1
-    src=$(readlink -- "$src") || return 1
+    dir=$(cd -P -- "$(dirname -- $src)" 2>/dev/null && pwd) || return 1
+    src=$(readlink -- $src) || return 1
     [[ $src != /* ]] && src=$dir/$src
   done
-  cd -P -- "$(dirname -- "$src")" 2>/dev/null && pwd
+  cd -P -- "$(dirname -- $src)" 2>/dev/null && pwd
 }
 
 # Shared helpers -- sourced from lib.bash to avoid duplication.
@@ -1857,7 +1861,7 @@ loosely() {
 ownerAndGroup() {
   local path=$1
   [[ $OSTYPE == darwin* && $(type -p stat) == /usr/bin/stat ]] && local flag=f || local flag=c
-  echo "$(stat -$flag %u "$path"):$(stat -$flag %g "$path")"
+  echo "$(stat -$flag %u $path):$(stat -$flag %g $path)"
 }
 
 detectPlatform() {
@@ -1976,12 +1980,12 @@ if [[ -n ${TASK_BASH_LIB:-} ]]; then
   source $TASK_BASH_LIB || { echo "fatal: failed to source $TASK_BASH_LIB (rc=$?)" >&2; exit 1; }
 else
   TaskTmp=$(mktemp) || { echo "fatal: cannot create temp file" >&2; exit 1; }
-  $curl -fsSL "https://raw.githubusercontent.com/binaryphile/task.bash/$TaskBashBootstrapRev/task.bash" >"$TaskTmp" ||
-    { rm -f "$TaskTmp"; echo "fatal: task.bash bootstrap fetch failed" >&2; exit 1; }
-  verifySha256 "$TaskBashBootstrapSha256" "$TaskTmp" ||
-    { rm -f "$TaskTmp"; echo "fatal: task.bash hash mismatch -- possible tampering" >&2; exit 1; }
-  source "$TaskTmp" && Rc=$? || Rc=$?
-  rm -f "$TaskTmp"
+  $curl -fsSL "https://raw.githubusercontent.com/binaryphile/task.bash/$TaskBashBootstrapRev/task.bash" >$TaskTmp ||
+    { rm -f $TaskTmp; echo "fatal: task.bash bootstrap fetch failed" >&2; exit 1; }
+  verifySha256 $TaskBashBootstrapSha256 $TaskTmp ||
+    { rm -f $TaskTmp; echo "fatal: task.bash hash mismatch -- possible tampering" >&2; exit 1; }
+  source $TaskTmp && Rc=$? || Rc=$?
+  rm -f $TaskTmp
   unset -v TaskTmp
   (( Rc == 0 )) || { echo "fatal: failed to source bootstrap task.bash (rc=$Rc)" >&2; exit 1; }
   unset -v Rc
