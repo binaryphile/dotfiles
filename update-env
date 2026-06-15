@@ -296,6 +296,12 @@ stage1() {
   # hosts that ran update-env before the retirement, and existence-only
   # idempotence never repaired the dangling link. Predicate-gated removal
   # converges all hosts on the next post-cycle run (tasks.jeeves #18178).
+  #
+  # SUNSET: remove this block after 2026-09-15 (3 months post-cycle). By
+  # then every active host will have run stage-1 at least once, executed
+  # the cleanup, and the block becomes pure overhead. If a stale host
+  # surfaces after the sunset, restore the block or remove the dangling
+  # link manually.
   desc  'remove stale ~/.local/bin/sync-shellcheckrc (script retired 2026-06-01)'
   ok    '[[ ! -e ~/.local/bin/sync-shellcheckrc && ! -L ~/.local/bin/sync-shellcheckrc ]]'
   cmd   'rm -f ~/.local/bin/sync-shellcheckrc'
