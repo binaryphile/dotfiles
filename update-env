@@ -1065,12 +1065,14 @@ eraBuildTask() {
   }
   ok eraBinIsCurrent
 
-  # Build era-serve directly (no mk wrapper). CGO_ENABLED=0 mirrors
-  # bin/mk's cmd.build for era-serve — era-serve uses pure-Go WASM
-  # sqlite-vec (ncruces) so cgo is not needed; the static binary is
-  # cheaper to build + ship. go generate ./internal/hugot/ produces
-  # the model-loading scaffolding the build links against.
-  cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && CGO_ENABLED=0 go build -o bin/era-serve ./cmd/era-serve/"'
+  # Build via bin/mk into era's bin/. The ~/.local/bin/era-serve
+  # symlink target stays constant (~/projects/era/bin/era-serve); the
+  # file AT that path is replaced; subsequent lookups via PATH pick up
+  # the new binary automatically without symlink churn. bin/mk handles
+  # the CGO_ENABLED=0 pure-Go static-binary discipline + builds the
+  # adjacent binaries (era-package, era-soak-fit, era-embed-bench) the
+  # symlink stanza below also depends on.
+  cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && bin/mk build"'
 }
 
 eraMcpCleanupTask() {
@@ -1262,8 +1264,8 @@ claudeSettingsCopyTask() {
 
   claudeSettingsCopy() {
     mkdir -p $(dirname $dst)
-    local tmp
-    tmp=$(mktemp) && cp $src "$tmp" && mv -f "$tmp" $dst
+    local tmp_
+    tmp_=$(mktemp) && cp $src $tmp_ && mv -f $tmp_ $dst
     $sha256sum $src | cut -d' ' -f1 >$hashFile
   }
   cmd claudeSettingsCopy
