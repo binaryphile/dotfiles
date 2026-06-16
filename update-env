@@ -1027,9 +1027,41 @@ gitUpdate() {
 }
 
 eraBuildTask() {
-  desc  'build era binaries'
-  prog  on
-  exist ~/projects/era/bin/era-serve
+  desc 'build era binaries (rebuild if any era source file is newer than the binary)'
+  prog on
+
+  # Predicate: binary exists AND is at-or-newer-than the newest .go file
+  # in the source paths that contribute to era-serve. If the binary is
+  # absent or older than any contributing source, rebuild.
+  #
+  # Trade-off: filesystem-mtime check is coarser than Go's build cache
+  # (which checks content hash) but cheap + reliable across nix-shell
+  # entries. Go will internally no-op if its own cache says nothing
+  # changed, so re-invoking the build under stale mtime is safe + fast.
+  eraBinIsCurrent() {
+    local bin=~/projects/era/bin/era-serve
+    [[ -f $bin ]] || return 1
+    local binTime newest=0 path mt
+    binTime=$(stat -c %Y "$bin")
+    # Source paths whose changes can affect era-serve's behavior.
+    for path in \
+        ~/projects/era/cmd/era-serve \
+        ~/projects/era/internal \
+        ~/projects/era/era.go \
+        ~/projects/era/storepipeline; do
+      [[ -e $path ]] || continue
+      if [[ -d $path ]]; then
+        mt=$(find $path -name '*.go' -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+      else
+        mt=$(stat -c %Y "$path")
+      fi
+      mt=${mt%.*}
+      [[ -z $mt ]] && continue
+      (( mt > newest )) && newest=$mt
+    done
+    (( binTime >= newest ))
+  }
+  ok eraBinIsCurrent
 
   cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && ./mk build"'
 }
@@ -1088,9 +1120,31 @@ eraStateDirDropInTask() {
 }
 
 eraRestartTask() {
-  desc 'start era if not running'
-  ok   'systemctl --user is-active era &>/dev/null'
-  cmd  'systemctl --user restart era'
+  desc 'start era if not running, or restart if the binary is newer than the running service'
+
+  # Predicate is "current" = (a) NOT-active condition (service down) is
+  # already a "stale" signal that triggers cmd; OR (b) active AND
+  # service's ActiveEnterTimestamp is at-or-after the binary's mtime
+  # (so the running process IS the latest binary).
+  #
+  # The pair (eraBuildTask source-newer-than-binary, this task binary-
+  # newer-than-service) prevents the long-running-service-lags-main
+  # failure mode: a stale era.service that has been running for hours/
+  # days while update-env was re-run by a later session that built a
+  # newer binary but never restarted the service.
+  eraServiceIsCurrent() {
+    local bin=~/projects/era/bin/era-serve
+    [[ -f $bin ]] || return 0  # no binary → nothing this task can do
+    systemctl --user is-active era &>/dev/null || return 1  # not running → trigger
+    local binTime svcStartIso svcStartEpoch
+    binTime=$(stat -c %Y "$bin")
+    svcStartIso=$(systemctl --user show era -p ActiveEnterTimestamp --value 2>/dev/null)
+    [[ -z $svcStartIso ]] && return 1
+    svcStartEpoch=$(date -d "$svcStartIso" +%s 2>/dev/null) || return 1
+    (( svcStartEpoch >= binTime ))
+  }
+  ok eraServiceIsCurrent
+  cmd 'systemctl --user restart era'
 }
 
 chromeDevtoolsMcpRegisterTask() {
