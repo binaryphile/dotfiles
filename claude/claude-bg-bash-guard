@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# claude-bg-bash-guard — PreToolUse hook that blocks shell-hygiene footguns.
+#
+# Anchor: 2026-06-15 — operator surfaced "7 shells, hygiene game stinks"
+# after a session accumulated 7 orphaned background bash poll-loops. Memory-
+# only mitigation failed: the rule (per ~/.claude/CLAUDE.md "Avoid
+# unnecessary sleep commands") existed; the agent ignored it. Mechanical
+# enforcement at tool-call time forecloses the failure mode.
+#
+# REJECTS: `bash` tool calls with run_in_background=true whose command body
+# contains an unbounded poll loop:
+#   - `until <cond>; do sleep N; done`
+#   - `while <cond>; do sleep N; done`
+# These leak when <cond> never trues (e.g., waiting for a file that never
+# gets the expected content). Use Monitor with persistent=false + explicit
+# timeout_ms instead — Monitor enforces the bound; bg-bash does not.
+#
+# Reads PreToolUse JSON from stdin. Exit 2 = block + show stderr to agent.
+# Exit 0 = allow.
+
+IFS=$'\n'
+set -o noglob
+set -eufo pipefail
+
+input_=$(cat)
+tool_=$(jq -r '.tool_name // ""' <<<"$input_")
+
+[[ $tool_ == "Bash" ]] || { exit 0; }
+
+run_bg_=$(jq -r '.tool_input.run_in_background // false' <<<"$input_")
+[[ $run_bg_ == "true" ]] || { exit 0; }
+
+cmd_=$(jq -r '.tool_input.command // ""' <<<"$input_")
+
+# Poll-loop pattern: until/while ... do ... sleep ... done
+# Bash regex (no \s; use [[:space:]] under noglob).
+poll_re='(until|while)[[:space:]].*[[:space:]]do[[:space:]].*sleep[[:space:]]'
+
+if [[ $cmd_ =~ $poll_re ]]; then
+  cat <<'EOF' >&2
+BLOCKED: bash run_in_background:true with poll-loop body leaks shells.
+
+Pattern detected: until/while ... do ... sleep ... done
+
+This pattern leaks when the loop condition never trues (e.g., waiting on a
+file that never gets expected content, or a process that already exited).
+Anchor: 2026-06-15 session accumulated 7 orphan shells from this pattern.
+
+Use Monitor tool instead:
+  Monitor({
+    command: "until <cond>; do sleep N; done",
+    timeout_ms: 60000,      // hard timeout — required
+    persistent: false,
+    description: "..."
+  })
+
+Monitor enforces the timeout; bash run_in_background does not.
+
+If you genuinely need bash run_in_background with a poll loop, add a hard
+SECONDS-based timeout to the loop body:
+  start=$SECONDS
+  until <cond>; do
+    sleep N
+    (( SECONDS-start > MAX )) && exit 1
+  done
+
+(This guard's source: ~/dotfiles/claude/claude-bg-bash-guard)
+EOF
+  exit 2
+fi
+
+exit 0

@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# claude-bash-lint-guard — PreToolUse hook that lints Bash commands using
+# the convention plugin (~/projects/shellcheck-convention-plugin) and BLOCKS
+# on errors (warnings are reported but not blocking).
+#
+# Anchor: 2026-06-15 — operator surfaced "i want to figure out how to get
+# you to always write shell in compliance with the bash style guide in the
+# first place, which would make it so you don't have to discover changes
+# after the fact with the linter ... but until that day, the linter works
+# well. i just need to get you to run that reliably instead."
+#
+# Memory-only enforcement of CLAUDE.md #30533 "Bash author-time conformance"
+# failed: the rule existed; the agent ignored it. This guard makes the lint
+# pass mandatory at tool-call time.
+#
+# READS: PreToolUse JSON from stdin.
+# APPLIES: shellcheck-convention-plugin (SC9001-SC9010) + base shellcheck.
+# EXITS:
+#   0 — allow (lint clean OR only notes/warnings)
+#   2 — block (lint reported any "error" severity finding); stderr explains
+#
+# SCOPE: Bash tool only. Heredoc bodies handled because the command text
+# IS the entire heredoc-bearing bash string we lint.
+
+IFS=$'\n'
+set -o noglob
+set -eufo pipefail
+
+input_=$(cat)
+tool_=$(jq -r '.tool_name // ""' <<<"$input_")
+[[ $tool_ == "Bash" ]] || { exit 0; }
+
+cmd_=$(jq -r '.tool_input.command // ""' <<<"$input_")
+[[ -n $cmd_ ]] || { exit 0; }
+
+plugin_so_=$HOME/projects/shellcheck-convention-plugin/result/lib/shellcheck/plugins/libconvention-checks.so
+if [[ ! -r $plugin_so_ ]]; then
+  # Convention plugin not built on this host. Skip linting silently rather
+  # than blocking every bash call — operators on fresh hosts run update-env
+  # before the plugin is built. Once built, this branch is dead.
+  exit 0
+fi
+
+# Plugin requires the .so live under a writable plugin-dir to dlopen.
+plugin_dir_=${TMPDIR:-/tmp}/claude-bash-lint-plugin
+mkdir -p "$plugin_dir_"
+if [[ ! -e "$plugin_dir_"/libconvention-checks.so ]] \
+   || [[ "$plugin_so_" -nt "$plugin_dir_"/libconvention-checks.so ]]; then
+  cp "$plugin_so_" "$plugin_dir_"/ && chmod u+w "$plugin_dir_"/libconvention-checks.so
+fi
+
+# Write the command to a temp file with file-top discipline (IFS+noglob +
+# shebang) so the plugin can apply its full check set. Without the
+# discipline header, SC9010 will fire on every snippet, drowning out
+# meaningful errors.
+tmp_=$(mktemp --suffix=.bash)
+trap 'rm -f "$tmp_"' EXIT
+
+# Detect if the snippet already has the discipline header. If yes, lint
+# verbatim. If no, wrap with the canonical header so per-line numbers shift
+# by a known amount we can adjust in messaging.
+if grep -qF 'set -o noglob' <<<"$cmd_" && grep -qF 'IFS=' <<<"$cmd_"; then
+  # Snippet already disciplined; lint as-is.
+  printf '%s\n' "$cmd_" >"$tmp_"
+  line_offset_=0
+else
+  # Wrap with canonical header. Discipline is assumed at file-top per the
+  # bash style guide; ad-hoc command snippets in Bash tool calls don't
+  # always have it. Lint runs against the wrapped form.
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf "IFS=\$'\\\\n'\nset -o noglob\n"
+    printf '%s\n' "$cmd_"
+  } >"$tmp_"
+  line_offset_=3
+fi
+
+# Run shellcheck. -f gcc gives one finding per line; severity is in the
+# message text ("error:", "warning:", "note:"). We block only on "error:".
+lint_out_=$(shellcheck --plugin-dir "$plugin_dir_" -f gcc "$tmp_" 2>&1 || true)
+
+# Extract findings (skip the "Loaded plugin:" banner).
+findings_=$(grep -E "^${tmp_}:" <<<"$lint_out_" || true)
+
+if [[ -z $findings_ ]]; then
+  exit 0
+fi
+
+errors_=$(grep -E ': error: ' <<<"$findings_" || true)
+
+if [[ -z $errors_ ]]; then
+  # Only warnings/notes — print to stderr (visible to operator + agent) but
+  # don't block. Naming-policy notes (SC9002/SC9003) are author-time hints
+  # that should be fixed, but blocking on them would over-fire on legitimate
+  # one-line snippets where _ suffix is overkill.
+  printf 'shellcheck (non-blocking):\n%s\n' "$findings_" >&2
+  exit 0
+fi
+
+# Errors present — block.
+cat <<EOF >&2
+BLOCKED: bash command failed shellcheck-convention-plugin lint.
+
+This guard implements CLAUDE.md #30533 "Bash author-time conformance":
+write to convention on the first pass, not lint-discovery after.
+
+Findings (line numbers offset by $line_offset_ for the wrapped discipline header):
+$findings_
+
+Reference: ~/projects/jeeves/guides/bash-style-guide.md
+Plugin docs: ~/projects/shellcheck-convention-plugin/docs/
+Guard source: ~/dotfiles/claude/claude-bash-lint-guard
+
+To bypass for a known-good snippet, prepend the canonical discipline header
+(IFS=\$'\\n'; set -o noglob) and address each finding. If the finding is a
+false positive, file an issue against shellcheck-convention-plugin.
+EOF
+exit 2

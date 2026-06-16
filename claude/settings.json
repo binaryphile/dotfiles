@@ -21,6 +21,10 @@
       {"hooks": [{"type": "command", "command": "claude-budget", "async": true}]}
     ],
     "PreCompact": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
-    "PostCompact": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}]
+    "PostCompact": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
+    "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "claude-bg-bash-guard"}]},
+      {"hooks": [{"type": "command", "command": "claude-bash-lint-guard"}]}
+    ]
   }
 }

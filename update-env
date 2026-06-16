@@ -346,6 +346,7 @@ stage1() {
   claudeBaseCopyTask
   claudeSettingsCopyTask
   try task.Ln ~/dotfiles/claude/claude-bg-bash-guard ~/.local/bin/claude-bg-bash-guard
+  try task.Ln ~/dotfiles/claude/claude-bash-lint-guard ~/.local/bin/claude-bash-lint-guard
 }
 
 stage1Epilogue() {
