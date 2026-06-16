@@ -96,7 +96,7 @@ in
 {
   imports = [ ../shared.nix ];
 
-  home.packages = [ claude-budget notify-send-bridge op-run tmux-with-panel ];
+  home.packages = [ pkgs.age claude-budget notify-send-bridge op-run tmux-with-panel ];
 
   # After switching generations, update the running tmux server's PATH so
   # #(panel ...) status commands resolve the new nix store path. Without
