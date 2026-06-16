@@ -580,6 +580,8 @@ stage2() {
     eraStateDirDropInTask
     eraSystemdEnableTask
     eraRestartTask
+    eraSoakRestartIfActiveAndStaleTask
+    evtctlForwardRestartIfActiveAndStaleTask
   END
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
@@ -1142,6 +1144,10 @@ eraRestartTask() {
   # failure mode: a stale era.service that has been running for hours/
   # days while update-env was re-run by a later session that built a
   # newer binary but never restarted the service.
+  #
+  # era.service is "always-on" (enabled at boot) so inactive triggers
+  # cmd to start it. Contrast eraSoakRestartTask + evtctlForwardRestart
+  # ActiveTask which are on-demand: inactive = leave alone.
   eraServiceIsCurrent() {
     local bin=~/projects/era/bin/era-serve
     [[ -f $bin ]] || return 0  # no binary → nothing this task can do
@@ -1155,6 +1161,75 @@ eraRestartTask() {
   }
   ok eraServiceIsCurrent
   cmd 'systemctl --user restart era'
+}
+
+eraSoakRestartIfActiveAndStaleTask() {
+  desc 'restart active era-soak service if nix-profile target is newer than service start time'
+
+  # era-soak.service is on-demand: inactive = leave alone (do NOT start).
+  # When active, the long-running process holds the old nix-store binary
+  # path open even after home-manager updates ~/.nix-profile/bin/era-soak
+  # to a fresh nix-store path. Restart picks up the new binary.
+  eraSoakIsCurrent() {
+    systemctl --user is-active era-soak &>/dev/null || return 0  # inactive → leave alone
+    local target targetTime svcStartIso svcStartEpoch
+    target=$(readlink -f ~/.nix-profile/bin/era-soak 2>/dev/null) || return 0
+    [[ -e $target ]] || return 0
+    targetTime=$(stat -c %Y "$target")
+    svcStartIso=$(systemctl --user show era-soak -p ActiveEnterTimestamp --value 2>/dev/null)
+    [[ -z $svcStartIso ]] && return 0
+    svcStartEpoch=$(date -d "$svcStartIso" +%s 2>/dev/null) || return 0
+    (( svcStartEpoch >= targetTime ))
+  }
+  ok eraSoakIsCurrent
+  cmd 'systemctl --user restart era-soak'
+}
+
+evtctlForwardRestartIfActiveAndStaleTask() {
+  desc 'restart any active evtctl-forward@* instance whose evtctl script is newer than service start'
+
+  # evtctl is a bash script; `evtctl forward run %i` is a long-running
+  # tail loop that holds the parsed script in memory until the process
+  # exits. Script edits don't propagate to a running instance — must
+  # restart. Each instance is independent (one per project). Active
+  # set may be empty on this host; predicate returns 0 (current).
+  evtctlForwardActiveCurrent() {
+    local script=~/projects/era/bin/evtctl
+    [[ -f $script ]] || return 0
+    local instances
+    instances=$(systemctl --user list-units --state=active --type=service --no-legend 2>/dev/null \
+                | awk '{print $1}' \
+                | grep -E '^evtctl-forward@[^.]+\.service$' || true)
+    [[ -z $instances ]] && return 0  # no active instances → leave alone
+    local scriptTime svcStartIso svcStartEpoch unit
+    scriptTime=$(stat -c %Y "$script")
+    for unit in $instances; do
+      svcStartIso=$(systemctl --user show "$unit" -p ActiveEnterTimestamp --value 2>/dev/null)
+      [[ -z $svcStartIso ]] && continue
+      svcStartEpoch=$(date -d "$svcStartIso" +%s 2>/dev/null) || continue
+      (( svcStartEpoch >= scriptTime )) || return 1  # at least one stale → trigger
+    done
+    return 0
+  }
+  ok evtctlForwardActiveCurrent
+
+  evtctlForwardRestartAllStaleActive() {
+    local script=~/projects/era/bin/evtctl scriptTime instances unit svcStartIso svcStartEpoch
+    [[ -f $script ]] || return 0
+    scriptTime=$(stat -c %Y "$script")
+    instances=$(systemctl --user list-units --state=active --type=service --no-legend 2>/dev/null \
+                | awk '{print $1}' \
+                | grep -E '^evtctl-forward@[^.]+\.service$' || true)
+    for unit in $instances; do
+      svcStartIso=$(systemctl --user show "$unit" -p ActiveEnterTimestamp --value 2>/dev/null)
+      [[ -z $svcStartIso ]] && continue
+      svcStartEpoch=$(date -d "$svcStartIso" +%s 2>/dev/null) || continue
+      if (( svcStartEpoch < scriptTime )); then
+        systemctl --user restart "$unit" || true
+      fi
+    done
+  }
+  cmd evtctlForwardRestartAllStaleActive
 }
 
 chromeDevtoolsMcpRegisterTask() {
