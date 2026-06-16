@@ -1,26 +1,31 @@
 #!/usr/bin/env bash
-# claude-bash-lint-guard — PreToolUse hook that lints Bash commands using
-# the convention plugin (~/projects/shellcheck-convention-plugin) and BLOCKS
-# on errors (warnings are reported but not blocking).
+# claude-bash-lint-guard — PreToolUse hook that lints bash via the convention
+# plugin (~/projects/shellcheck-convention-plugin) and BLOCKS on errors
+# (warnings/notes are reported but not blocking).
 #
-# Anchor: 2026-06-15 — operator surfaced "i want to figure out how to get
-# you to always write shell in compliance with the bash style guide in the
-# first place, which would make it so you don't have to discover changes
-# after the fact with the linter ... but until that day, the linter works
-# well. i just need to get you to run that reliably instead."
+# Anchor: 2026-06-15 — operator "i want to figure out how to get you to always
+# write shell in compliance with the bash style guide in the first place ...
+# but until that day, the linter works well. i just need to get you to run
+# that reliably instead." Follow-up Q: "does that lint when you save the file
+# or when you run it?" → originally only on Bash tool; extended to Write/Edit.
 #
 # Memory-only enforcement of CLAUDE.md #30533 "Bash author-time conformance"
 # failed: the rule existed; the agent ignored it. This guard makes the lint
 # pass mandatory at tool-call time.
 #
-# READS: PreToolUse JSON from stdin.
-# APPLIES: shellcheck-convention-plugin (SC9001-SC9010) + base shellcheck.
-# EXITS:
-#   0 — allow (lint clean OR only notes/warnings)
-#   2 — block (lint reported any "error" severity finding); stderr explains
+# SCOPE:
+#   Bash  — lints the .command field (snippet wrapped with discipline header
+#           if not already present)
+#   Write — lints .content if .file_path looks like bash (extension OR shebang)
+#   Edit  — lints .new_string fragment if .file_path looks like bash. Fragment-
+#           only (not full post-edit file) keeps it fast and catches typos /
+#           naming / IFS-marker issues in the new code; full-file lint would
+#           require literal old/new replacement which bash parameter
+#           substitution does not provide (glob chars in old_string would
+#           mis-match).
 #
-# SCOPE: Bash tool only. Heredoc bodies handled because the command text
-# IS the entire heredoc-bearing bash string we lint.
+# READS: PreToolUse JSON from stdin.
+# EXITS: 0 = allow (lint clean OR only notes/warnings); 2 = block (error-severity finding); stderr explains.
 
 IFS=$'\n'
 set -o noglob
@@ -28,16 +33,55 @@ set -eufo pipefail
 
 input_=$(cat)
 tool_=$(jq -r '.tool_name // ""' <<<"$input_")
-[[ $tool_ == "Bash" ]] || { exit 0; }
 
-cmd_=$(jq -r '.tool_input.command // ""' <<<"$input_")
-[[ -n $cmd_ ]] || { exit 0; }
+# Extract per-tool: content to lint + a path hint (for is-bash detection).
+content_=""
+path_=""
+case $tool_ in
+  Bash)
+    content_=$(jq -r '.tool_input.command // ""' <<<"$input_")
+    path_="snippet.bash"  # synthetic — Bash snippets are always bash
+    ;;
+  Write)
+    content_=$(jq -r '.tool_input.content // ""' <<<"$input_")
+    path_=$(jq -r '.tool_input.file_path // ""' <<<"$input_")
+    ;;
+  Edit)
+    content_=$(jq -r '.tool_input.new_string // ""' <<<"$input_")
+    path_=$(jq -r '.tool_input.file_path // ""' <<<"$input_")
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+[[ -n $content_ ]] || { exit 0; }
+
+# isbash_ predicate: extension match OR shebang match in content/file.
+isbash_() {
+  local p_=$1 c_=$2
+  case $p_ in
+    *.bash|*.sh) return 0 ;;
+  esac
+  # Shebang in the content itself (Write of a new script).
+  local first_=${c_%%$'\n'*}
+  [[ $first_ == "#!/usr/bin/env bash" || $first_ == "#!/bin/bash" || $first_ == "#!/usr/bin/bash" ]] && return 0
+  # Shebang in the existing file on disk (Edit of an existing bash script).
+  if [[ -r $p_ ]]; then
+    local diskfirst_
+    diskfirst_=$(head -1 "$p_" 2>/dev/null)
+    [[ $diskfirst_ == "#!/usr/bin/env bash" || $diskfirst_ == "#!/bin/bash" || $diskfirst_ == "#!/usr/bin/bash" ]] && return 0
+  fi
+  return 1
+}
+
+isbash_ "$path_" "$content_" || { exit 0; }
 
 plugin_so_=$HOME/projects/shellcheck-convention-plugin/result/lib/shellcheck/plugins/libconvention-checks.so
 if [[ ! -r $plugin_so_ ]]; then
-  # Convention plugin not built on this host. Skip linting silently rather
-  # than blocking every bash call — operators on fresh hosts run update-env
-  # before the plugin is built. Once built, this branch is dead.
+  # Plugin not built on this host. Skip silently rather than blocking every
+  # bash-shaped tool call. Once update-env builds the plugin, this branch
+  # becomes dead.
   exit 0
 fi
 
@@ -49,61 +93,55 @@ if [[ ! -e "$plugin_dir_"/libconvention-checks.so ]] \
   cp "$plugin_so_" "$plugin_dir_"/ && chmod u+w "$plugin_dir_"/libconvention-checks.so
 fi
 
-# Write the command to a temp file with file-top discipline (IFS+noglob +
-# shebang) so the plugin can apply its full check set. Without the
-# discipline header, SC9010 will fire on every snippet, drowning out
-# meaningful errors.
 tmp_=$(mktemp --suffix=.bash)
 trap 'rm -f "$tmp_"' EXIT
 
-# Detect if the snippet already has the discipline header. If yes, lint
-# verbatim. If no, wrap with the canonical header so per-line numbers shift
-# by a known amount we can adjust in messaging.
-if grep -qF 'set -o noglob' <<<"$cmd_" && grep -qF 'IFS=' <<<"$cmd_"; then
-  # Snippet already disciplined; lint as-is.
-  printf '%s\n' "$cmd_" >"$tmp_"
+# Decide whether to wrap with discipline header. Wrap when the snippet
+# doesn't already have it (so SC9010 doesn't fire on every snippet).
+# Write of a complete file usually has its own header; Bash snippets usually
+# don't; Edit fragments rarely do.
+if grep -qF 'set -o noglob' <<<"$content_" && grep -qF 'IFS=' <<<"$content_"; then
+  printf '%s\n' "$content_" >"$tmp_"
   line_offset_=0
 else
-  # Wrap with canonical header. Discipline is assumed at file-top per the
-  # bash style guide; ad-hoc command snippets in Bash tool calls don't
-  # always have it. Lint runs against the wrapped form.
   {
     printf '#!/usr/bin/env bash\n'
     printf "IFS=\$'\\\\n'\nset -o noglob\n"
-    printf '%s\n' "$cmd_"
+    printf '%s\n' "$content_"
   } >"$tmp_"
   line_offset_=3
 fi
 
-# Run shellcheck. -f gcc gives one finding per line; severity is in the
-# message text ("error:", "warning:", "note:"). We block only on "error:".
 lint_out_=$(shellcheck --plugin-dir "$plugin_dir_" -f gcc "$tmp_" 2>&1 || true)
-
-# Extract findings (skip the "Loaded plugin:" banner).
 findings_=$(grep -E "^${tmp_}:" <<<"$lint_out_" || true)
 
-if [[ -z $findings_ ]]; then
-  exit 0
-fi
+[[ -n $findings_ ]] || { exit 0; }
 
+# Filter to error-severity findings. For Edit (fragment lint), drop
+# SC1xxx/SC2xxx parse errors — fragments often aren't self-contained
+# (mid-function, mid-heredoc) and parse errors there are false positives.
+# Convention-plugin errors (SC9xxx) are local checks (naming, quoting, IFS)
+# that don't depend on full-file context, so they remain blocking.
 errors_=$(grep -E ': error: ' <<<"$findings_" || true)
+if [[ $tool_ == "Edit" ]]; then
+  errors_=$(grep -E '\[SC9[0-9]{3}\]' <<<"$errors_" || true)
+fi
 
 if [[ -z $errors_ ]]; then
-  # Only warnings/notes — print to stderr (visible to operator + agent) but
-  # don't block. Naming-policy notes (SC9002/SC9003) are author-time hints
-  # that should be fixed, but blocking on them would over-fire on legitimate
-  # one-line snippets where _ suffix is overkill.
-  printf 'shellcheck (non-blocking):\n%s\n' "$findings_" >&2
+  # Warnings/notes only (or fragment parse errors filtered out for Edit) —
+  # surface but allow. Blocking on naming-hint notes (SC9003 unneeded quotes)
+  # would over-fire on legitimate one-liners.
+  printf 'shellcheck (non-blocking, tool=%s):\n%s\n' "$tool_" "$findings_" >&2
   exit 0
 fi
 
-# Errors present — block.
 cat <<EOF >&2
-BLOCKED: bash command failed shellcheck-convention-plugin lint.
+BLOCKED: $tool_ failed shellcheck-convention-plugin lint.
 
 This guard implements CLAUDE.md #30533 "Bash author-time conformance":
 write to convention on the first pass, not lint-discovery after.
 
+Path: $path_
 Findings (line numbers offset by $line_offset_ for the wrapped discipline header):
 $findings_
 
