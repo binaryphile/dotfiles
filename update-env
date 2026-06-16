@@ -344,6 +344,8 @@ stage1() {
   cmd   'rm -f ~/.local/bin/sync-shellcheckrc'
 
   claudeBaseCopyTask
+  claudeSettingsCopyTask
+  try task.Ln ~/dotfiles/claude/claude-bg-bash-guard ~/.local/bin/claude-bg-bash-guard
 }
 
 stage1Epilogue() {
@@ -1063,7 +1065,12 @@ eraBuildTask() {
   }
   ok eraBinIsCurrent
 
-  cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && ./mk build"'
+  # Build era-serve directly (no mk wrapper). CGO_ENABLED=0 mirrors
+  # bin/mk's cmd.build for era-serve — era-serve uses pure-Go WASM
+  # sqlite-vec (ncruces) so cgo is not needed; the static binary is
+  # cheaper to build + ship. go generate ./internal/hugot/ produces
+  # the model-loading scaffolding the build links against.
+  cmd 'nix develop ~/projects/era --command bash -c "cd ~/projects/era && go generate ./internal/hugot/ && CGO_ENABLED=0 go build -o bin/era-serve ./cmd/era-serve/"'
 }
 
 eraMcpCleanupTask() {
@@ -1232,6 +1239,34 @@ claudeBaseCopyTask() {
     $sha256sum $src | cut -d' ' -f1 >$hashFile
   }
   cmd claudeBaseCopy
+}
+
+# claudeSettingsCopyTask copies claude-code settings.json to ~/.claude/.
+# Mirrors claudeBaseCopyTask shape: content-aware via per-task hash sentinel.
+# Anchor 2026-06-15: shell-hygiene mechanical guard (claude-bg-bash-guard)
+# requires a PreToolUse hook entry; settings.json carries that wiring.
+# Memory-only enforcement of the rule failed; auto-deploying settings.json
+# is what makes the mechanical block actually fire on fresh hosts.
+claudeSettingsCopyTask() {
+  local src=${claudeSettings_src:-$HOME/dotfiles/claude/settings.json}
+  local dst=${claudeSettings_dst:-$HOME/.claude/settings.json}
+  local hashFile=${claudeSettings_hash:-$HOME/.claude/settings.json.src-hash}
+  desc 'install claude-code settings.json'
+
+  claudeSettingsUpToDate() {
+    [[ -f $dst ]] && ! [[ -L $dst ]] || return 1
+    [[ -f $hashFile ]] || return 1
+    [[ "$($sha256sum $src | cut -d' ' -f1)" == "$(< $hashFile)" ]]
+  }
+  ok claudeSettingsUpToDate
+
+  claudeSettingsCopy() {
+    mkdir -p $(dirname $dst)
+    local tmp
+    tmp=$(mktemp) && cp $src "$tmp" && mv -f "$tmp" $dst
+    $sha256sum $src | cut -d' ' -f1 >$hashFile
+  }
+  cmd claudeSettingsCopy
 }
 
 # claudeEraConfigTask appends CLAUDE-era.md to the base CLAUDE.md installed by
