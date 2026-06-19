@@ -496,7 +496,7 @@ stage2() {
   #  +-------------------------------------------------------------+
 
   section shellcheck
-  try githubCloneAndLinkTask shellcheck master
+  try githubCloneAndLinkTask shellcheck main
 
   section shellcheck-convention-plugin
   try githubCloneAndLinkTask shellcheck-convention-plugin
