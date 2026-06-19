@@ -687,7 +687,7 @@ stage2() {
   try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
 
   section flake-locks
-  try taskBashFlakeLockRepairTask
+  try flakeLocksRepairTask
   try flakeLockPinTask
 
   #  +-------------------------------------------------------------+
@@ -1530,35 +1530,61 @@ shellcheckrcTask() {
 # Uses nix flake lock --override-input to update each lock file's nixpkgs
 # input to the canonical rev (from ~/projects/era/flake.lock).
 # Nix deduplicates store paths automatically when revs match.
-taskBashFlakeLockRepairTask() {
-  desc 'restore task.bash/flake.lock if it has parse errors (post-rename artifact)'
-  # task.bash's flake.lock has been observed with a malformed-JSON state at
-  # line 23 that blocked flakeLockPinTask's jq invocation on every run. The
-  # in-tree version is fine; discard local edits via git restore. If the file
-  # is parseable, the ok-check passes and this is a no-op.
-  ok '[[ ! -d ~/projects/task.bash ]] || jq empty ~/projects/task.bash/flake.lock 2>/dev/null'
-  cmd 'git -C ~/projects/task.bash restore flake.lock'
+# flakeManagedDirs emits dirs that have both flake.nix and flake.lock, where
+# flake.nix is tracked by git (the same check nix uses). Untracked flake.nix
+# files (e.g. urma: local-only, git-excluded) are naturally skipped.
+# find is scoped to avoid .git dirs, node_modules, and vendor trees.
+# Shared by flakeLocksRepairTask and flakeLockPinTask.
+flakeManagedDirs() {
+  local f
+  while IFS= read -r f; do
+    [[ -f $f/flake.lock ]] || continue
+    git -C "$f" ls-files --error-unmatch flake.nix &>/dev/null || continue
+    echo "$f"
+  done < <(find ~/projects ~/dotfiles \
+    -not -path '*/.git/*' \
+    -not -path '*/node_modules/*' \
+    -not -path '*/vendor/*' \
+    -name flake.nix -exec dirname {} \; 2>/dev/null)
+}
+
+flakeLocksRepairTask() {
+  desc 'repair flake.lock in flake-managed dirs (unmerged index or unparseable JSON)'
+  # Observed twice on caltrop (task.bash, mk.bash): flake.lock in "needs merge"
+  # state (UU in `git status -s`) after a prior failed flakeLockPin attempt
+  # left the index unresolved. `git restore` updates only the working tree;
+  # `git checkout HEAD --` clears both the working tree AND the index
+  # entries, recovering the file from HEAD's tree -- which is the canonical
+  # state since local flake.lock edits are mechanical and reproducible by
+  # the next flakeLockPin run. Predicate covers both failure modes (unmerged
+  # index OR jq parse failure) so this is a no-op on healthy repos.
+
+  flakeLocksHealthy() {
+    local f
+    while IFS= read -r f; do
+      git -C "$f" status --porcelain -- flake.lock 2>/dev/null | grep -q '^UU' && return 1
+      jq empty "$f/flake.lock" 2>/dev/null || return 1
+    done < <(flakeManagedDirs)
+  }
+  ok flakeLocksHealthy
+
+  flakeLocksRepair() {
+    local f
+    while IFS= read -r f; do
+      if git -C "$f" status --porcelain -- flake.lock 2>/dev/null | grep -q '^UU' \
+         || ! jq empty "$f/flake.lock" 2>/dev/null; then
+        git -C "$f" checkout HEAD -- flake.lock 2>/dev/null || true
+      fi
+    done < <(flakeManagedDirs)
+  }
+  cmd flakeLocksRepair
 }
 
 flakeLockPinTask() {
   desc 'pin all flake.lock nixpkgs to canonical rev'
 
-  # flakeManagedDirs emits dirs that have both flake.nix and flake.lock, where
-  # flake.nix is tracked by git (the same check nix uses). Untracked flake.nix
-  # files (e.g. urma: local-only, git-excluded) are naturally skipped.
-  # find is scoped to avoid .git dirs, node_modules, and vendor trees.
-  flakeManagedDirs() {
-    local f
-    while IFS= read -r f; do
-      [[ -f $f/flake.lock ]] || continue
-      git -C "$f" ls-files --error-unmatch flake.nix &>/dev/null || continue
-      echo "$f"
-    done < <(find ~/projects ~/dotfiles \
-      -not -path '*/.git/*' \
-      -not -path '*/node_modules/*' \
-      -not -path '*/vendor/*' \
-      -name flake.nix -exec dirname {} \; 2>/dev/null)
-  }
+  # flakeManagedDirs lives at top level (above flakeLocksRepairTask) so both
+  # tasks share one iteration definition.
 
   flakeLocksPinned() {
     local canonical=~/projects/era/flake.lock
