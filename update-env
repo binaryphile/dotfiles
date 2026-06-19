@@ -449,11 +449,17 @@ stage2() {
 
   section fp.bash
   try githubCloneAndLinkTask fp.bash
+  desc  'switch fp.bash to main (was develop)'
+  ok    '[[ $(git -C ~/projects/fp.bash branch --show-current 2>/dev/null) != develop ]]'
+  cmd   'git -C ~/projects/fp.bash checkout main'
   try task.Ln ~/projects/fp.bash/fp.bash ~/.local/bin/fp.bash
   try obsidianSnippetsTask ~/projects/fp.bash/.obsidian/snippets
 
   section mk.bash
   try githubCloneAndLinkTask mk.bash
+  desc  'switch mk.bash to main (was develop)'
+  ok    '[[ $(git -C ~/projects/mk.bash branch --show-current 2>/dev/null) != develop ]]'
+  cmd   'git -C ~/projects/mk.bash checkout main'
   try obsidianSnippetsTask ~/projects/mk.bash/.obsidian/snippets
   try task.Ln ~/projects/mk.bash/mk.bash ~/.local/bin/mk.bash
   # Global `mk` binary retired 2026-06-01: git-update functionality replaced
@@ -681,6 +687,7 @@ stage2() {
   try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
 
   section flake-locks
+  try taskBashFlakeLockRepairTask
   try flakeLockPinTask
 
   #  +-------------------------------------------------------------+
@@ -1020,10 +1027,37 @@ obsidianSnippetsTask() {
   cmd obsidianSnippetsInstall
 }
 
+# remoteAvailable -- session-cached reachability probe for a hostname.
+# First call per host pings once (-W 2); the result is memoized so subsequent
+# calls return immediately. Used by gitUpdate and stashCloneAndLinkTask to
+# skip work cleanly when a remote (corp VPN, Codeberg, etc.) is unreachable
+# instead of issuing N redundant SSH lookups that all fail the same way.
+declare -A RemoteUp_
+remoteAvailable() {
+  local host=$1
+  if [[ -z ${RemoteUp_[$host]:-} ]]; then
+    if ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
+      RemoteUp_[$host]=1
+    else
+      RemoteUp_[$host]=0
+    fi
+  fi
+  [[ ${RemoteUp_[$host]} == 1 ]]
+}
+
 # git autostash pop can fail silently when local and upstream both modified the same file;
 # on conflict the stash stays, labeled "autostash". Drop it -- pulled version wins.
 # Targets the specific stash ref (not stash@{0}) to avoid clobbering user stashes above it.
+#
+# Auto-skip when the repo's origin host is unreachable -- the per-host probe in
+# remoteAvailable caches the result so the second-and-later same-host repos no-op
+# silently instead of each producing its own "Could not resolve hostname" failure.
 gitUpdate() {
+  local dir=$1 host
+  host=$(git -C "$dir" remote get-url origin 2>/dev/null | sed -E 's|.*[/@]([^/:]+)[/:].*|\1|')
+  if [[ -n $host ]] && ! remoteAvailable "$host"; then
+    return 0
+  fi
   task.GitUpdate $1
   local stashRef
   stashRef=$(git -C $1 stash list 2>/dev/null | grep -E ': autostash$' | grep -o 'stash@{[0-9]*}' | head -1) || true
@@ -1078,13 +1112,18 @@ eraBuildTask() {
 }
 
 eraMcpCleanupTask() {
-  desc  'remove legacy era-mcp service and MCP registration'
-  ok    '! systemctl --user cat era-mcp &>/dev/null && ! { [[ -f ~/.claude.json ]] && jq -e ".mcpServers.era" ~/.claude.json &>/dev/null; }'
+  desc  'remove legacy era-mcp service, binaries, and MCP registration'
+  ok    '! systemctl --user cat era-mcp &>/dev/null && [[ ! -e ~/projects/era/bin/era-mcp && ! -e ~/projects/era/era-mcp ]] && ! { [[ -f ~/.claude.json ]] && jq -e ".mcpServers.era" ~/.claude.json &>/dev/null; }'
 
   eraMcpCleanup() {
     systemctl --user disable --now era-mcp 2>/dev/null || true
     rm -f ~/.config/systemd/user/era-mcp.service
     systemctl --user daemon-reload
+    # Stranded pre-rename binaries from the era-mcp -> era-serve transition.
+    # Top-level era-mcp was an older copy adjacent to the source tree; bin/era-mcp
+    # was the built artifact at the canonical bin/ path. Neither is referenced
+    # anywhere post-rename.
+    rm -f ~/projects/era/bin/era-mcp ~/projects/era/era-mcp
     if [[ -f ~/.claude.json ]] && jq -e '.mcpServers.era' ~/.claude.json &>/dev/null; then
       jq 'del(.mcpServers.era)' ~/.claude.json > ~/.claude.json.tmp &&
         mv ~/.claude.json.tmp ~/.claude.json
@@ -1491,6 +1530,16 @@ shellcheckrcTask() {
 # Uses nix flake lock --override-input to update each lock file's nixpkgs
 # input to the canonical rev (from ~/projects/era/flake.lock).
 # Nix deduplicates store paths automatically when revs match.
+taskBashFlakeLockRepairTask() {
+  desc 'restore task.bash/flake.lock if it has parse errors (post-rename artifact)'
+  # task.bash's flake.lock has been observed with a malformed-JSON state at
+  # line 23 that blocked flakeLockPinTask's jq invocation on every run. The
+  # in-tree version is fine; discard local edits via git restore. If the file
+  # is parseable, the ok-check passes and this is a no-op.
+  ok '[[ ! -d ~/projects/task.bash ]] || jq empty ~/projects/task.bash/flake.lock 2>/dev/null'
+  cmd 'git -C ~/projects/task.bash restore flake.lock'
+}
+
 flakeLockPinTask() {
   desc 'pin all flake.lock nixpkgs to canonical rev'
 
@@ -1540,14 +1589,17 @@ flakeLockPinTask() {
     canonicalNode=$(jq '.nodes.nixpkgs.locked' $canonical)
     canonicalRev=$(jq -r '.nodes.nixpkgs.locked.rev' $canonical)
     [[ -n $canonicalNode && $canonicalNode != null ]] || { echo "cannot extract nixpkgs locked node from canonical" >&2; return 1; }
+    # Per-file jq failures (malformed flake.lock somewhere downstream) warn and skip
+    # rather than aborting the whole pin pass. One bad lock used to mask every other
+    # repo's drift.
     local f tmp
     while IFS= read -r f; do
       tmp=$(mktemp) || { echo "error: cannot create temp file" >&2; return 1; }
-      jq --argjson node "$canonicalNode" '.nodes.nixpkgs.locked = $node' "$f/flake.lock" >"$tmp" || {
+      if ! jq --argjson node "$canonicalNode" '.nodes.nixpkgs.locked = $node' "$f/flake.lock" >"$tmp" 2>/dev/null; then
         rm -f "$tmp"
-        echo "error: jq failed on $f/flake.lock" >&2
-        return 1
-      }
+        echo "warn: jq failed on $f/flake.lock -- skipping" >&2
+        continue
+      fi
       mv "$tmp" "$f/flake.lock"
     done < <(flakeManagedDirs)
     while IFS= read -r f; do
@@ -1571,7 +1623,7 @@ stashCloneAndLinkTask() {
 
   desc   "clone repo stash.digi.com/$project/$repo to ~/projects/$dir"
   exist  $HOME/projects/$dir/.git
-  check  'ping -c 1 -W 2 stash.digi.com'
+  check  'remoteAvailable stash.digi.com'
 
   stashClone() {
     local dest=~/projects/"$dir"
