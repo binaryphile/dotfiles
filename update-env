@@ -688,6 +688,7 @@ stage2() {
 
   section flake-locks
   try flakeLocksRepairTask
+  try flakeLockPathInputsRefreshTask
   try flakeLockPinTask
 
   #  +-------------------------------------------------------------+
@@ -1578,6 +1579,44 @@ flakeLocksRepairTask() {
     done < <(flakeManagedDirs)
   }
   cmd flakeLocksRepair
+}
+
+flakeLockPathInputsRefreshTask() {
+  desc 'refresh narHash of any path: input whose on-disk content drifted'
+  # path: inputs (e.g. nixos-config's dotfiles and pangp-src) recompute their
+  # narHash on every content change. When the lock's hash and the on-disk hash
+  # diverge, nix evaluation aborts with "NAR hash mismatch" -- which blocks
+  # nixos-rebuild and any downstream `nix build`. Hit twice in one session:
+  # dotfiles after committing to it, pangp-src after the placeholder rolled.
+  # This task scans every flake-managed dir, recomputes each path-input's
+  # narHash, and runs `nix flake lock --update-input <name>` only when the
+  # locked and actual hashes disagree. No-op on healthy machines.
+
+  pathInputsCurrent() {
+    local d name lockedPath lockedHash actualHash
+    while IFS= read -r d; do
+      while IFS=$'\t' read -r name lockedPath lockedHash; do
+        [[ -e $lockedPath ]] || continue
+        actualHash=$(nix hash path "$lockedPath" 2>/dev/null) || continue
+        [[ $lockedHash == "$actualHash" ]] || return 1
+      done < <(jq -r '.nodes | to_entries[] | select(.value.locked.type == "path") | "\(.key)\t\(.value.locked.path)\t\(.value.locked.narHash)"' "$d/flake.lock" 2>/dev/null)
+    done < <(flakeManagedDirs)
+  }
+  ok pathInputsCurrent
+
+  pathInputsRefresh() {
+    local d name lockedPath lockedHash actualHash
+    while IFS= read -r d; do
+      while IFS=$'\t' read -r name lockedPath lockedHash; do
+        [[ -e $lockedPath ]] || continue
+        actualHash=$(nix hash path "$lockedPath" 2>/dev/null) || continue
+        if [[ $lockedHash != "$actualHash" ]]; then
+          (cd "$d" && nix flake lock --update-input "$name" 2>/dev/null) || true
+        fi
+      done < <(jq -r '.nodes | to_entries[] | select(.value.locked.type == "path") | "\(.key)\t\(.value.locked.path)\t\(.value.locked.narHash)"' "$d/flake.lock" 2>/dev/null)
+    done < <(flakeManagedDirs)
+  }
+  cmd pathInputsRefresh
 }
 
 flakeLockPinTask() {
