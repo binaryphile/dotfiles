@@ -9,25 +9,63 @@
 # is captured, and the calling shell sees nothing.
 #
 # Usage:
-#   vpn [up]      start vpn-connect in the vpn session (default)
-#   vpn down      kill the vpn session
-#   vpn attach    attach to the vpn session to view logs (Ctrl-B D to detach)
-#   vpn status    print up|down
+#   vpn [up]      start vpn-connect (gpoc: in vpn tmux session; pangp: via gpd.service)
+#   vpn down      kill the vpn session (gpoc) AND issue globalprotect disconnect (pangp); dual idempotent
+#   vpn attach    attach to the vpn session to view logs (gpoc only; Ctrl-B D to detach)
+#   vpn status    print up|down (control-plane state via globalprotect show --status; fallback tmux+pgrep for gpoc)
 
 set -uo pipefail
 
 readonly Session=vpn
 
 cmdUp() {
-  if tmux has-session -t "$Session" 2>/dev/null; then
-    echo "vpn session already running; attach with: vpn attach"
-    return 0
-  fi
-  # Hold the pane open after vpn-connect exits so we can see the cause.
-  tmux new-session -d -s "$Session" 'vpn-connect; printf "\nvpn-connect exited; press any key to close. "; read -rn1'
-  echo "vpn started in tmux session '$Session'"
-  echo "  attach: vpn attach"
-  echo "  stop:   vpn down"
+  # Mode-dispatch (#32959, completing the predicate-audit arc started in
+  # #27694). The wrap differs by mode because persistence differs by mode:
+  # under pangp, gpd.service (Restart=on-failure) is the persistence and the
+  # tmux wrap provides nothing; under gpoc, gpocLoop in tmux IS the
+  # persistence. See scripts/probe-lib.bash:vpnUp Semantic-scope block (#32960)
+  # for the kernel-state vs control-plane-state companion semantics.
+  case $(vpn-mode) in
+    pangp)
+      # Predicate against control-plane state. The naive grep -q 'Connected$'
+      # (parallel form in cmdStatus, follow-up #51793) false-matches lines
+      # ending in "Not Connected" because the suffix literally is "Connected"
+      # — bug surfaced in #32959 3a testing. Capture daemon output once into
+      # a var and use a two-check bash conditional: positive match on
+      # *Connected* (capital C — excludes lowercase "Disconnected" suffix)
+      # AND exclusion of *"Not Connected"* (the false-positive trap).
+      # Treating status-CLI failure (rc!=0 OR absent CLI rc=127 OR transient
+      # states like "Connecting...") as "not connected" is intentional: the
+      # command's job is to ensure connectivity, not merely observe daemon
+      # activity, and the fall-through `globalprotect connect` is idempotent
+      # if the tunnel is already up.
+      local statusOutput_
+      statusOutput_=$(globalprotect show --status 2>/dev/null)
+      if [[ $statusOutput_ == *Connected* && $statusOutput_ != *"Not Connected"* ]]; then
+        echo "vpn (pangp) already connected"
+        return 0
+      fi
+      vpn-connect
+      ;;
+    gpoc)
+      # Under gpoc, vpn-connect's gpocLoop is the foreground retry loop;
+      # tmux holds it across the user's shell-session lifecycle. The session
+      # IS the tunnel-up proxy.
+      if tmux has-session -t "$Session" 2>/dev/null; then
+        echo "vpn (gpoc) session already running; attach with: vpn attach"
+        return 0
+      fi
+      # Hold the pane open after vpn-connect exits so we can see the cause.
+      tmux new-session -d -s "$Session" 'vpn-connect; printf "\nvpn-connect exited; press any key to close. "; read -rn1'
+      echo "vpn (gpoc) started in tmux session '$Session'"
+      echo "  attach: vpn attach"
+      echo "  stop:   vpn down"
+      ;;
+    *)
+      echo "vpn-mode returned unknown state; run 'vpn-mode pangp' or 'vpn-mode gpoc' first" >&2
+      return 1
+      ;;
+  esac
 }
 
 cmdDown() {
