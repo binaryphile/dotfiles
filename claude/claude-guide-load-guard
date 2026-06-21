@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# claude-guide-load-guard — PreToolUse hook that enforces the global
+# CLAUDE.md "Read the relevant guide before writing code in that
+# idiom" rule mechanically. Blocks Edit/Write tool calls on files
+# under ~/projects/* when any author-topic guide required by the
+# file's type/location has not yet been Read in the current session.
+#
+# Anchor: 2026-06-21 era #45389 — agent wrote imperative for-loops
+# + nil-slice-append in internal/memindex/index.go (a file whose
+# surrounding code consistently uses fluentfp's slice.Mapper chain
+# methods). Operator pushback "that doesn't look very fp" triggered
+# a full rewrite. Memory-only enforcement of the CLAUDE.md guide-
+# load rule failed; this guard mechanizes the rule at tool-call time.
+#
+# Per-session semantics: "guide has been Read this session" via
+# transcript-grep. See ~/dotfiles/claude/CLAUDE.md '# Guides' section
+# and the front-matter convention on guides in
+# ~/projects/jeeves/guides/ for the schema and operator-facing
+# details.
+#
+# Reads PreToolUse JSON from stdin. Exit 0 = allow; exit 2 = block
+# (stderr names the unread guide(s)).
+#
+# Bypass: CLAUDE_GUIDE_LOAD_SKIP=1 in the hook's env exits 0
+# immediately. Set operator-side before invoking claude (per-tool
+# env doesn't propagate to PreToolUse hooks).
+#
+# Naming Policy:
+#
+# Standalone script — no namespace prefix on functions, no suffix on
+# globals. Functions: camelCase. Locals: camelCase. Globals:
+# PascalCase. UPPERCASE names are nameref out-params (per §3, borrows
+# environment-variable namespace to avoid collision with caller
+# camelCase locals). Variables ending in _ may contain IFS characters
+# or be empty — must quote on expansion. Integer types use -i (drop _).
+
+IFS=$'\n'
+set -o noglob
+set -ufo pipefail
+
+# Dependency-injectable globals (test override via env).
+GuidesDirsRaw=${CLAUDE_GUIDE_DIRS:-$HOME/projects/jeeves/guides:$HOME/projects/urma/obsidian/guides}
+ScopePrefix=${CLAUDE_GUIDE_SCOPE:-$HOME/projects/}
+AuditApp=${CLAUDE_GUIDE_AUDIT_APP:-jeeves}
+
+# fatal prints `msg_` to stderr and exits with `rc` (default 1).
+fatal() {
+  local msg_=$1 rc=${2:-1}
+  echo "claude-guide-load-guard: $msg_" >&2
+  exit $rc
+}
+
+# publishAudit publishes a `/guide-guard <kind>: <body>` inbox message to AuditApp's inbox stream. Best-effort; failures silent so audit drops never block the protected tool call.
+publishAudit() {
+  local kind=$1 body=$2
+  evtctl inbox $AuditApp --send "/guide-guard $kind: $body" >/dev/null 2>&1 || true
+}
+
+# extractFrontMatter prints the YAML body of `guidePath`'s leading `---`-delimited block to stdout, empty if no front-matter at line 1. (C)
+extractFrontMatter() {
+  local guidePath=$1
+  awk '
+    NR == 1 && $0 == "---" { in_block = 1; next }
+    in_block && $0 == "---" { exit }
+    in_block { print }
+    NR == 1 && $0 != "---" { exit }
+  ' $guidePath 2>/dev/null
+}
+
+# parseListValue extracts the bracketed-list value of `key` from `frontMatter_` and emits one element per line, with surrounding quotes and whitespace stripped. Empty output if `key` is absent or not bracketed. (C)
+parseListValue() {
+  local key=$1 frontMatter_=$2
+  local line_=""
+  line_=$(grep "^$key:" <<<"$frontMatter_" || true)
+  [[ -z $line_ ]] && return 0
+  local value_=${line_#"$key":}
+  value_=${value_# }
+  [[ $value_ == \[*\] ]] || return 0
+  value_=${value_#[}
+  value_=${value_%]}
+  printf '%s' "$value_" | tr ',' '\n' | sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//'
+}
+
+# parseSummary extracts the `summary:` value from `frontMatter_` to stdout, surrounding quotes stripped. Empty if absent. (C)
+parseSummary() {
+  local frontMatter_=$1
+  local line_=""
+  line_=$(grep '^summary:' <<<"$frontMatter_" || true)
+  [[ -z $line_ ]] && return 0
+  local value_=${line_#summary:}
+  value_=${value_# }
+  value_=${value_#\"}
+  value_=${value_%\"}
+  printf '%s' "$value_"
+}
+
+# validateFrontMatter returns 0 when `frontMatter_` carries required keys (applies-to, summary). Non-zero with a one-line reason on stderr otherwise. (C)
+validateFrontMatter() {
+  local frontMatter_=$1
+  [[ -n $frontMatter_ ]] || { echo "missing front-matter block" >&2; return 1; }
+  grep -q '^applies-to:' <<<"$frontMatter_" || { echo "missing applies-to key" >&2; return 1; }
+  grep -q '^summary:' <<<"$frontMatter_" || { echo "missing summary key" >&2; return 1; }
+  local appliesLine_=""
+  appliesLine_=$(grep '^applies-to:' <<<"$frontMatter_")
+  local appliesVal_=${appliesLine_#applies-to:}
+  appliesVal_=${appliesVal_# }
+  [[ $appliesVal_ == \[*\] ]] || { echo "applies-to value not a bracketed list" >&2; return 1; }
+  return 0
+}
+
+# pathMatchesGlob returns whether `path` matches `glob` under bash extglob+globstar semantics. (C)
+pathMatchesGlob() {
+  local path=$1 glob=$2
+  shopt -s extglob globstar
+  # shellcheck disable=SC2053
+  [[ $path == $glob ]]
+}
+
+# packageImportsAnyMatch returns 0 when at least one same-directory `.go` file as `filePath` contains any of the lines in `imports_` (one import path per line). Returns 1 (no match) when imports_ is empty.
+packageImportsAnyMatch() {
+  local filePath=$1 imports_=$2
+  [[ -n $imports_ ]] || return 1
+  local dir=""
+  dir=$(dirname $filePath)
+  local import
+  for import in $imports_; do
+    [[ -z $import ]] && continue
+    find $dir -maxdepth 1 -name '*.go' -type f -print0 2>/dev/null \
+      | xargs -0 -r grep -lF $import 2>/dev/null \
+      | grep -q . && return 0
+  done
+  return 1
+}
+
+# scanGuides reads every `*.md` in each path of GuidesDirsRaw (colon-separated), validates front-matter, and populates three caller-supplied associative arrays keyed by absolute guide path: `GLOBS[guide]` = newline-joined globs, `IMPORTS[guide]` = newline-joined import paths (empty when none), `SUMMARY[guide]` = one-line summary. Schema-error guides are skipped with a stderr WARNING + publishAudit call.
+scanGuides() {
+  local -n GLOBS=$1
+  local -n IMPORTS=$2
+  local -n SUMMARY=$3
+  # Split colon-separated dirs into a newline-separated string so the
+  # for-loop iterates per-dir under IFS=$'\n'.
+  local dirsList=${GuidesDirsRaw//:/$'\n'}
+  local dir guide_=""
+  for dir in $dirsList; do
+    [[ -d $dir ]] || continue
+    while IFS= read -r guide_; do
+      local fm_=""
+      fm_=$(extractFrontMatter "$guide_")
+      [[ -n $fm_ ]] || continue
+      local reason_=""
+      if ! reason_=$(validateFrontMatter "$fm_" 2>&1); then
+        echo "claude-guide-load-guard: schema-error in $guide_: $reason_; skipping for this invocation" >&2
+        publishAudit "schema-error" "guide=$guide_ reason=$reason_"
+        continue
+      fi
+      GLOBS[$guide_]=$(parseListValue 'applies-to' "$fm_")
+      IMPORTS[$guide_]=$(parseListValue 'package-imports' "$fm_")
+      SUMMARY[$guide_]=$(parseSummary "$fm_")
+    done < <(find "$dir" -maxdepth 1 -name '*.md' -type f 2>/dev/null)
+  done
+}
+
+# requiredGuidesForFile populates `REQUIRED[guide]=summary` for guides in `GLOBS` whose applies-to glob matches `filePath` AND (when IMPORTS[guide] is non-empty) at least one adjacent .go file imports a listed path.
+requiredGuidesForFile() {
+  local filePath=$1
+  local -n GLOBS=$2
+  local -n IMPORTS=$3
+  local -n SUMMARY=$4
+  local -n REQUIRED=$5
+  local guide g
+  for guide in "${!GLOBS[@]}"; do
+    local -i matched=0
+    for g in ${GLOBS[$guide]}; do
+      pathMatchesGlob $filePath $g && { matched=1; break; }
+    done
+    (( matched == 0 )) && continue
+    if [[ -n ${IMPORTS[$guide]} ]]; then
+      packageImportsAnyMatch $filePath "${IMPORTS[$guide]}" || continue
+    fi
+    REQUIRED[$guide]=${SUMMARY[$guide]}
+  done
+}
+
+# transcriptReadFilepaths emits one line per `Read` tool_use file_path found in the transcript JSONL at `transcriptPath`. Empty + rc=0 when the file is absent or unreadable.
+transcriptReadFilepaths() {
+  local transcriptPath=$1
+  [[ -r $transcriptPath ]] || return 0
+  jq -r '.message.content[]? | select(.type=="tool_use" and .name=="Read") | .input.file_path' $transcriptPath 2>/dev/null || true
+}
+
+# main orchestrates: parse stdin, filter to Edit/Write, scope filter, bypass, resolve required guides, transcript-grep, decide.
+main() {
+  local input_=""
+  input_=$(cat)
+
+  local tool_=""
+  tool_=$(jq -r '.tool_name // ""' <<<"$input_")
+  case $tool_ in
+    Edit|Write) ;;
+    *) exit 0 ;;
+  esac
+
+  local filePath_=""
+  filePath_=$(jq -r '.tool_input.file_path // ""' <<<"$input_")
+  [[ -n $filePath_ ]] || exit 0
+  [[ $filePath_ == "$ScopePrefix"* ]] || exit 0
+
+  # Build the guide map.
+  local -A guideGlobs=() guideImports=() guideSummary=()
+  scanGuides guideGlobs guideImports guideSummary
+
+  # Resolve required guides BEFORE bypass — needed for bypass-active audit.
+  local -A required=()
+  requiredGuidesForFile "$filePath_" guideGlobs guideImports guideSummary required
+
+  if [[ ${CLAUDE_GUIDE_LOAD_SKIP:-} == 1 ]]; then
+    if (( ${#required[@]} > 0 )); then
+      local guide guideListPlain_=""
+      for guide in "${!required[@]}"; do
+        guideListPlain_+="$guide "
+      done
+      echo "claude-guide-load-guard: BYPASS active (CLAUDE_GUIDE_LOAD_SKIP=1); would-have-required: ${guideListPlain_% }" >&2
+      publishAudit "bypassed" "tool=$tool_ path=$filePath_ would-block=${guideListPlain_% }"
+    fi
+    exit 0
+  fi
+
+  (( ${#required[@]} > 0 )) || exit 0
+
+  local transcriptPath_=""
+  transcriptPath_=$(jq -r '.transcript_path // ""' <<<"$input_")
+  local readPaths_=""
+  readPaths_=$(transcriptReadFilepaths "$transcriptPath_")
+
+  # Compute missing: required guides whose path is NOT in readPaths_.
+  local -A missing=()
+  local guide
+  for guide in "${!required[@]}"; do
+    if ! grep -qxF "$guide" <<<"$readPaths_"; then
+      missing[$guide]=${required[$guide]}
+    fi
+  done
+
+  (( ${#missing[@]} > 0 )) || exit 0
+
+  # Block.
+  local guideListPlain_=""
+  local detail_=""
+  for guide in "${!missing[@]}"; do
+    guideListPlain_+="$guide "
+    detail_+="  • $guide"$'\n'"      summary: ${missing[$guide]}"$'\n'
+  done
+  cat <<EOF >&2
+BLOCKED: claude-guide-load-guard — required author-topic guide(s) not Read in this session.
+
+Tool: $tool_
+Path: $filePath_
+
+Unread guides:
+$detail_
+Action: invoke the Read tool on each guide above before retrying this $tool_.
+Bypass (operator only, audit-visible): CLAUDE_GUIDE_LOAD_SKIP=1 in claude's env.
+Convention: see ~/dotfiles/claude/CLAUDE.md '# Guides' section.
+EOF
+  publishAudit "blocked" "tool=$tool_ path=$filePath_ guides=${guideListPlain_% }"
+  exit 2
+}
+
+# Bottom: sourceable for testing (return exits the sourced script);
+# under direct exec the return errors silently, set -e activates, main runs.
+return 2>/dev/null
+
+set -e
+main "$@"
