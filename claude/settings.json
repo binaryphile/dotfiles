@@ -25,6 +25,7 @@
     "PostCompact": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],
     "PreToolUse": [
       {"hooks": [{"type": "command", "command": "claude-bg-bash-guard"}]},
+      {"hooks": [{"type": "command", "command": "claude-guide-load-guard"}]},
       {"hooks": [{"type": "command", "command": "claude-bash-lint-guard"}]}
     ]
   }
