@@ -1,5 +1,5 @@
 [Service]
-Environment=PATH=/nix/store/4bwbk4an4bx7cb8xwffghvjjyfyl7m2i-bash-interactive-5.3p9/bin:/nix/store/wf7lr2hf43546jc5kwqh3dbxnpcnw1mn-gnugrep-3.12/bin:/nix/store/jjxngswsb214vb58qx485jhmilf0kxxy-coreutils-9.10/bin:/nix/store/g9h37kjrpvyzhsq4a79v2qkrpl4y1s7k-util-linux-2.42-bin/bin:/home/ted/.nix-profile/bin:/home/ted/.local/bin
+Environment=PATH=/usr/bin:/nix/store/4bwbk4an4bx7cb8xwffghvjjyfyl7m2i-bash-interactive-5.3p9/bin:/nix/store/wf7lr2hf43546jc5kwqh3dbxnpcnw1mn-gnugrep-3.12/bin:/nix/store/jjxngswsb214vb58qx485jhmilf0kxxy-coreutils-9.10/bin:/nix/store/g9h37kjrpvyzhsq4a79v2qkrpl4y1s7k-util-linux-2.42-bin/bin:/home/ted/.nix-profile/bin:/home/ted/.local/bin
 ExecStart=/home/ted/dotfiles/scripts/cross-tree-sweep-cron
 TimeoutStopSec=120
 Type=oneshot
