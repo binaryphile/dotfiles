@@ -33,11 +33,13 @@ Two directories. Read the relevant guide before speculating or searching the web
 
 The rule above is mechanically enforced by `claude-guide-load-guard`
 (PreToolUse hook; source `~/dotfiles/claude/claude-guide-load-guard`).
-On `Edit` / `Write` of a file under `~/projects/*`, the hook resolves
-file_path → required guides via per-guide YAML front-matter, greps the
-session transcript for prior `Read` of each required guide, and
-**blocks the tool call (exit 2)** when any required guide has not been
-read this session. Block stderr names the unread guide(s) and a
+On `Edit` / `Write` of a file under any configured scope root
+(default: `~/projects/`, `~/dotfiles/`, `~/.config/systemd/user/` —
+colon-separated `CLAUDE_GUIDE_SCOPE` env var overrides), the hook
+resolves file_path → required guides via per-guide YAML front-matter,
+greps the session transcript for prior `Read` of each required guide,
+and **blocks the tool call (exit 2)** when any required guide has not
+been read this session. Block stderr names the unread guide(s) and a
 one-line summary so the agent knows what to load next.
 
 **Bypass**: `CLAUDE_GUIDE_LOAD_SKIP=1` in the hook's environment exits

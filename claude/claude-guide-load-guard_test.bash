@@ -319,3 +319,29 @@ test_main_testFileRequiresKhorikov() {
     return 1
   }
 }
+
+test_main_multiScopeAnyPrefixMatches() {
+  local -A case1=([name]='first prefix'  [scopeDir]='scope')
+  local -A case2=([name]='second prefix' [scopeDir]='altScope')
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit $casename)"
+    stageNoopEvtctl
+    local dir
+    tesht.MktempDir dir || return 128
+    stageGuides $dir/guides
+    : >$dir/transcript.jsonl
+    local input
+    input=$(mkInputJson Edit $dir/$scopeDir/foo.bash $dir/transcript.jsonl)
+    local got_ rc
+    runHook got_ rc $dir/guides "$dir/scope/:$dir/altScope/" "$input"
+    tesht.AssertRC $rc 2
+    [[ $got_ == *BLOCKED* && $got_ == *bash-style-guide.md* ]] || {
+      tesht.Log "expected BLOCKED ($scopeDir); got: $got_"
+      return 1
+    }
+  }
+
+  tesht.Run ${!case@}
+}

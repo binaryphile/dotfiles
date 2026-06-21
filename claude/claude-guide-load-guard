@@ -40,7 +40,7 @@ set -ufo pipefail
 
 # Dependency-injectable globals (test override via env).
 GuidesDirsRaw=${CLAUDE_GUIDE_DIRS:-$HOME/projects/jeeves/guides:$HOME/projects/urma/obsidian/guides}
-ScopePrefix=${CLAUDE_GUIDE_SCOPE:-$HOME/projects/}
+ScopePrefix=${CLAUDE_GUIDE_SCOPE:-$HOME/projects/:$HOME/dotfiles/:$HOME/.config/systemd/user/}
 AuditApp=${CLAUDE_GUIDE_AUDIT_APP:-jeeves}
 
 # fatal prints `msg_` to stderr and exits with `rc` (default 1).
@@ -114,6 +114,13 @@ pathMatchesGlob() {
   shopt -s extglob globstar
   # shellcheck disable=SC2053
   [[ $path == $glob ]]
+}
+
+# inScope returns whether `filePath` is under any colon-separated prefix in `scopeList`. (C)
+inScope() {
+  local filePath=$1 scopeList=$2 prefix
+  for prefix in ${scopeList//:/$'\n'}; do [[ $filePath == "$prefix"* ]] && return 0; done
+  return 1
 }
 
 # packageImportsAnyMatch returns 0 when at least one same-directory `.go` file as `filePath` contains any of the lines in `imports_` (one import path per line). Returns 1 (no match) when imports_ is empty.
@@ -203,7 +210,7 @@ main() {
   local filePath_=""
   filePath_=$(jq -r '.tool_input.file_path // ""' <<<"$input_")
   [[ -n $filePath_ ]] || exit 0
-  [[ $filePath_ == "$ScopePrefix"* ]] || exit 0
+  inScope "$filePath_" "$ScopePrefix" || exit 0
 
   # Build the guide map.
   local -A guideGlobs=() guideImports=() guideSummary=()
