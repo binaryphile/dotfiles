@@ -29,6 +29,54 @@ Two directories. Read the relevant guide before speculating or searching the web
   Beck extreme programming, claude-md writing, CQRS / event sourcing,
   framework upgrades, FP unified guide, and more.
 
+## Mechanical enforcement (PreToolUse hook)
+
+The rule above is mechanically enforced by `claude-guide-load-guard`
+(PreToolUse hook; source `~/dotfiles/claude/claude-guide-load-guard`).
+On `Edit` / `Write` of a file under `~/projects/*`, the hook resolves
+file_path → required guides via per-guide YAML front-matter, greps the
+session transcript for prior `Read` of each required guide, and
+**blocks the tool call (exit 2)** when any required guide has not been
+read this session. Block stderr names the unread guide(s) and a
+one-line summary so the agent knows what to load next.
+
+**Bypass**: `CLAUDE_GUIDE_LOAD_SKIP=1` in the hook's environment exits
+0 immediately. Set this OPERATOR-SIDE before invoking `claude` —
+not via a Bash tool call (per-tool env doesn't propagate to PreToolUse
+hooks). Each bypassed-would-have-blocked event publishes a
+`/guide-guard bypassed:` interaction to `inbox.jeeves` for audit.
+
+**Front-matter convention**: each guide self-declares which file
+patterns it applies to via YAML front-matter at the top:
+
+```yaml
+---
+applies-to: [glob, ...]              # required; glob match on absolute file_path
+package-imports: [import-path, ...]  # optional; AND with applies-to; greps adjacent *.go files
+summary: "..."                       # required; one-line; shown in block stderr
+---
+```
+
+Hook semantics: a guide is required iff `applies-to` matches AND
+(when `package-imports` is present) at least one adjacent
+same-directory file contains one of the listed imports. Both ANDed.
+
+**Adding a new guide to enforcement**: prepend the front-matter block
+above to the guide markdown; the hook picks it up on next invocation
+(mapping cache rebuilds on guide-mtime change). No central registry
+to edit.
+
+**Accepted limitations** (deferred to follow-up tasks; substrate-fix
+#45826 acknowledges):
+- The proxy is "Read event happened this session," not "guide content
+  is in context now." `/clear`, `/compact`, prompt-window eviction can
+  produce silent under-enforcement.
+- No T2 fallback: cycle bets entirely on force-Read (T1). If anchor-
+  class recurrence stays high, follow-up #46927 escalates to an
+  authoring-time style-lint.
+- No schema-drift lint: nothing fails when a new guide lacks front-
+  matter. Per-author discipline for now.
+
 # Security Docs
 
 `~/projects/jeeves/security/security.md`,
