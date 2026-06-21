@@ -341,7 +341,7 @@ Operational procedures documented in the canonical doc set in ~/projects/jeeves/
   2. Browser opens a SAML auth page (host Chrome on Crostini via the saml-host-browser shim; container browser otherwise)
   3. Ted completes SSO authentication
   4. System captures the auth token and establishes the tunnel
-  5. Tunnel stays up with automatic reconnect; Ctrl-C exits
+  5. Tunnel stays up. Under gpoc the foreground retry loop exits on Ctrl-C; under pangp the daemon (`gpd.service`) keeps the tunnel until `vpn down`.
   6. Ted reaches corporate resources (git servers, internal services)
 - **Extensions:**
   - 1a. VPN command not available -> re-run deployment (UC-4); resume at step 1
