@@ -87,14 +87,36 @@ readState() {
 # carrier-sense layer to drive the up/down distinction), which previously
 # caused this probe to false-negative when pangp's gpd0 was live.
 #
-# Semantic scope (tasks.dotfiles #27152 F1/F10):
-# vpnUp reports INTERFACE-STATE -- userspace endpoint attached to a tun
-# device (or ethernet carrier sense). It does NOT prove end-to-end VPN
-# USABILITY. A wedged tunnel client that still holds the tun fd will keep
-# LOWER_UP asserted while traffic flows nowhere. The widget's design
-# intent is interface-state; promotion to usability semantics would
-# require a supplementary probe (route reachability, gateway ping, or
-# `globalprotect show --status` parse).
+# Semantic scope -- kernel-state vs control-plane-state divergence
+# (tasks.jeeves #32960; original tasks.dotfiles #27152 F1/F10):
+#
+# vpnUp reports INTERFACE-STATE -- LOWER_UP on the tun device, meaning a
+# userspace endpoint is attached and the kernel link-layer carrier is
+# asserted. It does NOT prove end-to-end VPN USABILITY: a wedged tunnel
+# client that still holds the tun fd will keep LOWER_UP asserted while
+# traffic flows nowhere.
+#
+# The companion predicate scripts/vpn:cmdStatus() reports CONTROL-PLANE
+# STATE -- `globalprotect show --status` for pangp (the daemon's view of
+# the connection) or tmux-session-exists + pgrep for gpoc (the wrapper-
+# process view). The two predicates CAN disagree under tunnel-flap /
+# teardown-in-progress conditions: kernel may keep LOWER_UP asserted
+# briefly after the control-plane reports "Not Connected", and vice
+# versa. Promoting vpnUp to usability semantics would require a
+# supplementary probe (route reachability, gateway ping, or the same
+# `globalprotect show --status` parse cmdStatus already does).
+#
+# Which predicate to use:
+#   - widget rendering / gating  -> vpnUp (interface-state matches the
+#     user's mental model of "is the tunnel device live?"; ~10ms cost
+#     and no daemon dependency)
+#   - lifecycle commands (down)  -> neither; scripts/vpn:cmdDown is
+#     deliberately predicate-free (tasks.jeeves #27694) so it works
+#     regardless of which client (if any) is up
+#   - operator-facing status     -> scripts/vpn status (cmdStatus),
+#     because the control-plane is the authoritative answer to "is the
+#     VPN actually connected?" -- gpd.service knows what the kernel
+#     doesn't
 #
 # Caller surface (the canonical consumers; both must move together if
 # either is changed because the function API and the persisted state

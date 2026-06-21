@@ -52,6 +52,10 @@ cmdDown() {
 cmdAttach() { tmux attach -t "$Session"; }
 
 cmdStatus() {
+  # Reports CONTROL-PLANE STATE (the daemon's view of the connection).
+  # See scripts/probe-lib.bash:vpnUp() for the kernel-state companion and
+  # the divergence semantics under tunnel-flap (tasks.jeeves #32960).
+  #
   # Official pangp path (systemd-managed; no tmux session). Check first
   # because it's the more authoritative state -- gpd.service knows whether
   # the tunnel is actually up, not just whether a wrapper process exists.
