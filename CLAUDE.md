@@ -19,7 +19,7 @@ Ted's shared user environment. Works on NixOS, Crostini, standalone linux, and m
 - Top-level `home.nix`, `gitconfig`, `tmux.conf` -- symlinks to the active context's versions.
 - `bash/apps/<app>/` -- per-app modules with `init.bash` (hooks) and `cmds.bash` (aliases/functions).
 - `bash/settings/` -- base, login, interactive, env, cmds.
-- `claude/` -- Claude Code config. `settings.json` and `CLAUDE.md` (base) deployed via `home.file` in stage 1. `CLAUDE-era.md` (era, guides) and memory redirects deployed by update-env stage 2.
+- `claude/` -- Claude Code config. `settings.json` and `CLAUDE.md` (base) deployed via `home.file` in stage 1. `CLAUDE-era.md` (era, guides) and memory redirects deployed by update-env stage 2. Hook scripts (`claude-agent-identity` SessionStart per UC-16; `claude-bash-lint-guard` + `claude-bg-bash-guard` PreToolUse) symlinked into `~/.local/bin/` by update-env stage 1 and registered in `claude/settings.json` `hooks.<EventName>` arrays.
 - `scripts/` -- vpn-connect, khal-notify, op-run launcher, and other utilities.
 - `op-run/` -- 1Password credentialed-tool launcher: `projects.bash` (per-project credential registry, path-keyed), `machines/<hostname>.allow` (per-machine vault allowlist). See [op-run/README.md](op-run/README.md) for deployment, project onboarding, exit-code reference.
 - `update-env` -- idempotent deployment script (lives in repo root, deployed to `~/.local/bin/`).
