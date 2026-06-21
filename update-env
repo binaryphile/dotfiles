@@ -486,10 +486,10 @@ stage2() {
   #  |                           replace target: ../fluentfp)      |
   #  |   +-> sofdevsim-2026    - software dev simulation           |
   #  |   +-> blog              - binaryphile.github.io             |
-  #  |   +-> tandem-protocol   - Claude slash commands (codeberg)  |
-  #  |   +-> era               - semantic memory MCP (codeberg)    |
+  #  |   +-> tandem-protocol   - Claude slash commands             |
+  #  |   +-> era               - semantic memory MCP               |
   #  |       Default branch: main. Cloned and symlinked.           |
-  #  |   +-> toc               - TOC DBR pipeline lib (codeberg)   |
+  #  |   +-> toc               - TOC DBR pipeline lib              |
   #  |   +-> tmux-claude       - tmux plugin for claude panes      |
   #  |   +-> agent-orchestration - coordination spec + reference   |
   #  |   +-> flake-locks       - pin all locks to same nixpkgs rev |
@@ -532,7 +532,7 @@ stage2() {
   try obsidianSnippetsTask ~/projects/binaryphile.github.io/.obsidian/snippets
 
   section tandem-protocol
-  try codebergCloneAndLinkTask tandem-protocol
+  try githubCloneAndLinkTask tandem-protocol
   try obsidianSnippetsTask ~/projects/tandem-protocol/.obsidian/snippets
   desc   'remove stale /g command (renamed to /grade)'
   ok     '[[ ! -e ~/.claude/commands/g.md ]]'
@@ -544,7 +544,7 @@ stage2() {
     each task.Ln
 
   section era
-  try codebergCloneAndLinkTask era
+  try githubCloneAndLinkTask era
   try obsidianSnippetsTask ~/projects/era/.obsidian/snippets
   try eraBuildTask
   each task.Ln <<'  END'
@@ -597,7 +597,10 @@ stage2() {
   shellcheckrcTask
 
   section toc
-  try codebergCloneAndLinkTask toc
+  try githubCloneAndLinkTask toc
+
+  section poc-haskell-plugin
+  try githubCloneAndLinkTask poc-haskell-plugin
 
   section tmux-claude
   try githubCloneAndLinkTask tmux-claude
@@ -983,12 +986,6 @@ bitbucketCloneAndLinkTask() {
   try gitUpdate ~/projects/$repo
 }
 
-
-codebergCloneAndLinkTask() {
-  local repo=$1 branch=${2:-main}
-  task.GitClone git@codeberg.org:binaryphile/$repo.git ~/projects/$repo $branch
-  try gitUpdate ~/projects/$repo
-}
 
 scaffoldTask() {
   local dir=$1
