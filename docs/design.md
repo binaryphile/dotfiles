@@ -421,6 +421,15 @@ State is implicit in `gpd.service`'s systemd state -- no separate state file:
 
 `scripts/vpn-connect` reads `vpn-mode` and runs the right client. pangp branch: `exec globalprotect connect --portal access.digi.com` (PAN's daemon handles tunnel persistence via its own `Restart=on-failure`). gpoc branch: the existing `gpauth | gpclient connect` pipeline with retry-on-disconnect loop. Widgets (`panel`, `probe-lib`) detect `gpd0` (pangp's interface) and `tun0` (gpoc's) independently -- the dispatch is invisible at the widget layer.
 
+#### vpn up dispatch (UC-7 entry path)
+
+`scripts/vpn` `cmdUp` is **mode-dispatched** (#32959, completing the predicate-audit arc started in #27694). The wrap differs by mode because persistence differs by mode:
+
+- **pangp path**: predicate via `globalprotect show --status | grep -q 'Connected$'` (control-plane state, byte-aligned with `cmdStatus`). Already-connected → echo `vpn (pangp) already connected` + return 0. Not-connected (including transient states like `Connecting...` and CLI rc=127) → fall through to `vpn-connect` (which `exec`s the one-shot `globalprotect connect --portal access.digi.com` against `gpd.service`). **No tmux session**. Treating status-CLI failure as "not connected" is intentional: the command's job is to ensure connectivity, not merely observe daemon activity, and a fall-through `globalprotect connect` is idempotent if the tunnel is already up.
+- **gpoc path**: predicate via `tmux has-session -t vpn`. Already-running → echo `vpn (gpoc) session already running; attach with: vpn attach` + return 0. Not-running → `tmux new-session -d -s vpn 'vpn-connect; printf "\nvpn-connect exited; press any key to close. "; read -rn1'` (preserves the existing held-open-pane behavior). The tmux session IS the persistence (gpocLoop is the foreground retry loop).
+
+The asymmetry parallels `cmdDown`'s (#27694) but takes the inverse shape: `cmdDown` is predicate-free (run both down sequences) because the kernel-state vs control-plane-state divergence under teardown could mis-route a predicate-driven dispatch; `cmdUp` is predicate-with-mode-dispatch because only one client can hold the tun at a time, so dispatch by `vpn-mode` is unambiguous. The semantic split between kernel-state (`vpnUp` reads `LOWER_UP`) and control-plane-state (`cmdStatus` reads `globalprotect show --status`) is the canonical anchor at `scripts/probe-lib.bash:vpnUp`'s Semantic-scope block (#32960).
+
 #### vpn down dispatch (UC-7 exit path)
 
 `scripts/vpn` `cmdDown` is **idempotent dual-down across both clients** (#27694). Both down sequences run unconditionally with error suppression -- no predicate decides which to invoke:
