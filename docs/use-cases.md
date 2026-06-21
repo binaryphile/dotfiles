@@ -634,6 +634,38 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 
 ---
 
+### UC-16: Auto-Attribute Claude Sessions for Mux-Identity
+
+- **Primary Actor:** Ted (operator)
+- **Secondary Actors:** Claude Code (SessionStart hook infrastructure), `claude-agent-identity` script, evtctl
+- **Goal:** Every event published by a Claude Code session carries `metadata.agent = <role>@<host>` attribution without the operator or agent having to remember to `export EVTCTL_AGENT` at session start
+- **Scope:** Dotfiles environment (Claude Code hook system + evtctl mux-identity contract)
+- **Level:** User goal
+- **Trigger:** Automatic -- fires at each Claude Code session start (source = startup, resume, or compact)
+- **Preconditions:** UC-4 completed; evtctl on PATH; `~/.local/bin/claude-agent-identity` deployed via `update-env`; `~/dotfiles/claude/settings.json` registers the hook in `hooks.SessionStart`
+- **Stakeholders:**
+  - Ted -- sees stable per-session attribution in audit queries (`era query <stream> --json | jq '.[].metadata.agent'`); the operator-authored decision-share metric (icarus roadmap Phase B leading indicator #7) stays readable
+  - Audit consumers -- can join events to sessions reliably via `metadata.agent` without unattributed gaps
+  - Claude agents -- relieved of the operator-discipline export at session start; the identity flows automatically
+- **Main Success Scenario:**
+  1. Claude Code launches a new session (or resumes / compacts)
+  2. Claude Code invokes the SessionStart hook chain; `claude-agent-identity` runs synchronously
+  3. The hook resolves identity: `host` from `~/crostini/hostname` (Crostini-aware) or system `hostname` builtin; `role` from `~/.claude/agent-role` if present; composes `agent = claude-${role}@${host}` when role set, else `${USER}@${host}`
+  4. The hook appends `export EVTCTL_AGENT="$agent"` to `$CLAUDE_ENV_FILE` (Claude Code's documented mechanism for hook-persisted env vars across subsequent Bash tool invocations)
+  5. The hook forks a backgrounded `evtctl interaction "/session-start source=$source session_id=$id model=$m version=$v agent=$agent started_at=$ts"` and exits 0
+  6. Every subsequent Bash tool invocation in the session has `EVTCTL_AGENT` exported; every event published by `evtctl` carries `metadata.agent = $agent`
+- **Extensions:**
+  - 3a. *Role marker absent:* `agent` defaults to `${USER}@${host}` (e.g., `ted@calliope`); attribution surfaces under the operator-prefix in metric computation
+  - 3b. *Crostini hostname file absent (non-Crostini host):* falls back to system `hostname` builtin
+  - 4a. *`$CLAUDE_ENV_FILE` unset (script invoked outside hook context, e.g., direct CLI for testing):* hook exits 0 silently without writing; no error
+  - 5a. *evtctl unreachable (era-serve down):* background publish errors are swallowed (`>/dev/null 2>&1`); session startup is unaffected
+  - 5b. *Hook stdin JSON malformed or fields absent (upstream schema change):* fields default to `unknown`; `/session-start` event still publishes with at least `agent` and `started_at`
+- **Minimal Guarantee:** Session startup is never blocked by the hook (sync work bounded to a local file append; all network I/O backgrounded); `EVTCTL_AGENT` is set for every subsequent Bash tool invocation when `$CLAUDE_ENV_FILE` is provided by Claude Code
+- **Success Guarantee:** Every event published by `evtctl` (task / contract / complete / interaction / claim / done / inbox) during the session carries `metadata.agent = <role>@<host>`; the `/session-start` audit event lands on the session's project stream within a few seconds
+- **Technology:** `~/dotfiles/claude/claude-agent-identity` (bash; reads stdin JSON via `jq`, resolves hostname + role marker, writes export to `$CLAUDE_ENV_FILE`, forks `evtctl interaction`); registered in `~/dotfiles/claude/settings.json` `hooks.SessionStart`; deployed to `~/.local/bin/claude-agent-identity` by `update-env` (symlink). Tested via `~/dotfiles/claude/claude-agent-identity_test.bash` (tesht; controller-integration with PATH-stubbed `evtctl` + `tesht.MktempDir` fixtures for `$HOME` / `$CLAUDE_ENV_FILE`). See [design.md: Claude Agent Identity Hook (UC-16)](design.md#claude-agent-identity-hook-uc-16).
+
+---
+
 ## Status
 
 | Use Case | Status | Notes |
@@ -658,3 +690,4 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 | UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |
 | UC-14 Guard Against Accidental Binary Commits | Working | Global pre-commit hook + binary-extension gitignore active (deployed via home-manager); no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |
 | UC-15 Audit update-env Stage-1 Convergence | v1 implemented (7 check categories) | `~/dotfiles/scripts/update-env-audit` — text + `--json` output; `OK/MISSING/BROKEN/RESIDUAL/DRIFT` taxonomy; tesht coverage via real-filesystem fixtures; v2 deferred (per-project shellcheckrc, MCP, slash commands, memory redirects, agent.toml, nix-wrapper, systemd services, op-run/checksums, project-clones-present) |
+| UC-16 Auto-Attribute Claude Sessions for Mux-Identity | Implemented | `claude-agent-identity` SessionStart hook writes `EVTCTL_AGENT` to `$CLAUDE_ENV_FILE`; backgrounds `/session-start` interaction event publish; Crostini-aware hostname + optional role marker (`~/.claude/agent-role`); mechanizes the mux-identity export discipline (era `docs/evtctl.md` §"Mux identity contract") |
