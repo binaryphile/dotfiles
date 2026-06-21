@@ -810,6 +810,54 @@ Actions by threshold: 25% -> "Consider closing idle parallel sessions." 10% -> "
 
 **Packaging**: `mkScriptBin` in `contexts/linux-base.nix` with `runtimeInputs = [ pkgs.jq pkgs.coreutils pkgs.util-linux ]` (`util-linux` provides `flock`). Hooks wired in `claude/settings.json`.
 
+### Claude Agent Identity Hook (UC-16)
+
+`claude/claude-agent-identity` is a Claude Code SessionStart hook that mechanizes the mux-identity export discipline (era `docs/evtctl.md` §"Mux identity contract"). Without it, agents must remember to `export EVTCTL_AGENT="<role>@<host>"` at session start; forgotten exports leave events without `metadata.agent` attribution, degrading the operator-authored decision-share metric (icarus roadmap Phase B leading indicator #7).
+
+**Hook chain placement**: third entry in `hooks.SessionStart` (alongside `era-hook` async and `claude-budget` sync). Must be sync -- Claude Code sources `$CLAUDE_ENV_FILE` once after all sync SessionStart hooks complete, so an async write loses the window.
+
+**Identity resolution** (mirrors evtctl's `hostnameDerived`):
+
+```
+host = $(< ~/crostini/hostname 2>/dev/null) || $(hostname)
+role = $(< ~/.claude/agent-role 2>/dev/null)  # empty if file absent
+agent = role set    ? "claude-${role}@${host}"
+                    : "${USER}@${host}"
+```
+
+Crostini-aware hostname matches evtctl's behavior -- `$(hostname)` returns the inner `penguin` namespace on Crostini, not the operator-meaningful machine name like `calliope`. The `~/crostini/hostname` file is the canonical source on Crostini hosts; non-Crostini hosts fall through to the `hostname` builtin.
+
+**Sync/async split** is essential to the architecture:
+
+| Phase | Mode | Reason |
+|---|---|---|
+| Write `export EVTCTL_AGENT="$agent"` to `$CLAUDE_ENV_FILE` | sync | Claude Code reads the file once after sync hooks finish; async write loses the window. ~1ms (pure local file append). |
+| Publish `/session-start` interaction event via `evtctl interaction` | async (forked + disowned) | era-serve POST takes 100-500ms; blocking session startup on it is unjustified observation. Errors swallowed (`>/dev/null 2>&1`). |
+
+The async publish runs as `( evtctl interaction "..." </dev/null >/dev/null 2>&1 & )` then `exit 0`. Claude Code does not wait on backgrounded children.
+
+**Defensive degradation** (extensions per UC-16):
+
+| Condition | Behavior |
+|---|---|
+| `$CLAUDE_ENV_FILE` unset | Silent `exit 0` -- script invoked outside hook context (e.g., direct CLI testing). No write attempted. |
+| `~/crostini/hostname` unreadable | Falls through to `hostname` builtin. |
+| `~/.claude/agent-role` absent | `role` empty; `agent` resolves to `${USER}@${host}`. |
+| Hook stdin malformed or fields absent | Fields default to `unknown`; `/session-start` event still publishes with at least `agent` and `started_at`. |
+| evtctl publish fails | Backgrounded; errors discarded; session startup unaffected. |
+
+**`/session-start` event shape**: published to `tasks.<basename(cwd)>` (cwd from hook stdin; evtctl's generic-basename denylist + walk-up handles edge cases per era `docs/evtctl.md` §"Generic-basename denylist + walk-up"). Payload:
+
+```
+/session-start source=<startup|resume|compact> session_id=<uuid> model=<slug> version=<v> agent=<role>@<host> started_at=<ISO8601>
+```
+
+`source` distinguishes a fresh session start from a resumed session or a post-compact restart -- all three fire the hook. `session_id` joins events to the per-session JSONL transcript; `model` / `version` come from the hook stdin schema where present, default to `unknown` otherwise.
+
+**Role marker convention**: `~/.claude/agent-role` is a single-line file containing the role slug (e.g., `tandem`, `orchestrator`, `delegate`). When present, `EVTCTL_AGENT` resolves to `claude-${role}@${host}` so the role-half of the identity prefixes with `claude-` per the mux-identity contract's operator/agent split (operator-authored events have role-half matching `${USER}` or the configured operator prefix; agent-authored events have role-half starting `claude-`).
+
+**Packaging**: bash script at `~/dotfiles/claude/claude-agent-identity`, symlinked to `~/.local/bin/claude-agent-identity` by `update-env` (mirrors `claude-bash-lint-guard` / `claude-bg-bash-guard` packaging at `update-env:348-349`). Registered in `~/dotfiles/claude/settings.json` `hooks.SessionStart` (third entry). Tested via `~/dotfiles/claude/claude-agent-identity_test.bash` (tesht; PATH-stubbed `evtctl` for boundary mocking; `tesht.MktempDir` for `$HOME` and `$CLAUDE_ENV_FILE` fixtures).
+
 ### Relationship to nixos-config
 
 ```nix
