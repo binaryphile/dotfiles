@@ -560,6 +560,8 @@ stage2() {
     ~/projects/era/bin/task-audit             ~/.local/bin/task-audit
     ~/projects/era/bin/validate-attestation   ~/.local/bin/validate-attestation
     ~/projects/era/bin/validate-plan          ~/.local/bin/validate-plan
+    ~/projects/era/bin/cross-repo-dirty-sweep ~/.local/bin/cross-repo-dirty-sweep
+    ~/projects/era/bin/stash-audit            ~/.local/bin/stash-audit
   END
 
   lib.Glob ~/projects/era/commands/* |
@@ -583,13 +585,17 @@ stage2() {
     ~/projects/era/evtctl-canary-watch@.timer ~/.config/systemd/user/evtctl-canary-watch@.timer
     ~/dotfiles/evtctl-forward/dropins/evtctl-forward@urma.service.d/canary-interval.conf ~/.config/systemd/user/evtctl-forward@urma.service.d/canary-interval.conf
     ~/dotfiles/evtctl-forward/dropins/evtctl-canary-watch@urma.service.d/canary-watch-threshold.conf ~/.config/systemd/user/evtctl-canary-watch@urma.service.d/canary-watch-threshold.conf
+    ~/dotfiles/systemd/user/cross-tree-sweep.service ~/.config/systemd/user/cross-tree-sweep.service
+    ~/dotfiles/systemd/user/cross-tree-sweep.timer ~/.config/systemd/user/cross-tree-sweep.timer
   END
+  try task.Ln ~/dotfiles/scripts/cross-tree-sweep-cron ~/.local/bin/cross-tree-sweep-cron
   each try <<'  END'
     eraStateDirDropInTask
     eraSystemdEnableTask
     eraRestartTask
     eraSoakRestartIfActiveAndStaleTask
     evtctlForwardRestartIfActiveAndStaleTask
+    crossTreeSweepEnableTask
   END
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
@@ -1148,6 +1154,12 @@ eraSystemdEnableTask() {
   desc  'enable era systemd service'
   ok    'systemctl --user is-enabled era &>/dev/null'
   cmd   'systemctl --user enable --now era'
+}
+
+crossTreeSweepEnableTask() {
+  desc  'enable cross-tree-sweep.timer (weekly Mon 09:00 periodic sweep)'
+  ok    'systemctl --user is-enabled cross-tree-sweep.timer &>/dev/null'
+  cmd   'systemctl --user daemon-reload; systemctl --user enable --now cross-tree-sweep.timer'
 }
 
 # The era.service drop-in that previously pointed ERA_STATE_DIR at
