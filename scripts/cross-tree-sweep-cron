@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# cross-tree-sweep-cron — periodic cross-tree sweep wrapper. Invoked by the
+# systemd user timer `cross-tree-sweep.timer` once per week (Mon 09:00). Runs
+# era's `cross-repo-dirty-sweep --all-projects`, parses 3 dimensions, counts
+# plan-dir staleness + strays, evaluates findings against mechanical budgets,
+# publishes a `/cleanup-sweep` summary message to `inbox.jeeves`.
+#
+# See ~/projects/jeeves/guides/cross-tree-sweep-discipline.md for the discipline
+# rationale, dimension categories (policy-breach vs capacity-pressure), and
+# operator response protocol.
+#
+# Anchor: 2026-06-21 tasks.jeeves #39839 (scope-folded from META-task to
+# periodic-discipline layer per operator option (b)).
+#
+# Reads no stdin. Exits 0 on successful sweep+publish (regardless of OK/WARN);
+# fail-loud non-zero on upstream (`cross-repo-dirty-sweep`) or downstream
+# (`evtctl inbox`) failure (R1 F7).
+#
+# Naming Policy:
+#
+# Standalone script — no namespace prefix on functions, no suffix on globals.
+# Functions: camelCase. Locals: camelCase. Globals: PascalCase. Variables
+# ending in _ may contain IFS characters or be empty — must quote on
+# expansion. Integer types use -i (drop _).
+
+IFS=$'\n'
+set -o noglob
+set -ufo pipefail
+
+# Dependency-injectable globals (test override via env).
+SweepBin=${CROSS_TREE_SWEEP_BIN:-cross-repo-dirty-sweep}
+PlanDir=${CROSS_TREE_PLAN_DIR:-$HOME/.claude/plans}
+AuditApp=${CROSS_TREE_AUDIT_APP:-jeeves}
+
+# Budget constants (see guides/cross-tree-sweep-discipline.md §5).
+declare -gri DirtyRepoBudget=5
+declare -gri StashWarnBudget=0
+declare -gri UnpushedBudget=0
+declare -gri PlanStaleDaysBudget=60
+declare -gri PlanStaleCountBudget=50
+declare -gri PlanStrayBudget=0
+
+# fatal prints `msg_` to stderr and exits with `rc` (default 1).
+fatal() {
+  local msg_=$1 rc=${2:-1}
+  echo "cross-tree-sweep-cron: $msg_" >&2
+  exit $rc
+}
+
+# runSweep invokes era's cross-repo-dirty-sweep --all-projects and writes its stdout into the caller's nameref `OUT`. Exits non-zero with fatal() on rc!=0 OR rc!=1 (rc=1 means findings exist, which is normal; rc=2+ means usage error or substrate failure).
+runSweep() {
+  local -n OUT=$1
+  local rc=0
+  OUT=$($SweepBin --all-projects 2>&1) || rc=$?
+  case $rc in
+    0|1) : ;;
+    *) fatal "$SweepBin --all-projects failed rc=$rc; output: $OUT" 2 ;;
+  esac
+}
+
+# countDirty counts repos in `sweep_` (newline-separated lines) whose `dirty=N` field has N>0.
+countDirty() {
+  local sweep_=$1
+  grep -cE 'dirty=[1-9]' <<<"$sweep_" || true
+}
+
+# countStashWarn counts repos in `sweep_` whose `stash_warn=N` field has N>0.
+countStashWarn() {
+  local sweep_=$1
+  grep -cE 'stash_warn=[1-9]' <<<"$sweep_" || true
+}
+
+# countUnpushed counts repos in `sweep_` whose `unpushed=` field is a numeric N>0 OR `diverged-out-of-band`. `skip-no-upstream` and `skip-local-only-marker` are intentional exclusions and NOT counted.
+countUnpushed() {
+  local sweep_=$1
+  local -i numericAhead=0 diverged=0
+  numericAhead=$(grep -cE 'unpushed=[1-9]' <<<"$sweep_" || true)
+  diverged=$(grep -cF 'unpushed=diverged-out-of-band' <<<"$sweep_" || true)
+  echo $(( numericAhead + diverged ))
+}
+
+# dirtyOffenders prints `<repo>=dirty=<n>;` records for repos with dirty>0 from `sweep_`.
+dirtyOffenders() {
+  local sweep_=$1
+  awk '
+    /dirty=[1-9]/ {
+      match($0, /dirty=[0-9]+/)
+      d = substr($0, RSTART, RLENGTH)
+      sub(/:.*/, "", $1)
+      printf "%s=%s; ", $1, d
+    }
+  ' <<<"$sweep_"
+}
+
+# stashOffenders prints `<repo>=stash_warn=<n>;` records for repos with stash_warn>0 from `sweep_`.
+stashOffenders() {
+  local sweep_=$1
+  awk '
+    /stash_warn=[1-9]/ {
+      match($0, /stash_warn=[0-9]+/)
+      s = substr($0, RSTART, RLENGTH)
+      sub(/:.*/, "", $1)
+      printf "%s=%s; ", $1, s
+    }
+  ' <<<"$sweep_"
+}
+
+# unpushedOffenders prints `<repo>=unpushed=<value>;` records for repos with non-OK unpushed status from `sweep_`.
+unpushedOffenders() {
+  local sweep_=$1
+  awk '
+    /unpushed=[1-9]/ || /unpushed=diverged-out-of-band/ {
+      match($0, /unpushed=[^ ]+/)
+      u = substr($0, RSTART, RLENGTH)
+      sub(/:.*/, "", $1)
+      printf "%s=%s; ", $1, u
+    }
+  ' <<<"$sweep_"
+}
+
+# countPlanStale counts `*.md` files in PlanDir at maxdepth 1 with mtime older than `PlanStaleDaysBudget`.
+countPlanStale() {
+  [[ -d $PlanDir ]] || { echo 0; return 0; }
+  find "$PlanDir" -maxdepth 1 -type f -name '*.md' -mtime "+$PlanStaleDaysBudget" 2>/dev/null | wc -l
+}
+
+# countPlanStrays counts non-`*.md` files in PlanDir at maxdepth 1.
+countPlanStrays() {
+  [[ -d $PlanDir ]] || { echo 0; return 0; }
+  find "$PlanDir" -maxdepth 1 -type f ! -name '*.md' 2>/dev/null | wc -l
+}
+
+# mark returns "BREACH" if `value` exceeds `budget`, else "OK". (C)
+mark() {
+  local -i value=$1 budget=$2
+  if (( value > budget )); then
+    echo BREACH
+  else
+    echo OK
+  fi
+}
+
+# publishAudit publishes `body` as an inbox message to AuditApp. Fail-loud (R1 F7): publish failure exits non-zero so systemd's journal captures.
+publishAudit() {
+  local body=$1
+  evtctl inbox $AuditApp --send "$body" >/dev/null \
+    || fatal "evtctl inbox $AuditApp --send failed; weekly observation dropped" 3
+}
+
+# main orchestrates: sweep → count → mark → format → publish.
+main() {
+  local sweep_=""
+  runSweep sweep_
+
+  local -i dirty=0 stashWarn=0 unpushed=0 planStale=0 planStrays=0
+  dirty=$(countDirty "$sweep_")
+  stashWarn=$(countStashWarn "$sweep_")
+  unpushed=$(countUnpushed "$sweep_")
+  planStale=$(countPlanStale)
+  planStrays=$(countPlanStrays)
+
+  local dirtyMark stashMark unpushedMark planStaleMark planStraysMark
+  dirtyMark=$(mark $dirty $DirtyRepoBudget)
+  stashMark=$(mark $stashWarn $StashWarnBudget)
+  unpushedMark=$(mark $unpushed $UnpushedBudget)
+  planStaleMark=$(mark $planStale $PlanStaleCountBudget)
+  planStraysMark=$(mark $planStrays $PlanStrayBudget)
+
+  local severity=OK
+  case "$dirtyMark$stashMark$unpushedMark$planStaleMark$planStraysMark" in
+    *BREACH*) severity=WARN ;;
+  esac
+
+  local message="/cleanup-sweep $severity"
+  message+=" dirty=$dirty/$DirtyRepoBudget($dirtyMark)"
+  message+=" stash_warn=$stashWarn/$StashWarnBudget($stashMark)"
+  message+=" unpushed=$unpushed/$UnpushedBudget($unpushedMark)"
+  message+=" plan_stale=$planStale/$PlanStaleCountBudget($planStaleMark)"
+  message+=" plan_strays=$planStrays/$PlanStrayBudget($planStraysMark)"
+
+  if [[ $severity == WARN ]]; then
+    local offenders_=""
+    (( dirty > DirtyRepoBudget )) && offenders_+=$(dirtyOffenders "$sweep_")
+    (( stashWarn > StashWarnBudget )) && offenders_+=$(stashOffenders "$sweep_")
+    (( unpushed > UnpushedBudget )) && offenders_+=$(unpushedOffenders "$sweep_")
+    [[ -n $offenders_ ]] && message+=" offenders: $offenders_"
+  fi
+
+  publishAudit "$message"
+}
+
+# Bottom: sourceable for testing; under direct exec the return errors silently,
+# set -e activates, main runs.
+return 2>/dev/null
+
+set -e
+main "$@"
