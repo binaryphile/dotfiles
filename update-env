@@ -636,6 +636,27 @@ stage2() {
   #  |       All from stash.digi.com, require VPN                  |
   #  +-------------------------------------------------------------+
 
+  # vpnUp predicate (tasks.jeeves #47750): LOWER_UP on tun0 OR gpd0.
+  # Inlined rather than sourcing scripts/probe-lib.bash because that lib
+  # hard-fails at line 27 when $State is unset. Without this guard the
+  # 7-section stash.digi.com cluster below burns ~3min on SSH ConnectTimeout
+  # when VPN is down. With guard: skips in <1s.
+  vpnUp() {
+    local i
+    for i in tun0 gpd0; do
+      ip -o link show $i 2>/dev/null | grep -q LOWER_UP && return 0
+    done
+    return 1
+  }
+
+  if ! vpnUp; then
+    echo "[skip-vpn-gated] VPN not up; skipping 7 stash.digi.com sections (urma, pepin, cloud-services, dal, urma-obsidian, dal-obsidian, share) + scaffold symlink. Re-run after VPN up." >&2
+  else
+    # NOTE: cluster contents below stay at original 2-space indent (i.e.,
+    # NOT re-indented inside this `else` branch). Deliberate — keeps the
+    # cycle's diff small (#47750 Trivial tier). Bash control flow is
+    # whitespace-insensitive; the visual mismatch is acceptable for a single
+    # gated region. Closing `fi` is just before `section flake-locks`.
   section urma
   each try <<'  END'
     stashCloneAndLinkTask urma-next urma idigi develop
@@ -696,6 +717,7 @@ stage2() {
   # in the share repo (work-account, VPN-required). Personal hosts without
   # share access do not get the symlink (try absorbs the failure path).
   try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
+  fi
 
   section flake-locks
   try flakeLocksRepairTask
