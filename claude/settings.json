@@ -3,7 +3,8 @@
   "hooks": {
     "SessionStart": [
       {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
-      {"hooks": [{"type": "command", "command": "claude-budget"}]}
+      {"hooks": [{"type": "command", "command": "claude-budget"}]},
+      {"hooks": [{"type": "command", "command": "claude-agent-identity"}]}
     ],
     "Stop": [
       {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
