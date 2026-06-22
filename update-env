@@ -1748,26 +1748,41 @@ shellcheckrcTask() {
 # Uses nix flake lock --override-input to update each lock file's nixpkgs
 # input to the canonical rev (from ~/projects/era/flake.lock).
 # Nix deduplicates store paths automatically when revs match.
-# flakeManagedDirs emits dirs that have both flake.nix and flake.lock, where
-# flake.nix is tracked by git (the same check nix uses). Untracked flake.nix
-# files (e.g. urma: local-only, git-excluded) are naturally skipped.
-# find is scoped to avoid .git dirs, node_modules, and vendor trees.
-# Shared by flakeLocksRepairTask and flakeLockPinTask.
+
+# flakeManagedDirs prints paths under ~/projects + ~/dotfiles that are git-tracked + carry flake.lock, one per line.
+#
+# Shared by flakeLocksRepairTask, flakeLockPathInputsRefreshTask, and
+# flakeLockPinTask. Each previously triggered a full find traversal of
+# ~/projects + ~/dotfiles (~10s on Crostini's overlay-backed disk) —
+# 3+ traversals per update-env run, all redundant since the on-disk
+# layout doesn't change mid-run. Memoize the result once per process;
+# subsequent callers get the cached list instantly.
+#
+# Sentinel pattern: separate `FlakeManagedDirsCached` flag distinguishes
+# "not yet evaluated" from "evaluated to empty list" — `${var:-}`
+# collapses both cases.
 flakeManagedDirs() {
-  local f
-  while IFS= read -r f; do
-    [[ -f $f/flake.lock ]] || continue
-    git -C "$f" ls-files --error-unmatch flake.nix &>/dev/null || continue
-    echo "$f"
-  done < <(find ~/projects ~/dotfiles \
-    -not -path '*/.git/*' \
-    -not -path '*/node_modules/*' \
-    -not -path '*/vendor/*' \
-    -name flake.nix -exec dirname {} \; 2>/dev/null)
+  if [[ ${FlakeManagedDirsCached:-} != yes ]]; then
+    local f=
+    FlakeManagedDirsCache=$(
+      while IFS= read -r f; do
+        [[ -f $f/flake.lock ]] || continue
+        git -C $f ls-files --error-unmatch flake.nix &>/dev/null || continue
+        echo $f
+      done < <(find ~/projects ~/dotfiles \
+        -not -path '*/.git/*' \
+        -not -path '*/node_modules/*' \
+        -not -path '*/vendor/*' \
+        -name flake.nix -exec dirname {} \; 2>/dev/null)
+    )
+    FlakeManagedDirsCached=yes
+  fi
+  printf '%s\n' $FlakeManagedDirsCache
 }
 
 flakeLocksRepairTask() {
   desc 'repair flake.lock in flake-managed dirs (unmerged index or unparseable JSON)'
+  prog on
   # Observed twice on caltrop (task.bash, mk.bash): flake.lock in "needs merge"
   # state (UU in `git status -s`) after a prior failed flakeLockPin attempt
   # left the index unresolved. `git restore` updates only the working tree;
@@ -1800,6 +1815,7 @@ flakeLocksRepairTask() {
 
 flakeLockPathInputsRefreshTask() {
   desc 'refresh narHash of any path: input whose on-disk content drifted'
+  prog on
   # path: inputs (e.g. nixos-config's dotfiles and pangp-src) recompute their
   # narHash on every content change. When the lock's hash and the on-disk hash
   # diverge, nix evaluation aborts with "NAR hash mismatch" -- which blocks
@@ -1838,6 +1854,7 @@ flakeLockPathInputsRefreshTask() {
 
 flakeLockPinTask() {
   desc 'pin all flake.lock nixpkgs to canonical rev'
+  prog on
 
   # flakeManagedDirs lives at top level (above flakeLocksRepairTask) so both
   # tasks share one iteration definition.
