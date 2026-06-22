@@ -10,6 +10,10 @@
 #   cmdUp       -- mode-dispatched (#32959) across gpoc (tmux-wrap of
 #                  vpn-connect) + pangp (control-plane predicate via
 #                  globalprotect show --status, fall-through to vpn-connect)
+#   cmdStatus   -- control-plane status (#51793) — pangp branch via
+#                  globalprotect show --status with two-check predicate
+#                  excluding Not-Connected false-match; gpoc branch via
+#                  tmux + pgrep; stdout 'up' or 'down'
 #
 # Sourcing pattern: override `main` to a no-op BEFORE sourcing so the
 # bottom `main "$@"` (when present unguarded) is harmless for tests
@@ -218,6 +222,119 @@ test_cmdUp() {
 
     tesht.AssertGot "$got" "$wantStdout"
     tesht.AssertRC "$rc" "$wantRc"
+  }
+
+  tesht.Run "${!case@}"
+}
+
+
+## cmdStatus — #51793 control-plane status
+
+test_cmdStatus() {
+  # cmdStatus checks pangp first (globalprotect show --status), then gpoc
+  # (tmux has-session + pgrep -f 'gpclient connect'). Returns 'up' if
+  # either path indicates connected; 'down' otherwise. NOT mode-dispatched
+  # (unlike cmdUp) — both probes can be evaluated in sequence.
+  #
+  # Mocks: globalprotect (stdout + rc), tmux has-session (rc),
+  # pgrep -f (rc only).
+
+  local -A case1=(
+    [name]='pangp Connected: echo up (gpoc state irrelevant)'
+    [showRc]=0
+    [showStatus]='GlobalProtect Status: Connected'
+    [hasSession]=1
+    [pgrepRc]=1
+    [want]='up'
+  )
+
+  local -A case2=(
+    [name]='pangp Not-Connected, no gpoc: fall through to down (the #51793 bug fix case)'
+    [showRc]=0
+    [showStatus]='GlobalProtect Status: Not Connected'
+    [hasSession]=1
+    [pgrepRc]=1
+    [want]='down'
+  )
+
+  local -A case3=(
+    [name]='pangp Disconnected, no gpoc: fall through to down'
+    [showRc]=0
+    [showStatus]='GlobalProtect Status: Disconnected'
+    [hasSession]=1
+    [pgrepRc]=1
+    [want]='down'
+  )
+
+  local -A case4=(
+    [name]='pangp CLI missing (rc=127 empty), no gpoc: fall through to down'
+    [showRc]=127
+    [showStatus]=''
+    [hasSession]=1
+    [pgrepRc]=1
+    [want]='down'
+  )
+
+  local -A case5=(
+    [name]='pangp absent, gpoc tmux+pgrep both present: echo up via gpoc'
+    [showRc]=0
+    [showStatus]=''
+    [hasSession]=0
+    [pgrepRc]=0
+    [want]='up'
+  )
+
+  local -A case6=(
+    [name]='pangp absent, gpoc tmux yes but no gpclient process: down'
+    [showRc]=0
+    [showStatus]=''
+    [hasSession]=0
+    [pgrepRc]=1
+    [want]='down'
+  )
+
+  local -A case7=(
+    [name]='pangp absent, gpoc no tmux session: down (pgrep not consulted)'
+    [showRc]=0
+    [showStatus]=''
+    [hasSession]=1
+    [pgrepRc]=0
+    [want]='down'
+  )
+
+  local -A case8=(
+    [name]='neither pangp nor gpoc indicates up: down'
+    [showRc]=127
+    [showStatus]=''
+    [hasSession]=1
+    [pgrepRc]=1
+    [want]='down'
+  )
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+
+    globalprotect() {
+      case ${1:-} in
+        show) [[ -n $showStatus ]] && printf '%s\n' "$showStatus"; return "$showRc" ;;
+        *)    return 0 ;;
+      esac
+    }
+    tmux() {
+      case ${1:-} in
+        has-session) return "$hasSession" ;;
+        *)           return 0 ;;
+      esac
+    }
+    pgrep() { return "$pgrepRc"; }
+    export -f globalprotect tmux pgrep
+    export showRc showStatus hasSession pgrepRc
+
+    local got
+    got=$(cmdStatus)
+
+    tesht.AssertGot "$got" "$want"
   }
 
   tesht.Run "${!case@}"
