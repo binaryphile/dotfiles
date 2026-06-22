@@ -597,7 +597,6 @@ stage2() {
     eraSoakRestartIfActiveAndStaleTask
     evtctlForwardRestartIfActiveAndStaleTask
     crossTreeSweepEnableTask
-    mountCifsSymlinkTask
   END
   chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
@@ -2072,38 +2071,6 @@ writeNixConfTask() {
   local cmd_
   printf -v cmd_ 'install -m 644 -- %q %q' "$tmp" $path
   cmd "$cmd_"
-}
-
-# mountCifsSymlinkTask bridges nix-userspace cifs-utils install to the
-# system path where mount(8) + systemd-fstab-generator look up mount
-# helpers. Modern util-linux mount invokes /sbin/mount.<fstype> by full
-# path (NOT via PATH lookup) for type-specific helpers; same for
-# systemd's fstab generator when it materializes .mount/.automount
-# units from x-systemd.automount fstab entries. Nix-installed
-# cifs-utils lands mount.cifs in ~/.nix-profile/{bin,sbin}/ which the
-# system path never sees. Without this symlink, `mount -t cifs ...` and
-# any systemd-managed CIFS automount fails with "mount: ... wrong fs
-# type, bad option, bad superblock" (the kernel's CIFS module loads
-# fine; userspace helper invocation is what falls over).
-#
-# cifs-utils package itself is provided declaratively via home-manager
-# (shared.nix home.packages); this task only handles the one /sbin/
-# integration step home-manager can't reach.
-#
-# Anchor: 2026-06-22 NAS backup wiring (fantasy Synology at 192.168.68.71).
-mountCifsSymlinkTask() {
-  local src=$HOME/.nix-profile/sbin/mount.cifs
-  local dst=/sbin/mount.cifs
-
-  desc  'symlink ~/.nix-profile/sbin/mount.cifs into /sbin (system mount helper path)'
-  runas root
-
-  cifsSymlinkCurrent() {
-    [[ -L $dst && $(readlink $dst) == $src ]]
-  }
-  ok cifsSymlinkCurrent
-
-  cmd "ln -sf $src $dst"
 }
 
 # chownRTask recursively chowns $path with $user:$group.
