@@ -1374,24 +1374,39 @@ eraNixProfileUpgradeIfStaleTask() {
   #     a missing-nix environment is operator-substrate to fix
   #     separately, not by triggering a doomed upgrade attempt.
   #   - era-soak not installed (no element in nix profile list with
-  #     attrPath containing "era-soak") → return 1 (STALE). The cmd
+  #     attrPath ending in ".era-soak") → return 1 (STALE). The cmd
   #     `nix profile upgrade` will fail for missing entries; operator
   #     gets a clear error if so. Treating "not installed" as STALE is
   #     the conservative direction: forces operator action when state
   #     diverges from expected.
-  #   - nix eval failure on live flake → return 0 (CURRENT). Eval can
-  #     fail under transient flake-lock issues; conservative is to
-  #     skip the upgrade and try next run, not to loop on a known-bad
-  #     eval.
+  #   - nix eval failure on live flake → return 0 (CURRENT) PLUS stderr
+  #     warning. Eval can fail under transient flake-lock issues;
+  #     conservative is to skip the upgrade and try next run, not to
+  #     loop on a known-bad eval. BUT silent fail-open creates an
+  #     observability hole (per /grade #52117 META-R2 P3); the warning
+  #     makes the silent-skip operator-visible so persistent eval
+  #     failures don't indefinitely suppress upgrade detection.
+  #
+  # Matching discipline: attrPath match uses `endswith(".era-soak")` —
+  # identity-safe against future similarly-named packages (e.g.,
+  # hypothetical "era-soak-extras") that `contains("era-soak")` would
+  # over-match (per /grade #52117 META-R2 P2 absorption). `.storePaths[0]`
+  # assumes single-output package and stable ordering; era-soak is
+  # single-output today, but if future packaging adds multiple outputs
+  # the predicate may need a `.storePaths[] | select(test("/era-soak$"))`
+  # refinement.
   eraNixProfileIsCurrent() {
     command -v nix >/dev/null 2>&1 || return 0
     command -v jq  >/dev/null 2>&1 || return 0
     local installed live
     installed=$(nix profile list --json 2>/dev/null \
-      | jq -r '.elements | to_entries[] | select(.value.attrPath // "" | contains("era-soak")) | .value.storePaths[0]' 2>/dev/null)
+      | jq -r '.elements | to_entries[] | select(.value.attrPath // "" | endswith(".era-soak")) | .value.storePaths[0]' 2>/dev/null)
     [[ -n $installed ]] || return 1
     live=$(nix eval path:/home/ted/projects/era#era-soak.outPath --raw 2>/dev/null)
-    [[ -n $live ]] || return 0
+    if [[ -z $live ]]; then
+      echo "update-env: eraNixProfileIsCurrent: nix eval of path:~/projects/era#era-soak.outPath returned empty; skipping upgrade-trigger detection this run (transient flake-lock issue or broken flake?). Re-run update-env after resolving." >&2
+      return 0
+    fi
     [[ $installed == $live ]]
   }
   ok eraNixProfileIsCurrent
