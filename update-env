@@ -1402,6 +1402,10 @@ eraNixProfileUpgradeIfStaleTask() {
     installed=$(nix profile list --json 2>/dev/null \
       | jq -r '.elements | to_entries[] | select(.value.attrPath // "" | endswith(".era-soak")) | .value.storePaths[0]' 2>/dev/null)
     [[ -n $installed ]] || return 1
+    # nix eval is silent until done — ~30s on cold flake cache, sub-second once
+    # warm. Operators reading update-env output otherwise see the predicate
+    # hang with no feedback (/grade #nas-arc META P5 absorption 2026-06-22).
+    echo "update-env: eraNixProfileIsCurrent: probing nix eval of era-soak (~30s on cold flake cache)..." >&2
     live=$(nix eval path:/home/ted/projects/era#era-soak.outPath --raw 2>/dev/null)
     if [[ -z $live ]]; then
       echo "update-env: eraNixProfileIsCurrent: nix eval of path:~/projects/era#era-soak.outPath returned empty; skipping upgrade-trigger detection this run (transient flake-lock issue or broken flake?). Re-run update-env after resolving." >&2
