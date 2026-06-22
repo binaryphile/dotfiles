@@ -28,7 +28,7 @@ cmdUp() {
   case $(vpn-mode) in
     pangp)
       # Predicate against control-plane state. The naive grep -q 'Connected$'
-      # (parallel form in cmdStatus, follow-up #51793) false-matches lines
+      # (parallel form in cmdStatus, fixed at #51793) false-matches lines
       # ending in "Not Connected" because the suffix literally is "Connected"
       # — bug surfaced in #32959 3a testing. Capture daemon output once into
       # a var and use a two-check bash conditional: positive match on
