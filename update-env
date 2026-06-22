@@ -1600,7 +1600,7 @@ claudeSettingsCopyTask() {
   claudeSettingsCopy() {
     mkdir -p $(dirname $dst)
     local tmp_
-    tmp_=$(mktemp) && cp $src $tmp_ && mv -f $tmp_ $dst
+    tmp_=$(mktemp) && cp $src "$tmp_" && mv -f "$tmp_" $dst
     $sha256sum $src | cut -d' ' -f1 >$hashFile
   }
   cmd claudeSettingsCopy
