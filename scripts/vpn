@@ -97,7 +97,20 @@ cmdStatus() {
   # Official pangp path (systemd-managed; no tmux session). Check first
   # because it's the more authoritative state -- gpd.service knows whether
   # the tunnel is actually up, not just whether a wrapper process exists.
-  if globalprotect show --status 2>/dev/null | grep -q 'Connected$'; then
+  #
+  # Predicate captures full daemon output and uses a two-check bash
+  # conditional to exclude "Not Connected" — a naive `grep -q 'Connected$'`
+  # (originally here pre-#51793) false-matches that string because it
+  # literally ends with "Connected" (bug discovered during tasks.jeeves
+  # #32959 3a testing on cmdUp; cmdStatus inherited the same form and
+  # same false-positive until this fix). Byte-identical pattern to
+  # cmdUp's pangp branch (above) — both are heuristic text-matches over
+  # globalprotect's English output; multi-line output mentioning
+  # "Not Connected" anywhere will fall through to gpoc/down even if a
+  # later line says e.g. "Last Connected: ...".
+  local statusOutput_
+  statusOutput_=$(globalprotect show --status 2>/dev/null)
+  if [[ $statusOutput_ == *Connected* && $statusOutput_ != *"Not Connected"* ]]; then
     echo up
     return
   fi
