@@ -1347,43 +1347,52 @@ eraNixProfileUpgradeIfStaleTask() {
   # localized to stale nix-profile-era-soak install (substrate-error
   # event #52117 on tasks.icarus; resolved via this task).
   #
-  # Predicate: current iff the latest nix profile mutation (mtime of
-  # ~/.local/state/nix/profiles/ — updated whenever nix adds a new
-  # profile-N-link symlink to the dir) is at-or-newer-than the newest
-  # source file contributing to the era-soak package (bash binaries,
-  # library, the Go source for era-soak-fit, plus flake.nix which
-  # controls the package shape).
+  # Predicate: current iff the installed era-soak's nix store path
+  # matches the live flake evaluation's outPath. SEMANTIC comparison —
+  # the storePath IS the content-addressed identity of the package; if
+  # source inputs change, the hash changes, and the two paths diverge.
   #
-  # Note on mtime-of-nix-store: files under /nix/store all carry
-  # mtime=1 (nix reproducibility convention — paths are content-
-  # addressed, so mtimes are normalized away). Symlinks INTO the store
-  # inherit mtime=1 too. The PARENT DIR ~/.local/state/nix/profiles/
-  # is the reliable timestamp because each profile generation creates
-  # a new profile-N-link entry, updating the dir's mtime via standard
-  # POSIX semantics. Verified 2026-06-22: profile-117-link added by
-  # `nix profile upgrade era-soak` updated the dir mtime to that
-  # operation's wall-clock.
+  # This replaces an earlier mtime-based heuristic (initially: nix-store
+  # target mtime; revised: ~/.local/state/nix/profiles/ dir mtime) which
+  # had two known correctness gaps caught by adversarial review (META
+  # grade #52117, P5+P6, 2026-06-22):
+  #   - P5: dir mtime updates on ANY nix profile mutation (install /
+  #         remove / upgrade of any OTHER package). The signal became
+  #         "some profile activity happened recently" — not "era-soak's
+  #         installed bits reflect current source." False negatives in
+  #         the core signal path.
+  #   - P6: the mtime-vs-source approach required a hand-curated source
+  #         file list (bin/era, lib/era.bash, etc.), which risks
+  #         omission if the era-soak flake package picks up additional
+  #         inputs (e.g., bin/evtctl or bin/task-audit). The semantic
+  #         approach derives the package's input fingerprint from nix's
+  #         own evaluation — no hand list to drift.
+  #
+  # Fail-modes:
+  #   - nix or jq absent → return 0 (CURRENT). Can't check, so don't
+  #     loop. Operator's `update-env` is most useful when nix is sane;
+  #     a missing-nix environment is operator-substrate to fix
+  #     separately, not by triggering a doomed upgrade attempt.
+  #   - era-soak not installed (no element in nix profile list with
+  #     attrPath containing "era-soak") → return 1 (STALE). The cmd
+  #     `nix profile upgrade` will fail for missing entries; operator
+  #     gets a clear error if so. Treating "not installed" as STALE is
+  #     the conservative direction: forces operator action when state
+  #     diverges from expected.
+  #   - nix eval failure on live flake → return 0 (CURRENT). Eval can
+  #     fail under transient flake-lock issues; conservative is to
+  #     skip the upgrade and try next run, not to loop on a known-bad
+  #     eval.
   eraNixProfileIsCurrent() {
-    [[ -L ~/.nix-profile/bin/era-soak ]] || return 1  # symlink missing → trigger
-    local profileMtime newest=0 path mt
-    profileMtime=$(stat -c %Y ~/.local/state/nix/profiles 2>/dev/null) || return 1
-    for path in \
-        ~/projects/era/bin/era \
-        ~/projects/era/bin/era-soak \
-        ~/projects/era/lib/era.bash \
-        ~/projects/era/cmd/era-soak-fit \
-        ~/projects/era/flake.nix; do
-      [[ -e $path ]] || continue
-      if [[ -d $path ]]; then
-        mt=$(find $path -type f -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
-      else
-        mt=$(stat -c %Y "$path")
-      fi
-      mt=${mt%.*}
-      [[ -z $mt ]] && continue
-      (( mt > newest )) && newest=$mt
-    done
-    (( profileMtime >= newest ))
+    command -v nix >/dev/null 2>&1 || return 0
+    command -v jq  >/dev/null 2>&1 || return 0
+    local installed live
+    installed=$(nix profile list --json 2>/dev/null \
+      | jq -r '.elements | to_entries[] | select(.value.attrPath // "" | contains("era-soak")) | .value.storePaths[0]' 2>/dev/null)
+    [[ -n $installed ]] || return 1
+    live=$(nix eval path:/home/ted/projects/era#era-soak.outPath --raw 2>/dev/null)
+    [[ -n $live ]] || return 0
+    [[ $installed == $live ]]
   }
   ok eraNixProfileIsCurrent
 
