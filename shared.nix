@@ -11,6 +11,7 @@ let
 in {
   home.packages = (with pkgs; [
     bottom
+    cifs-utils
     claude-code
     coreutils
     diff-so-fancy
@@ -32,6 +33,7 @@ in {
     pandoc
     ranger
     rsync
+    samba
     scc
     signal-desktop
     silver-searcher
