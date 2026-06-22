@@ -593,6 +593,7 @@ stage2() {
     eraStateDirDropInTask
     eraSystemdEnableTask
     eraRestartTask
+    eraNixProfileUpgradeIfStaleTask
     eraSoakRestartIfActiveAndStaleTask
     evtctlForwardRestartIfActiveAndStaleTask
     crossTreeSweepEnableTask
@@ -1318,6 +1319,79 @@ eraRestartTask() {
   }
   ok eraServiceIsCurrent
   cmd 'systemctl --user restart era'
+}
+
+eraNixProfileUpgradeIfStaleTask() {
+  desc 'upgrade nix-profile-era-soak when era source is newer than the installed nix-store target'
+
+  # The nix-profile-era-soak package wraps ~/projects/era/bin/{era,era-
+  # soak,era-soak-fit} with a PATH closure (jq, coreutils, gawk, curl,
+  # systemd) so era-soak.service runs reliably under systemd-user's
+  # minimal Debian PATH (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/
+  # bin:/sbin:/bin — jq is NOT present there; verified 2026-06-22). The
+  # wrapper IS load-bearing per infra/era-soak.service:9-16.
+  #
+  # Without this task, edits to era source land in ~/.local/bin/era
+  # (live symlink — always current) but NOT in the nix-store binary
+  # underlying ~/.nix-profile/bin/era-soak. systemd unit picks up stale
+  # binaries; the era CLI on operator PATH may also resolve to the
+  # nix-profile path under certain PATH orderings (mitigated by home-
+  # manager session-path putting ~/.local/bin first; broken if a
+  # subprocess context reorders PATH).
+  #
+  # Anchor: 2026-06-22 self-inflicted PATH-ordering bite during a long
+  # Claude Code session whose PATH-stripped-post-compaction recovery
+  # put nix-profile before .local — surfaced as "jq: error (at
+  # <stdin>:0): unknown error" from era's (pre-#34600) single-shape
+  # envelope filter; mis-attributed to era CLI bug before root-cause
+  # localized to stale nix-profile-era-soak install (substrate-error
+  # event #52117 on tasks.icarus; resolved via this task).
+  #
+  # Predicate: current iff the latest nix profile mutation (mtime of
+  # ~/.local/state/nix/profiles/ — updated whenever nix adds a new
+  # profile-N-link symlink to the dir) is at-or-newer-than the newest
+  # source file contributing to the era-soak package (bash binaries,
+  # library, the Go source for era-soak-fit, plus flake.nix which
+  # controls the package shape).
+  #
+  # Note on mtime-of-nix-store: files under /nix/store all carry
+  # mtime=1 (nix reproducibility convention — paths are content-
+  # addressed, so mtimes are normalized away). Symlinks INTO the store
+  # inherit mtime=1 too. The PARENT DIR ~/.local/state/nix/profiles/
+  # is the reliable timestamp because each profile generation creates
+  # a new profile-N-link entry, updating the dir's mtime via standard
+  # POSIX semantics. Verified 2026-06-22: profile-117-link added by
+  # `nix profile upgrade era-soak` updated the dir mtime to that
+  # operation's wall-clock.
+  eraNixProfileIsCurrent() {
+    [[ -L ~/.nix-profile/bin/era-soak ]] || return 1  # symlink missing → trigger
+    local profileMtime newest=0 path mt
+    profileMtime=$(stat -c %Y ~/.local/state/nix/profiles 2>/dev/null) || return 1
+    for path in \
+        ~/projects/era/bin/era \
+        ~/projects/era/bin/era-soak \
+        ~/projects/era/lib/era.bash \
+        ~/projects/era/cmd/era-soak-fit \
+        ~/projects/era/flake.nix; do
+      [[ -e $path ]] || continue
+      if [[ -d $path ]]; then
+        mt=$(find $path -type f -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+      else
+        mt=$(stat -c %Y "$path")
+      fi
+      mt=${mt%.*}
+      [[ -z $mt ]] && continue
+      (( mt > newest )) && newest=$mt
+    done
+    (( profileMtime >= newest ))
+  }
+  ok eraNixProfileIsCurrent
+
+  # `nix profile upgrade era-soak` rebuilds from path:~/projects/era and
+  # swaps the symlink target atomically. Pairs with the subsequent
+  # eraSoakRestartIfActiveAndStaleTask which picks up the new binary in
+  # any running era-soak.service instance.
+  cmd 'nix profile upgrade era-soak'
 }
 
 eraSoakRestartIfActiveAndStaleTask() {
