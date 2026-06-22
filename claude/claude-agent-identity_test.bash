@@ -102,7 +102,7 @@ test_roleMarker_present() {
   fixture $dir home stub calls
   envFile=$dir/env
   printf 'tandem\n' >$home/.claude/agent-role
-  composeInput input startup sid-2 sonnet 4.6 $home
+  composeInput input startup sid-2x sonnet 4.6 $home
 
   ## act
   HOME=$home USER=testuser CLAUDE_ENV_FILE=$envFile PATH=$stub:$PATH \
@@ -110,13 +110,41 @@ test_roleMarker_present() {
 
   waitForAsync_ $calls || { tesht.Log 'evtctl was never invoked'; return 1; }
 
-  ## assert
+  ## assert: role-set identity carries a 6-char session-id suffix so
+  ## parallel agents in the same project don't share metadata.agent.
   host_=$(hostname)
-  printf -v wantExport_ 'export EVTCTL_AGENT=%q' "claude-tandem@$host_"
+  printf -v wantExport_ 'export EVTCTL_AGENT=%q' "claude-tandem-sid-2x@$host_"
   gotExport_=$(< $envFile)
   tesht.AssertGot "$gotExport_" "$wantExport_"
-  gotAgent_=$(grep -oE 'agent=claude-tandem@[^ ]+' $calls | head -1)
-  tesht.AssertGot "$gotAgent_" "agent=claude-tandem@$host_"
+  gotAgent_=$(grep -oE 'agent=claude-tandem-sid-2x@[^ ]+' $calls | head -1)
+  tesht.AssertGot "$gotAgent_" "agent=claude-tandem-sid-2x@$host_"
+}
+
+test_roleMarker_projectLocalOverridesGlobal() {
+  ## arrange: project-local .claude/agent-role wins over global ~/.claude/agent-role
+  local dir home stub calls envFile input projectDir
+  local wantExport_ gotExport_ host_
+  tesht.MktempDir dir
+  fixture $dir home stub calls
+  envFile=$dir/env
+  projectDir=$dir/projects/era
+  mkdir -p "$projectDir/.claude"
+  printf 'global-role\n' >$home/.claude/agent-role
+  printf 'era\n' >"$projectDir/.claude/agent-role"
+  composeInput input startup proj42 sonnet 4.6 "$projectDir"
+
+  ## act
+  HOME=$home USER=testuser CLAUDE_ENV_FILE=$envFile PATH=$stub:$PATH \
+    $Script <<<$input
+
+  waitForAsync_ $calls || { tesht.Log 'evtctl was never invoked'; return 1; }
+
+  ## assert: identity uses project-local role 'era' (with sid suffix),
+  ## NOT the global 'global-role'.
+  host_=$(hostname)
+  printf -v wantExport_ 'export EVTCTL_AGENT=%q' "claude-era-proj42@$host_"
+  gotExport_=$(< $envFile)
+  tesht.AssertGot "$gotExport_" "$wantExport_"
 }
 
 test_crostiniHostname_overridesSystem() {

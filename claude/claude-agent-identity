@@ -9,7 +9,8 @@
 #
 # Identity resolution (mirrors evtctl's hostnameDerived):
 #   host  = ~/crostini/hostname if present, else $(hostname)
-#   role  = ~/.claude/agent-role contents if present
+#   role  = $cwd/.claude/agent-role contents if present (project-local),
+#           else ~/.claude/agent-role contents (global default)
 #   agent = "claude-${role}@${host}" when role set, else "${USER}@${host}"
 #
 # See ~/dotfiles/docs/use-cases.md UC-16 and docs/design.md
@@ -43,13 +44,30 @@ main() {
     host_=$(hostname 2>/dev/null || echo "unknown-host")
   fi
 
-  # Resolve role marker.
+  # Resolve role marker — project-local first, then global default.
+  # Project-local: $cwd/.claude/agent-role lets each project carry its
+  # own role (typically the project basename) so parallel agents in
+  # different tmux windows publish events with distinct
+  # metadata.agent.
   role_=""
-  [[ -r $HOME/.claude/agent-role ]] && role_=$(< $HOME/.claude/agent-role)
+  [[ -n $cwd_ && -r $cwd_/.claude/agent-role ]] && role_=$(< $cwd_/.claude/agent-role)
+  [[ -z $role_ && -r $HOME/.claude/agent-role ]] && role_=$(< $HOME/.claude/agent-role)
 
-  # Compose canonical identity.
+  # Compose canonical identity. When a role is set (agent-authored),
+  # append a 6-char session-id suffix so parallel agents in the same
+  # project don't share an identity. The suffix preserves the
+  # role-prefix-based grouping the operator-authored-share metric
+  # uses (task-audit metrics groups by `^claude-` vs `^${USER}$`) —
+  # the role-prefix still matches regardless of suffix. Operator-
+  # authored sessions (no role) get no suffix because there's no
+  # parallel-instance ambiguity to resolve at the operator level.
   if [[ -n $role_ ]]; then
-    agent_="claude-${role_}@${host_}"
+    local sidShort_=${session_id_:0:6}
+    if [[ -n $sidShort_ && $sidShort_ != unknow ]]; then
+      agent_="claude-${role_}-${sidShort_}@${host_}"
+    else
+      agent_="claude-${role_}@${host_}"
+    fi
   else
     agent_="${USER:-anon}@${host_}"
   fi

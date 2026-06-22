@@ -157,6 +157,19 @@ EnvrcContent() {
   cat << 'EOF'
 export PROJECT_ROOT=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 export PATH=$PROJECT_ROOT/bin:$PATH
+
+# Per-project mux-identity attribution (era docs/evtctl.md §"Mux identity
+# contract"). Identity = claude-<project-basename>@<host>; host is
+# Crostini-aware (~/crostini/hostname when present, else $(hostname)).
+# Lets parallel agents (one per project tmux window) publish events
+# with distinct metadata.agent so cross-project audits + the operator-
+# authored decision-share metric (icarus roadmap §Phase B indicator #7)
+# can distinguish them. Claude Code's SessionStart hook
+# (~/dotfiles/claude/claude-agent-identity) still wins inside a Claude
+# Code session unless it's amended to respect cwd-derived role.
+HostShort_=$([[ -r $HOME/crostini/hostname ]] && cat $HOME/crostini/hostname || hostname)
+export EVTCTL_AGENT="claude-$(basename "$PROJECT_ROOT")@$HostShort_"
+unset HostShort_
 EOF
 }
 

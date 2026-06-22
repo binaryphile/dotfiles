@@ -719,6 +719,12 @@ stage2() {
   try task.Ln ~/projects/share/scaffold/scaffold ~/.local/bin/scaffold
   fi
 
+  section evtctl-agent-envrc
+  try evtctlAgentEnvrcAllProjectsTask
+
+  section claude-agent-role
+  try claudeAgentRoleAllProjectsTask
+
   section flake-locks
   try flakeLocksRepairTask
   try flakeLockPathInputsRefreshTask
@@ -1090,6 +1096,85 @@ gitUpdate() {
   local stashRef
   stashRef=$(git -C $1 stash list 2>/dev/null | grep -E ': autostash$' | grep -o 'stash@{[0-9]*}' | head -1) || true
   [[ -z $stashRef ]] || loosely git -C $1 stash drop $stashRef >/dev/null 2>&1
+}
+
+# evtctlAgentEnvrcAllProjectsTask iterates ~/projects/*/ and ensures each
+# project's .envrc carries a per-project EVTCTL_AGENT export
+# (claude-<project-basename>@<host>). Idempotent: skips projects whose
+# .envrc already exports EVTCTL_AGENT; appends the standard block otherwise.
+# Skips dirs with no .envrc (uninitialized scaffold).
+#
+# Per-project identity lets parallel Claude agents (one per project tmux
+# window) publish events with distinct metadata.agent so cross-project
+# audits + the operator-authored decision-share metric (icarus roadmap
+# §Phase B indicator #7) can distinguish them. See era docs/evtctl.md
+# §"Mux identity contract".
+#
+# Note on Claude Code's SessionStart hook
+# (~/dotfiles/claude/claude-agent-identity): post-2026-06-22 the hook
+# prefers cwd-local .claude/agent-role over global ~/.claude/agent-role
+# AND appends a 6-char session-id suffix when role is set, so .envrc +
+# hook together produce: interactive shells get `claude-<project>@<host>`
+# (no suffix); Claude Code sessions get `claude-<project>-<sid6>@<host>`
+# (suffix per session, parallel-agent-safe). The per-project
+# .claude/agent-role file is scaffolded by claudeAgentRoleAllProjectsTask
+# below.
+evtctlAgentEnvrcAllProjectsTask() {
+  local dir_
+  find ~/projects -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r dir_; do
+    evtctlAgentEnvrcTask "$dir_"
+  done
+}
+
+# claudeAgentRoleAllProjectsTask iterates ~/projects/*/ and ensures each
+# project carries a .claude/agent-role file whose contents is the project's
+# basename. Read by the SessionStart hook (claude-agent-identity) at session
+# start; sets the role half of the identity so Claude Code sessions in
+# ~/projects/era publish as `claude-era-<sid6>@<host>`, sessions in
+# ~/projects/icarus publish as `claude-icarus-<sid6>@<host>`, etc.
+# Idempotent: writes the file only when absent or stale (basename changed).
+claudeAgentRoleAllProjectsTask() {
+  local dir_
+  find ~/projects -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r dir_; do
+    claudeAgentRoleTask "$dir_"
+  done
+}
+
+claudeAgentRoleTask() {
+  local dir=$1
+  local path=$dir/.claude/agent-role
+  local basename_=${dir##*/}
+
+  desc "ensure $path contains '$basename_'"
+  ok "[[ -f $path ]] && [[ \$(<$path) == '$basename_' ]]"
+
+  claudeAgentRoleWrite() {
+    mkdir -p "$dir/.claude"
+    printf '%s\n' "$basename_" > "$path"
+  }
+  cmd claudeAgentRoleWrite
+}
+
+evtctlAgentEnvrcTask() {
+  local dir=$1
+  local path=$dir/.envrc
+
+  desc "ensure EVTCTL_AGENT export in $path"
+  ok "[[ ! -f $path ]] || grep -qE '^export EVTCTL_AGENT=' $path 2>/dev/null"
+  check "[[ -f $path ]]"   # only operate on projects with a scaffold-shaped .envrc
+
+  evtctlAgentEnvrcAppend() {
+    cat >> $path <<'ENVRC'
+
+# Per-project mux-identity attribution (era docs/evtctl.md §"Mux identity
+# contract"). Identity = claude-<project-basename>@<host>; host is
+# Crostini-aware (~/crostini/hostname when present, else $(hostname)).
+HostShort_=$([[ -r $HOME/crostini/hostname ]] && cat $HOME/crostini/hostname || hostname)
+export EVTCTL_AGENT="claude-$(basename "$PROJECT_ROOT")@$HostShort_"
+unset HostShort_
+ENVRC
+  }
+  cmd evtctlAgentEnvrcAppend
 }
 
 eraBuildTask() {
