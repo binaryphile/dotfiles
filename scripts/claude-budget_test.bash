@@ -18,9 +18,13 @@ makeTranscript() {
 }
 
 makeMsg() {
+  # Z-suffixed UTC ISO-8601 matches production claude-code transcript format.
+  # Tests that need an explicit timestamp pass arg 4 in the same shape.
   local id=$1 input=$2 output=$3
-  printf '{"message":{"id":"%s","usage":{"input_tokens":%d,"output_tokens":%d}}}' \
-    "$id" "$input" "$output"
+  local ts=${4:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+  local cacheRead=${5:-0} cacheCreation=${6:-0}
+  printf '{"timestamp":"%s","message":{"id":"%s","usage":{"input_tokens":%d,"output_tokens":%d,"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d}}}' \
+    "$ts" "$id" "$input" "$output" "$cacheRead" "$cacheCreation"
 }
 
 runStop() {
@@ -76,7 +80,74 @@ test_StopWritesSessionTokens() {
   day=$(date -d '2 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-mysession.tokens")
-  tesht.AssertGot "$got" "430"   # 150 + 280, msg1 deduplicated
+  # Weighted (input 1x + output 5x): msg1 = 100 + 250 = 350; msg2 = 200 + 400 = 600.
+  # Total = 950; msg1 deduplicated.
+  tesht.AssertGot "$got" "950"
+}
+
+test_StopWeightsCacheTokens() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # input=10 output=5 cache_read=10000 cache_creation=1000
+  # Weighted: 10*1 + 5*5 + 10000*0.1 + 1000*1.25 = 10 + 25 + 1000 + 1250 = 2285
+  # Trailing sentinel absorbs the script's head -n -1 truncation.
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 10 5 "$now" 10000 1000)" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "2285"
+}
+
+test_StopFiltersMessagesBeforeBudgetDayCutoff() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local twoDaysAgo now
+  twoDaysAgo=$(date -u -d '2 days ago' +%Y-%m-%dT%H:%M:%SZ)
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # Old message (excluded) + new message (included). Trailing sentinel
+  # absorbs the head -n -1 truncation (the script's defense against
+  # partially-flushed transcript tail lines).
+  makeTranscript "$transcript" \
+    "$(makeMsg old 1000 500 "$twoDaysAgo")" \
+    "$(makeMsg new 100 50 "$now")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  # Only "new" counted: 100*1 + 50*5 = 350.
+  tesht.AssertGot "$got" "350"
+}
+
+test_StopSkipsMessagesWithoutTimestamp() {
+  # Older transcript versions (or malformed entries) lacking .timestamp
+  # are excluded entirely rather than silently counted under today.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  printf '%s\n' '{"message":{"id":"notime","usage":{"input_tokens":100,"output_tokens":50}}}' >> "$transcript"
+
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  tesht.AssertRC "$(ls "$StateDir/sessions/${day}-sess.tokens" 2>/dev/null; echo $?)" "2"
 }
 
 test_StopSkipsMissingTranscript() {

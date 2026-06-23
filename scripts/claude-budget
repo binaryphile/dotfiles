@@ -31,17 +31,40 @@ handleStop() {
 
   [[ -n $session_id && -n $transcript && -r $transcript ]] || exit 0
 
-  local day
+  local day cutoff_epoch
   day=$(date -d '2 hours ago' +%Y-%m-%d)
+  # Budget day = 02:00 of day-name through 02:00 of next day. Filter messages to
+  # this window so a session living across calendar days doesn't double-count
+  # prior days' transcript content into today's bucket.
+  cutoff_epoch=$(date -d "$day 02:00" +%s)
 
+  # Token weights as input-equivalent units approximating Anthropic billing
+  # shape (output ~5x base; cache_creation ~1.25x; cache_read ~0.1x). These
+  # are an OPERATOR POLICY choice, not a verified pricing fact — re-tune the
+  # multipliers (and daily_tokens cap) if rate-card pricing changes. Scaled
+  # x100 for integer-safe jq arithmetic; final /100 returns to token units.
+  #
+  # Timestamp parse: claude-code transcripts use ISO-8601 Z-suffixed UTC with
+  # microseconds (e.g. "2026-06-23T15:57:57.655Z"). jq's fromdateiso8601
+  # rejects fractional seconds; strip them. Offset-form timestamps
+  # ("...-04:00") are not normalized and fall out via the // 0 guards —
+  # acceptable today because claude-code emits Z form; revisit if upstream
+  # ever switches to offset form.
   local tokens
-  tokens=$(head -n -1 "$transcript" | jq -sc '
-    [.[] | select(.message? and .message.id? and .message.usage?)
-         | {id: .message.id,
-            t: ((.message.usage.input_tokens // 0) + (.message.usage.output_tokens // 0))}]
+  tokens=$(head -n -1 "$transcript" | jq -sc --argjson cutoff "$cutoff_epoch" '
+    [.[] | select(.message? and .message.id? and .message.usage?
+                  and .timestamp?
+                  and ((.timestamp | sub("\\.[0-9]+"; "") | fromdateiso8601? // 0) >= $cutoff))
+         | {id: .message.id, u: .message.usage}]
     | unique_by(.id)
-    | map(.t)
-    | add // 0
+    | map(
+        ((.u.input_tokens // 0) * 100)
+        + ((.u.output_tokens // 0) * 500)
+        + ((.u.cache_creation_input_tokens // 0) * 125)
+        + ((.u.cache_read_input_tokens // 0) * 10)
+      )
+    | (add // 0) / 100
+    | floor
   ' 2>/dev/null) || exit 0
 
   [[ ${tokens:-0} -gt 0 ]] || exit 0

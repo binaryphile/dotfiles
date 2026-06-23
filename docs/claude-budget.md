@@ -4,7 +4,11 @@
 
 ## How it works
 
-After each response, Claude Code writes the conversation to a JSONL file under `~/.claude/projects/`. The Stop hook reads that file, sums `input_tokens + output_tokens` per message (deduped by message ID), and records the per-session total to `~/.local/state/claude-budget/sessions/{day}-{session_id}.tokens`. This matches what `/usage` shows you with cache tokens excluded. Enterprise quota accounting may differ slightly (it weights cache reads), but for relative pacing this is accurate enough.
+After each response, Claude Code writes the conversation to a JSONL file under `~/.claude/projects/`. The Stop hook reads that file, applies two filters, and records the per-session total to `~/.local/state/claude-budget/sessions/{day}-{session_id}.tokens`:
+
+1. **Day-scope filter.** Only messages whose `.timestamp` falls within the current budget day (02:00 to 02:00 local) are counted. Without this filter, a long-lived session that spans multiple calendar days re-counts prior-day messages into today's bucket every time the Stop hook fires. Claude Code transcripts are append-only within a session — `/compact` or `/clear` may shrink them but the daily ledger should still represent today's work, not cumulative-since-session-start.
+
+2. **Cache-aware weighted sum.** The per-message token formula is `input*1 + output*5 + cache_creation*1.25 + cache_read*0.1`, approximating Anthropic's billing shape on input-equivalent units (output ~5x base; cache_creation ~1.25x; cache_read ~0.1x). The weights are an operator policy choice — re-tune them (and `daily_tokens`) if rate-card pricing changes. The previous formula was `input + output` only, which ignored cache reads entirely and under-represented usage in cache-heavy long-running sessions where cache reads dominate. Messages without a `.timestamp` field are excluded (older transcript versions or malformed entries).
 
 The budget day resets at 2am, not midnight. That handles the late-night session that crosses midnight without charging twice for one work block.
 
@@ -16,7 +20,7 @@ One file, two knobs at `~/.config/claude-budget/config.json`:
 {"daily_tokens": 1000000, "enforce_at_pct": 0}
 ```
 
-`daily_tokens` is the self-imposed ceiling. A typical heavy day runs 1.0-1.3M tokens; the observed peak (the day the quota actually ran out) was 3.1M. Setting `daily_tokens` to 1M means the 25% warning fires at 750k used -- mid-heavy-day, well before things get tight. The 3.1M peak was the anomaly that motivated this tool; don't use it as the ceiling or warnings arrive too late.
+`daily_tokens` is the self-imposed ceiling. Pre-2026-06-23 the formula was raw `input + output`; post-fix the formula is weighted billable-equivalent. Existing caps set under the old formula are no longer directly comparable — re-tune by observing 5-10 days of post-fix data and setting the cap to roughly P90 of daily usage. A typical heavy day under the old formula ran 1.0-1.3M raw tokens; under the new formula the same workload reads higher because cache reads now count (heavily-cached long sessions can read 1.5-2x as much). Set `daily_tokens` such that the 25% warning fires mid-heavy-day, well before things get tight.
 
 `enforce_at_pct: 0` means warn-only. Set it to a non-zero value (say `1`) and any `UserPromptSubmit` at or below that percentage remaining gets blocked with `{"decision":"block","reason":"..."}` -- Claude Code refuses to send the prompt. That's the guardrail against autonomous agents quietly draining the last 50k tokens overnight.
 
