@@ -5,7 +5,7 @@
 [gpg]
   format = ssh
 [gpg "ssh"]
-  program = /home/ted/.nix-profile/bin/op-ssh-sign
+  program = /run/current-system/sw/bin/op-ssh-sign
 [commit]
   gpgsign = true
 [tag]
