@@ -134,6 +134,116 @@ test_StopFiltersMessagesBeforeBudgetDayCutoff() {
   tesht.AssertGot "$got" "350"
 }
 
+test_StopSplitsAtSleepGapKeepsPostGapOnly() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local preGap postGap now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  postGap=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  preGap=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # pre (input 100 + output 50): weighted 350 -- last night's tail
+  # post (input 200 + output 80): weighted 600 -- this morning's wake
+  # Gap = 28 min between pre and post; with threshold=5min, splits at the gap.
+  # Only "post" survives.
+  makeTranscript "$transcript" \
+    "$(makeMsg pre 100 50 "$preGap")" \
+    "$(makeMsg post 200 80 "$postGap")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=5
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "600"
+}
+
+test_StopKeepsAllMessagesWhenNoSleepGap() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local ts1 ts2 now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  ts2=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  ts1=$(date -u -d '4 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # Two messages 2 minutes apart; threshold 5min => no split.
+  # m1 weighted 350, m2 weighted 600 -- both counted.
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 100 50 "$ts1")" \
+    "$(makeMsg m2 200 80 "$ts2")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=5
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "950"
+}
+
+test_StopUsesLastSleepGapWhenMultiple() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local t1 t2 t3 now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  t3=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  t2=$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  t1=$(date -u -d '40 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # Three clusters separated by 18min + 18min gaps; threshold=5min.
+  # Two gaps qualify; last gap is between t2 and t3.
+  # Only t3 + tail kept. t3 weighted = 300*1 + 100*5 = 800. tail=0.
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 100 50 "$t1")" \
+    "$(makeMsg m2 200 80 "$t2")" \
+    "$(makeMsg m3 300 100 "$t3")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=5
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "800"
+}
+
+test_StopSleepGapThresholdEnvOverride() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local preGap postGap now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  postGap=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  preGap=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # 28-min gap. With default threshold (120min) gap doesn't qualify -> keep all.
+  # m1 weighted 350, m2 weighted 600, tail 0 -> total 950.
+  makeTranscript "$transcript" \
+    "$(makeMsg pre 100 50 "$preGap")" \
+    "$(makeMsg post 200 80 "$postGap")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  # Explicitly unset the threshold env var so default applies.
+  unset CLAUDE_BUDGET_SLEEP_GAP_MIN
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "950"
+}
+
 test_StopSkipsMessagesWithoutTimestamp() {
   # Older transcript versions (or malformed entries) lacking .timestamp
   # are excluded entirely rather than silently counted under today.

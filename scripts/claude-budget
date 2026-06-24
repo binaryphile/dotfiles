@@ -31,12 +31,24 @@ handleStop() {
 
   [[ -n $session_id && -n $transcript && -r $transcript ]] || exit 0
 
-  local day cutoff_epoch
+  local day cutoff_epoch sleep_gap_min sleep_gap_sec
   day=$(date -d '2 hours ago' +%Y-%m-%d)
   # Budget day = 02:00 of day-name through 02:00 of next day. Filter messages to
   # this window so a session living across calendar days doesn't double-count
   # prior days' transcript content into today's bucket.
   cutoff_epoch=$(date -d "$day 02:00" +%s)
+
+  # Sleep-aware day attribution: within today's filtered window, walk messages
+  # in timestamp order and detect the most-recent idle gap >= threshold. Drop
+  # all messages BEFORE that gap — they belong to the prior day's work-block
+  # that happened to run past the 02:00 cutoff before the operator slept.
+  # Post-gap messages are today's true operator-intent work.
+  #
+  # No retro-write to yesterday's file (already closed at rollover); pre-gap
+  # tokens are intentionally lost from accounting under the assumption that
+  # they were already approximately captured by yesterday's last Stop.
+  sleep_gap_min=${CLAUDE_BUDGET_SLEEP_GAP_MIN:-120}
+  sleep_gap_sec=$((sleep_gap_min * 60))
 
   # Token weights as input-equivalent units approximating Anthropic billing
   # shape (output ~5x base; cache_creation ~1.25x; cache_read ~0.1x). These
@@ -51,11 +63,24 @@ handleStop() {
   # acceptable today because claude-code emits Z form; revisit if upstream
   # ever switches to offset form.
   local tokens
-  tokens=$(head -n -1 "$transcript" | jq -sc --argjson cutoff "$cutoff_epoch" '
+  tokens=$(head -n -1 "$transcript" | jq -sc \
+    --argjson cutoff "$cutoff_epoch" \
+    --argjson sleepgap "$sleep_gap_sec" '
+    def parse_ts: sub("\\.[0-9]+"; "") | fromdateiso8601? // 0;
+
     [.[] | select(.message? and .message.id? and .message.usage?
                   and .timestamp?
-                  and ((.timestamp | sub("\\.[0-9]+"; "") | fromdateiso8601? // 0) >= $cutoff))
-         | {id: .message.id, u: .message.usage}]
+                  and (.timestamp | parse_ts) >= $cutoff)
+         | {id: .message.id, ts: (.timestamp | parse_ts), u: .message.usage}]
+    | sort_by(.ts)
+    | . as $msgs
+    | (if ($msgs | length) <= 1 then 0
+       else
+         ([range(1; $msgs | length) as $i
+           | select(($msgs[$i].ts - $msgs[$i-1].ts) >= $sleepgap)
+           | $i] | last) // 0
+       end) as $cut
+    | $msgs[$cut:]
     | unique_by(.id)
     | map(
         ((.u.input_tokens // 0) * 100)
