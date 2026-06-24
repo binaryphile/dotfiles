@@ -306,6 +306,41 @@ test_StopDayStartHourEnvOverride() {
   tesht.AssertGot "$got" "350"
 }
 
+test_StopDayStartHourInvalidFallsBackToDefault() {
+  # Operator-footgun protection: invalid CLAUDE_BUDGET_DAY_START_HOUR values
+  # (non-integer, negative, > 23) should not shift accounting into tomorrow or
+  # crash the hook. Falls back to default (3) with a stderr warning.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 100 50 "$now")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  # Three invalid forms: negative, non-integer, out-of-range upper.
+  local invalid
+  for invalid in '-3' '3.5' '99'; do
+    rm -rf "$StateDir/sessions"
+    export CLAUDE_BUDGET_DAY_START_HOUR=$invalid
+    local stderr_capture
+    stderr_capture=$(runStop "sess-$invalid" "$transcript" 2>&1 >/dev/null)
+    [[ $stderr_capture == *"invalid"* ]] || { echo "expected warning for $invalid; got: $stderr_capture"; return 1; }
+    # File must land under the DEFAULT day-key (hour=3), not under whatever
+    # the invalid value would have produced.
+    local default_day
+    default_day=$(date -d '3 hours ago' +%Y-%m-%d)
+    [[ -f "$StateDir/sessions/${default_day}-sess-$invalid.tokens" ]] || {
+      echo "expected file under default day-key '$default_day' for invalid value '$invalid'"
+      ls "$StateDir/sessions/" 2>&1
+      return 1
+    }
+  done
+  unset CLAUDE_BUDGET_DAY_START_HOUR
+}
+
 test_StopSleepGapThresholdEnvOverride() {
   tesht.MktempDir StateDir
   local dir; tesht.MktempDir dir

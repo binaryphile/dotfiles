@@ -7,6 +7,19 @@ set -euo pipefail
 StateDir=${CLAUDE_BUDGET_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-budget}
 ConfigFile=${CLAUDE_BUDGET_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-budget/config.json}
 
+# Returns a validated integer-hour 0..23 for the day-start. Operator-policy env
+# var CLAUDE_BUDGET_DAY_START_HOUR may be junk (non-integer, negative, > 23) —
+# fall back to default 3 with a stderr warning rather than letting bad arithmetic
+# shift the day-key into tomorrow or fail later.
+resolveDayStartHour() {
+  local raw=${CLAUDE_BUDGET_DAY_START_HOUR:-3}
+  if [[ ! $raw =~ ^[0-9]+$ ]] || (( raw > 23 )); then
+    printf 'claude-budget: warning: CLAUDE_BUDGET_DAY_START_HOUR=%q invalid (expected integer 0-23); defaulting to 3\n' "$raw" >&2
+    raw=3
+  fi
+  printf '%d\n' "$raw"
+}
+
 main() {
   local hook_json
   hook_json=$(cat)
@@ -37,7 +50,7 @@ handleStop() {
   # "operator's working day has wound down by then." Tunable via env so
   # late-night-burners can shift later (e.g. 04 or 05) and morning-people
   # can pull it earlier (e.g. 01 or midnight).
-  day_start_hour=${CLAUDE_BUDGET_DAY_START_HOUR:-3}
+  day_start_hour=$(resolveDayStartHour)
   day=$(date -d "$day_start_hour hours ago" +%Y-%m-%d)
   cutoff_epoch=$(date -d "$day $(printf '%02d' "$day_start_hour"):00" +%s)
 
@@ -117,7 +130,7 @@ handleWarning() {
   [[ ${limit:-0} -gt 0 ]] || exit 0
 
   local day day_start_hour
-  day_start_hour=${CLAUDE_BUDGET_DAY_START_HOUR:-3}
+  day_start_hour=$(resolveDayStartHour)
   day=$(date -d "$day_start_hour hours ago" +%Y-%m-%d)
 
   local total=0

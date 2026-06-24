@@ -18,7 +18,15 @@ Messages without a `.timestamp` field are excluded entirely (older transcript ve
 
 The budget day resets at the hour set by `CLAUDE_BUDGET_DAY_START_HOUR` (default 3, i.e. 03:00 local). The 03:00 default is heuristic for "operator's working day has wound down by then"; late-night-burners can shift later (e.g. 04) and morning-people can pull it earlier (e.g. 00).
 
-**Known accounting-loss mode**: pre-gap tokens are NOT retro-written to yesterday's file (already closed at the day-start rollover). The intent: yesterday's last Stop event already wrote yesterday's count to disk before sleep. BUT: if work continued AFTER yesterday's last Stop and BEFORE the day-start rollover, that work IS lost. Example: 23:00 yesterday Stop → continuous work 23:00-02:30 today (no Stop) → sleep → 09:00 wake. Yesterday's file was written at 23:00 (missing 23:00-02:30). Today's file drops the 02:00-02:30 block via sleep-split. Net: 3.5 hours of work unrecorded. Accept this as a known limit until retro-write is implemented (companion task to #19784 cap re-tune).
+**Known accounting-loss modes**:
+
+1. **Pre-rollover tail loss** (timestamp-filter exclusion). Pre-gap tokens are NOT retro-written to yesterday's file (already closed at the day-start rollover). If work continued AFTER yesterday's last Stop and BEFORE the day-start rollover, that work is lost — the timestamp-filter excludes anything before today's cutoff. Example with default `CLAUDE_BUDGET_DAY_START_HOUR=3`: 23:00 yesterday Stop → continuous work 23:00–02:30 today (no Stop) → sleep → 09:00 wake. Yesterday's file was written at 23:00 (missing 23:00–02:30). Today's cutoff is 03:00, so the 02:30 messages are filtered out entirely (not by sleep-split — the timestamp-filter alone). Net: 3.5 hours of work unrecorded.
+
+2. **Post-rollover-pre-sleep loss** (sleep-split discard). Work that fell INSIDE today's window (after the day-start cutoff) but BEFORE the operator slept and woke is dropped by the sleep-split filter — attributed conceptually to yesterday's perceived day even though it falls in today's clock-day. Example with default cutoff at 03:00: continuous work crosses 03:00 (say 02:30–03:20), then sleep, then wake. The 03:00–03:20 segment is past today's cutoff so the timestamp-filter keeps it, then the sleep-split drops it (because it's before the most-recent long gap). This loss is intentional under the sleep-aware attribution model: those minutes belong to operator's "yesterday" mental day.
+
+Both modes are accepted limits until retro-write to yesterday's file is implemented (companion task to #19784 cap re-tune).
+
+**Day-start hour constraints**: `CLAUDE_BUDGET_DAY_START_HOUR` accepts integer hours 0–23 only. Fractional hours (`3.5` or `03:30`) are not supported — the cutoff is constructed as `${hour}:00` literal. Invalid values (non-integer, negative, > 23) fall back to the default 3 with a stderr warning.
 
 ## Configuration
 
