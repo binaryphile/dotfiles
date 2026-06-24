@@ -149,13 +149,13 @@ in
   # nix-profile state changes.
   programs.git = {
     enable = true;
-    userName = "Ted Lilley";
-    userEmail = "ted.lilley@gmail.com";
-    aliases = {
-      lg = "log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(blue)<%an>%Creset' --abbrev-commit --date=relative";
-    };
-    extraConfig = {
-      user.signingkey = "~/.ssh/id_ed25519_signing.pub";
+    settings = {
+      user = {
+        name = "Ted Lilley";
+        email = "ted.lilley@gmail.com";
+        signingkey = "~/.ssh/id_ed25519_signing.pub";
+      };
+      alias.lg = "log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(blue)<%an>%Creset' --abbrev-commit --date=relative";
       gpg = {
         format = "ssh";
         ssh.program = "${pkgs._1password-gui}/bin/op-ssh-sign";
