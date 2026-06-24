@@ -1,8 +1,7 @@
 # 1Password SSH agent: declarative deployment of the systemd-user service.
 #
 # This module ships ONLY the systemd unit. The full feature requires three
-# interlocking artifacts; the other two live in dotfiles directly because
-# they are symlink-deployed via linux-base.nix's home.file:
+# interlocking artifacts; the other two live in linux-base.nix:
 #
 #   1. systemd-user service (this module)
 #        -> runs `1password --silent`, which binds ~/.1password/agent.sock
@@ -10,27 +9,21 @@
 #        -> imports DISPLAY/WAYLAND_DISPLAY into user-systemd on first
 #           interactive shell so the unit can come up; also recovers from
 #           start-limit-failed state on cold-boot Crostini
-#   3. dotfiles/gitconfig signing keys (symlinked, in dotfiles)
-#        -> gpg.format=ssh, gpg.ssh.program=op-ssh-sign, commit.gpgsign=true,
-#           user.signingkey=~/.ssh/id_ed25519_signing.pub
+#   3. programs.git in linux-base.nix
+#        -> gpg.format=ssh,
+#           gpg.ssh.program=${pkgs._1password-gui}/bin/op-ssh-sign,
+#           commit.gpgsign=true, user.signingkey=~/.ssh/id_ed25519_signing.pub
 #
 # Removing or breaking any one of the three breaks `git commit` signing.
 # pkgs._1password-gui is already in linux-base.nix's home.packages, so this
 # module does not add it.
 #
-# This module was NOT consolidated into a single block holding the systemd
-# service + programs.bash.initExtra + programs.git.extraConfig because that
-# would conflict with the existing dotfiles/bash/init.bash and
-# dotfiles/gitconfig symlinks (both established in linux-base.nix's
-# home.file). Keep the symlink-deploys as the source of truth for those
-# two; this module owns only the systemd unit.
-#
-# Verified end-to-end on Crostini host (commit object contains
-# `gpgsig -----BEGIN SSH SIGNATURE-----`). NixOS deployment of this module
-# is unverified at time of writing -- import from contexts/desktop/home.nix
-# and rebuild; verify_signing in the plan covers post-deploy validation.
-#
-# Plan: ~/.claude/plans/the-plan-after-you-staged-blanket.md
+# Pre-2026-06-24 the gitconfig was a static home.file symlink to
+# contexts/<ctx>/gitconfig (literal file). That deployment baked a
+# context-dependent path (~/.nix-profile/bin/op-ssh-sign) which was wrong
+# on NixOS hosts where HM is integrated and ~/.nix-profile/bin/ is
+# unpopulated. Migrating to programs.git lets ${pkgs._1password-gui} bind
+# the path to the Nix store, host-portably and GC-immune.
 
 { ... }:
 

@@ -127,7 +127,6 @@ in
   # selector symlink would dangle in the store because `context/` is
   # gitignored and absent from the flake source snapshot.
   home.file = {
-    ".gitconfig".source = ctxDir + "/gitconfig";
     ".gitignore_global".source = ./../gitignore_global;
     ".tmux.conf".source = ctxDir + "/tmux.conf";
     ".config/liquidprompt/liquid.theme".source = ./../liquidprompt/liquid.theme;
@@ -138,6 +137,57 @@ in
     ".config/ranger/rc.conf".source = ./../ranger/rc.conf;
     ".config/ranger/rifle.conf".source = ./../ranger/rifle.conf;
     ".config/ranger/scope.sh".source = ./../ranger/scope.sh;
+  };
+
+  # Git config. Was a static home.file symlink (contexts/<ctx>/gitconfig)
+  # until 2026-06-24; the literal path "/home/ted/.nix-profile/bin/op-ssh-sign"
+  # baked into the file was host-portable accident — it satisfied via
+  # ~/.nix-profile on Crostini (standalone HM) but not on NixOS hosts where
+  # HM is integrated and ~/.nix-profile/bin/ is unpopulated. Replacing with
+  # programs.git makes the op-ssh-sign path store-bound via
+  # ${pkgs._1password-gui}, which works on both contexts and is immune to
+  # nix-profile state changes.
+  programs.git = {
+    enable = true;
+    userName = "Ted Lilley";
+    userEmail = "ted.lilley@gmail.com";
+    aliases = {
+      lg = "log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(blue)<%an>%Creset' --abbrev-commit --date=relative";
+    };
+    extraConfig = {
+      user.signingkey = "~/.ssh/id_ed25519_signing.pub";
+      gpg = {
+        format = "ssh";
+        ssh.program = "${pkgs._1password-gui}/bin/op-ssh-sign";
+      };
+      commit.gpgsign = true;
+      tag.gpgsign = true;
+      core = {
+        filemode = false;
+        excludesfile = "~/.gitignore_global";
+        hooksPath = "~/dotfiles/.githooks";
+        mergeoptions = "--no-edit";
+        pager = "diff-so-fancy | less --tabs=4 -RFX";
+      };
+      push.default = "tracking";
+      github.user = "binaryphile";
+      diff.tool = "vimdiff";
+      merge.tool = "vimdiff";
+      mergetool = {
+        prompt = true;
+        vimdiff.cmd = "nvim -d $BASE $LOCAL $REMOTE $MERGED -c '$wincmd -w' -c '$wincmd J'";
+      };
+      fetch.prune = true;
+      color = {
+        branch = "auto";
+        diff = "auto";
+        status = "auto";
+      };
+      url."git@bitbucket.org:accelecon".insteadOf = "https://bitbucket.org/accelecon";
+      pull.ff = "only";
+      advice.detachedHead = false;
+      init.defaultBranch = "main";
+    };
   };
 
   xdg.mimeApps = {
