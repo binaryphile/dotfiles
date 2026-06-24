@@ -31,15 +31,15 @@ handleStop() {
 
   [[ -n $session_id && -n $transcript && -r $transcript ]] || exit 0
 
-  local day cutoff_epoch sleep_gap_min sleep_gap_sec
-  day=$(date -d '3 hours ago' +%Y-%m-%d)
-  # Budget day = 03:00 of day-name through 03:00 of next day. Filter messages to
-  # this window so a session living across calendar days doesn't double-count
-  # prior days' transcript content into today's bucket. The 03:00 cutoff is a
-  # heuristic for "operator's working day has actually wound down by then" —
-  # tightening from the prior 02:00 to capture more late-night-into-this-day
-  # work in the previous bucket.
-  cutoff_epoch=$(date -d "$day 03:00" +%s)
+  local day cutoff_epoch sleep_gap_min sleep_gap_sec day_start_hour
+  # Day-start hour is an operator-policy choice: at what local hour does
+  # "the next day" begin for budget purposes? Default 03:00 — heuristic for
+  # "operator's working day has wound down by then." Tunable via env so
+  # late-night-burners can shift later (e.g. 04 or 05) and morning-people
+  # can pull it earlier (e.g. 01 or midnight).
+  day_start_hour=${CLAUDE_BUDGET_DAY_START_HOUR:-3}
+  day=$(date -d "$day_start_hour hours ago" +%Y-%m-%d)
+  cutoff_epoch=$(date -d "$day $(printf '%02d' "$day_start_hour"):00" +%s)
 
   # Sleep-aware day attribution: within today's filtered window, walk messages
   # in timestamp order and detect the most-recent idle gap >= threshold. Drop
@@ -116,8 +116,9 @@ handleWarning() {
   limit=$(jq -r '.daily_tokens // 0' "$ConfigFile")
   [[ ${limit:-0} -gt 0 ]] || exit 0
 
-  local day
-  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  local day day_start_hour
+  day_start_hour=${CLAUDE_BUDGET_DAY_START_HOUR:-3}
+  day=$(date -d "$day_start_hour hours ago" +%Y-%m-%d)
 
   local total=0
   local sessions_dir="$StateDir/sessions"

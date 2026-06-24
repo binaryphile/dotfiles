@@ -217,6 +217,95 @@ test_StopUsesLastSleepGapWhenMultiple() {
   tesht.AssertGot "$got" "800"
 }
 
+test_StopDuplicateMsgIdAcrossSleepGap() {
+  # When the same msg_id appears both pre-gap and post-gap (re-emitted across
+  # a session resume / retry), the pre-gap copy is dropped by the slice and
+  # only the post-gap copy survives unique_by. This is the intended ordering
+  # — unique_by(.id) AFTER [cut:] preserves today's accounting.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local preGap postGap now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  postGap=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  preGap=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # Same msg_id 'X' pre-gap (huge usage) and post-gap (small usage).
+  # Gap = 28 min; threshold=5min splits. Pre-gap X dropped by slice.
+  # Post-gap X counted: 50*1 + 25*5 = 175.
+  makeTranscript "$transcript" \
+    "$(makeMsg X 1000 500 "$preGap")" \
+    "$(makeMsg X 50 25 "$postGap")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=5
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "175"
+}
+
+test_StopSleepGapAtExactThresholdQualifies() {
+  # Edge case: a gap EXACTLY equal to the threshold should qualify (the
+  # comparison is `>=`, not `>`). Operator may set the threshold to a
+  # round number expecting boundary inclusion.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local preGap postGap now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  postGap=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)
+  # Gap = exactly 5 minutes. With threshold=5, the gap qualifies via `>=`.
+  preGap=$(date -u -d '6 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # pre (1000 + 500) dropped; post (200 + 80 -> 600) survives.
+  makeTranscript "$transcript" \
+    "$(makeMsg pre 1000 500 "$preGap")" \
+    "$(makeMsg post 200 80 "$postGap")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=5
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "600"
+}
+
+test_StopDayStartHourEnvOverride() {
+  # Operator-policy: CLAUDE_BUDGET_DAY_START_HOUR shifts the day-start cutoff
+  # away from the default 03:00. With override=0 (midnight), a message timestamped
+  # in the post-midnight pre-3am window is INCLUDED (it would have been excluded
+  # under the 03:00 default if the test ran in a window straddling the boundary).
+  # Simpler proof: override=0 + a message at today's epoch start (anywhere after
+  # midnight local) ought to be counted, and the day-key reflects the override.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 100 50 "$now")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  # With override=0, day-key = `date -d '0 hours ago'` = local date right now.
+  export CLAUDE_BUDGET_DAY_START_HOUR=0
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '0 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  # m1 only (input 100 + output 50, weighted 350). Tail is 0.
+  tesht.AssertGot "$got" "350"
+}
+
 test_StopSleepGapThresholdEnvOverride() {
   tesht.MktempDir StateDir
   local dir; tesht.MktempDir dir
