@@ -77,7 +77,7 @@ test_StopWritesSessionTokens() {
   runStop "mysession" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-mysession.tokens")
   # Weighted (input 1x + output 5x): msg1 = 100 + 250 = 350; msg2 = 200 + 400 = 600.
@@ -102,7 +102,7 @@ test_StopWeightsCacheTokens() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-sess.tokens")
   tesht.AssertGot "$got" "2285"
@@ -127,7 +127,7 @@ test_StopFiltersMessagesBeforeBudgetDayCutoff() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-sess.tokens")
   # Only "new" counted: 100*1 + 50*5 = 350.
@@ -156,7 +156,7 @@ test_StopSplitsAtSleepGapKeepsPostGapOnly() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-sess.tokens")
   tesht.AssertGot "$got" "600"
@@ -182,7 +182,7 @@ test_StopKeepsAllMessagesWhenNoSleepGap() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-sess.tokens")
   tesht.AssertGot "$got" "950"
@@ -211,7 +211,7 @@ test_StopUsesLastSleepGapWhenMultiple() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-sess.tokens")
   tesht.AssertGot "$got" "800"
@@ -238,7 +238,7 @@ test_StopSleepGapThresholdEnvOverride() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   local got
   got=$(cat "$StateDir/sessions/${day}-sess.tokens")
   tesht.AssertGot "$got" "950"
@@ -256,7 +256,7 @@ test_StopSkipsMessagesWithoutTimestamp() {
   runStop "sess" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   tesht.AssertRC "$(ls "$StateDir/sessions/${day}-sess.tokens" 2>/dev/null; echo $?)" "2"
 }
 
@@ -266,7 +266,7 @@ test_StopSkipsMissingTranscript() {
   runStop "mysession" "/nonexistent/path.jsonl"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   tesht.AssertRC "$(ls "$StateDir/sessions/${day}-mysession.tokens" 2>/dev/null; echo $?)" "2"
 }
 
@@ -281,7 +281,7 @@ test_StopSkipsMalformedJSONL() {
   runStop "mysession" "$transcript"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
   tesht.AssertRC "$(ls "$StateDir/sessions/${day}-mysession.tokens" 2>/dev/null; echo $?)" "2"
 }
 
@@ -291,7 +291,7 @@ test_SessionStartWarnsAt25Pct() {
   ConfigFile="$dir/config.json"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   # 760k used of 1000k -> 24% remaining -> crosses 25% threshold -> 25%-action text fires
   writeConfig 1000000
@@ -311,7 +311,7 @@ test_SessionStartNoWarnUnderThreshold() {
   ConfigFile="$dir/config.json"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   # 500k used of 1000k -> 50% remaining -> no threshold crossed
   writeConfig 1000000
@@ -328,7 +328,7 @@ test_UserPromptSubmitWarnsOnNewThreshold() {
   ConfigFile="$dir/config.json"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   # 910k of 1000k -> 9% remaining -> 25% already warned -> 10%-action fires
   writeConfig 1000000
@@ -353,7 +353,7 @@ test_UserPromptSubmitBlocksAtEnforceThreshold() {
   ConfigFile="$dir/config.json"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   # 960k of 1000k -> 4% remaining -> enforce_at_pct=5 -> block
   writeConfig 1000000 5
@@ -370,7 +370,7 @@ test_WarningFlockedNoDuplicate() {
   ConfigFile="$dir/config.json"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   # 760k of 1000k -> 24% remaining -> both concurrent calls race to emit 25% warning
   writeConfig 1000000
@@ -397,7 +397,7 @@ test_SessionEndPrunesOldFiles() {
   printf '100\n' > "$old_file"
   touch -d '9 days ago' "$old_file"
 
-  local recent_file="$sessions_dir/$(date -d '2 hours ago' +%Y-%m-%d)-recent.tokens"
+  local recent_file="$sessions_dir/$(date -d '3 hours ago' +%Y-%m-%d)-recent.tokens"
   printf '200\n' > "$recent_file"
 
   runSessionEnd
@@ -434,7 +434,7 @@ test_SessionStartWarnsWithSessionCount() {
   ConfigFile="$dir/config.json"
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   # 3 sessions, 800k total -> 20% remaining -> crosses 25%
   writeConfig 1000000

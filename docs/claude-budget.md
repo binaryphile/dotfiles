@@ -6,13 +6,13 @@
 
 After each response, Claude Code writes the conversation to a JSONL file under `~/.claude/projects/`. The Stop hook reads that file, applies three filters, and records the per-session total to `~/.local/state/claude-budget/sessions/{day}-{session_id}.tokens`:
 
-1. **Day-scope filter.** Only messages whose `.timestamp` falls within the current budget day (02:00 to 02:00 local) are counted. Without this filter, a long-lived session that spans multiple calendar days re-counts prior-day messages into today's bucket every time the Stop hook fires. Claude Code transcripts are append-only within a session — `/compact` or `/clear` may shrink them but the daily ledger should still represent today's work, not cumulative-since-session-start.
+1. **Day-scope filter.** Only messages whose `.timestamp` falls within the current budget day (03:00 to 03:00 local) are counted. Without this filter, a long-lived session that spans multiple calendar days re-counts prior-day messages into today's bucket every time the Stop hook fires. Claude Code transcripts are append-only within a session — `/compact` or `/clear` may shrink them but the daily ledger should still represent today's work, not cumulative-since-session-start.
 
-2. **Sleep-aware attribution.** Within today's filtered window, the hook walks messages in timestamp order and finds the most-recent idle gap of `CLAUDE_BUDGET_SLEEP_GAP_MIN` minutes (default 120). Messages BEFORE that gap are dropped — they belong to the prior day's work-block that ran past the 02:00 cutoff before the operator slept; the post-gap block is today's true operator-intent work. Sessions with no gap exceeding the threshold count entirely (single contiguous work-block). The 02:00 cutoff alone catches late-night tails as "today"; this second filter corrects that.
+2. **Sleep-aware attribution.** Within today's filtered window, the hook walks messages in timestamp order and finds the most-recent idle gap of `CLAUDE_BUDGET_SLEEP_GAP_MIN` minutes (default 120). Messages BEFORE that gap are dropped — they belong to the prior day's work-block that ran past the 03:00 cutoff before the operator slept; the post-gap block is today's true operator-intent work. Sessions with no gap exceeding the threshold count entirely (single contiguous work-block). The 03:00 cutoff alone catches late-night tails as "today"; this second filter corrects that.
 
 3. **Cache-aware weighted sum.** The per-message token formula is `input*1 + output*5 + cache_creation*1.25 + cache_read*0.1`, approximating Anthropic's billing shape on input-equivalent units (output ~5x base; cache_creation ~1.25x; cache_read ~0.1x). The weights are an operator policy choice — re-tune them (and `daily_tokens`) if rate-card pricing changes. The previous formula was `input + output` only, which ignored cache reads entirely and under-represented usage in cache-heavy long-running sessions where cache reads dominate. Messages without a `.timestamp` field are excluded (older transcript versions or malformed entries).
 
-The budget day resets at 2am, not midnight. That handles the late-night session that crosses midnight without charging twice for one work block. Note: pre-gap tokens are intentionally NOT retro-written to yesterday's file (already closed at rollover); they're lost from accounting under the assumption that yesterday's last Stop already approximately captured them.
+The budget day resets at 3am, not midnight. That handles the late-night session that crosses midnight without charging twice for one work block. Note: pre-gap tokens are intentionally NOT retro-written to yesterday's file (already closed at rollover); they're lost from accounting under the assumption that yesterday's last Stop already approximately captured them.
 
 ## Configuration
 
@@ -68,7 +68,7 @@ To verify hooks are firing without waiting for natural usage, point `CLAUDE_BUDG
 ```bash
 CBSTATE=/tmp/cb-test
 mkdir -p "$CBSTATE/sessions"
-DAY=$(date -d '2 hours ago' +%Y-%m-%d)
+DAY=$(date -d '3 hours ago' +%Y-%m-%d)
 echo 800000 > "$CBSTATE/sessions/${DAY}-fake.tokens"
 
 printf '{"hook_event_name":"SessionStart","session_id":"test","transcript_path":"/dev/null","cwd":"/tmp"}' \

@@ -32,11 +32,14 @@ handleStop() {
   [[ -n $session_id && -n $transcript && -r $transcript ]] || exit 0
 
   local day cutoff_epoch sleep_gap_min sleep_gap_sec
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
-  # Budget day = 02:00 of day-name through 02:00 of next day. Filter messages to
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  # Budget day = 03:00 of day-name through 03:00 of next day. Filter messages to
   # this window so a session living across calendar days doesn't double-count
-  # prior days' transcript content into today's bucket.
-  cutoff_epoch=$(date -d "$day 02:00" +%s)
+  # prior days' transcript content into today's bucket. The 03:00 cutoff is a
+  # heuristic for "operator's working day has actually wound down by then" —
+  # tightening from the prior 02:00 to capture more late-night-into-this-day
+  # work in the previous bucket.
+  cutoff_epoch=$(date -d "$day 03:00" +%s)
 
   # Sleep-aware day attribution: within today's filtered window, walk messages
   # in timestamp order and detect the most-recent idle gap >= threshold. Drop
@@ -114,7 +117,7 @@ handleWarning() {
   [[ ${limit:-0} -gt 0 ]] || exit 0
 
   local day
-  day=$(date -d '2 hours ago' +%Y-%m-%d)
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
 
   local total=0
   local sessions_dir="$StateDir/sessions"
