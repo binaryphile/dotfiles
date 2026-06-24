@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# commit-msg -- single gate:
+#   (f) When committing in dotfiles with scripts/cross-tree-sweep-cron staged,
+#       refuse if any budget constant (DirtyRepoBudget / StashWarnBudget /
+#       UnpushedBudget / PlanStaleDaysBudget / PlanStaleCountBudget /
+#       PlanStrayBudget) loosens (new > old) AND the commit message body
+#       lacks a "Loosening rationale: <one-line>" trailer.
+#       Mechanizes ~/projects/jeeves/guides/cross-tree-sweep-discipline.md
+#       §7 Anti-ratchet rule (#47960).
+#
+# Bypass with: git commit --no-verify.
+#
+# Naming Policy:
+#
+# This is a standalone script -- no namespace prefix on functions, no suffix on globals.
+# Function names use camelCase (one-off tool; not mk.bash framework).
+# Local variable names begin with lowercase, e.g. localVariable.
+# Global variable names begin with uppercase, e.g. GlobalVariable.
+# Variables ending in _ may contain IFS characters or be empty; must be
+# quoted on use.
+
+# checkBudgetLoosening refuses the commit when scripts/cross-tree-sweep-cron has
+# loosened budget constants without a Loosening rationale trailer in `msgFile`.
+checkBudgetLoosening() {
+  local msgFile=$1
+
+  # Scope: only fire when scripts/cross-tree-sweep-cron is in the staged set.
+  git diff --cached --name-only | grep -qFx 'scripts/cross-tree-sweep-cron' || return 0
+
+  # Collect old/new budget values from the staged diff.
+  local diff_
+  diff_=$(git diff --cached -U0 -- scripts/cross-tree-sweep-cron)
+
+  local -A oldValues=()
+  local -A newValues=()
+  local line_=''
+  while IFS= read -r line_; do
+    if [[ $line_ =~ ^-declare\ -gri\ ([A-Za-z]+Budget)=([0-9]+)$ ]]; then
+      oldValues[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+    elif [[ $line_ =~ ^\+declare\ -gri\ ([A-Za-z]+Budget)=([0-9]+)$ ]]; then
+      newValues[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+    fi
+  done <<<"$diff_"
+
+  # Detect loosening: a constant present in BOTH old and new where new > old.
+  local -a looseners=()
+  local name
+  for name in "${!newValues[@]}"; do
+    [[ -v oldValues[$name] ]] || continue   # added (no prior value), not a change
+    if (( newValues[$name] > oldValues[$name] )); then
+      looseners+=("$name (${oldValues[$name]} → ${newValues[$name]})")
+    fi
+  done
+
+  (( ${#looseners[@]} > 0 )) || return 0   # no loosening; pass
+
+  # Loosening detected — require the trailer.
+  if grep -qiE '^Loosening rationale:[[:space:]]+\S' $msgFile; then
+    return 0
+  fi
+
+  cat >&2 <<END
+BLOCKED: cross-tree-sweep-cron budget LOOSENING without rationale.
+
+Loosened constants:
+END
+  printf '  %s\n' "${looseners[@]}" >&2
+  cat >&2 <<END
+
+Required: add a "Loosening rationale: <one-line>" trailer to the commit
+message body. Example:
+
+  Loosening rationale: dirty=6 sustained 6 weeks; calibrate to operational reality
+
+Bypass: git commit --no-verify
+See: ~/projects/jeeves/guides/cross-tree-sweep-discipline.md §7 Anti-ratchet rule
+END
+  return 1
+}
+
+main() {
+  checkBudgetLoosening "$1"
+}
+
+# IFS / noglob / -u / pipefail apply at source time so functions tested via
+# `source .githooks/commit-msg` behave the same as during direct invocation.
+# Caller's shell inherits these (the price of test fidelity).
+IFS=$'\n'
+set -o noglob
+set -uo pipefail
+
+# Sourced execution returns before set -e + main. set -e is deferred because
+# it would terminate an interactive shell on any failed command after sourcing.
+return 2>/dev/null
+
+set -e
+main "$@"
