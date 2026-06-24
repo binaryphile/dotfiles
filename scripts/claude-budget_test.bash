@@ -306,6 +306,92 @@ test_StopDayStartHourEnvOverride() {
   tesht.AssertGot "$got" "350"
 }
 
+test_StopSleepGapZeroThresholdKeepsOnlyLast() {
+  # Threshold=0 means EVERY positive gap qualifies; the gap-finder picks the
+  # last qualifying index, which is always the last message. Effect: only the
+  # most-recent message survives the slice. Operator-policy edge case (probably
+  # not useful in production, but the algorithm should handle it without crash).
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local t1 t2 now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  t2=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  t1=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # m1 (large weighted), m2 (smaller). After head -n -1, transcript has m1+m2.
+  # With threshold=0, all gaps qualify; cut=1; slice=[m2]. m2 weighted = 600.
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 1000 500 "$t1")" \
+    "$(makeMsg m2 200 80 "$t2")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=0
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "600"
+}
+
+test_StopSleepGapThresholdExceedsWindowKeepsAll() {
+  # Threshold so large no realistic gap can qualify (24h+ in a 30-min sample
+  # window). All messages should count — equivalent to no split.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local t1 t2 now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  t2=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  t1=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # 28-min gap; threshold=1440 (24h) means no gap qualifies; keep all.
+  # m1 350 + m2 600 + tail 0 = 950.
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 100 50 "$t1")" \
+    "$(makeMsg m2 200 80 "$t2")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  export CLAUDE_BUDGET_SLEEP_GAP_MIN=1440
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "950"
+}
+
+test_StopIdenticalTimestampsDoesNotCrash() {
+  # Two messages at the exact same timestamp produce gap=0, which fails the
+  # default `>= 120*60` threshold check. Both should count. sort_by(.ts) is
+  # stable in jq so order is preserved from input.
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+
+  local transcript="$dir/session.jsonl"
+  local ts now
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  ts=$(date -u -d '2 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  # Both m1 and m2 at the same timestamp. Default threshold=120min; gap=0
+  # doesn't qualify; both kept. m1 (350) + m2 (600) + tail (0) = 950.
+  makeTranscript "$transcript" \
+    "$(makeMsg m1 100 50 "$ts")" \
+    "$(makeMsg m2 200 80 "$ts")" \
+    "$(makeMsg tail 0 0 "$now")"
+
+  unset CLAUDE_BUDGET_SLEEP_GAP_MIN
+  runStop "sess" "$transcript"
+
+  local day
+  day=$(date -d '3 hours ago' +%Y-%m-%d)
+  local got
+  got=$(cat "$StateDir/sessions/${day}-sess.tokens")
+  tesht.AssertGot "$got" "950"
+}
+
 test_StopDayStartHourInvalidFallsBackToDefault() {
   # Operator-footgun protection: invalid CLAUDE_BUDGET_DAY_START_HOUR values
   # (non-integer, negative, > 23) should not shift accounting into tomorrow or
