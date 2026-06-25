@@ -12,7 +12,10 @@
     # GlobalProtect VPN client (yuezk Rust rewrite). Used by linux/home.nix
     # for vpn-connect wrapper. Crostini uses apt-installed gpoc instead.
     globalprotect-openconnect = {
-      url = "github:yuezk/GlobalProtect-openconnect";
+      # See ~/nixos-config/flake.nix for why this pins past v2.6.3 to
+      # main HEAD: the tagged flake's prebuilt-asset hashes don't match
+      # the floating `snapshot` release URLs they reference.
+      url = "github:yuezk/GlobalProtect-openconnect/49f410e6";
     };
 
     # ShellCheck fork (binaryphile/shellcheck) with dynamic plugin loading

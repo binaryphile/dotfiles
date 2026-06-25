@@ -18,6 +18,7 @@ in {
 
     gh
     git
+    glab
     highlight
     htop
     jira-cli-go
