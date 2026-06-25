@@ -601,7 +601,6 @@ stage2() {
     evtctlForwardRestartIfActiveAndStaleTask
     crossTreeSweepEnableTask
   END
-  chromeDevtoolsMcpRegisterTask
   claudeEraConfigTask
   claudeTeshtConfigTask
   claudeTandemConfigTask
@@ -1399,6 +1398,15 @@ eraNixProfileUpgradeIfStaleTask() {
   # the predicate may need a `.storePaths[] | select(test("/era-soak$"))`
   # refinement.
   eraNixProfileIsCurrent() {
+    # Host-opt-in short-circuit: if the era-soak.service unit is
+    # unknown to systemd-user on this host, the operator has not
+    # opted into the era-soak deployment posture. Treat absence as
+    # CURRENT (no work to do) rather than stale (which would loop
+    # the operator forever on `nix profile upgrade` against a
+    # never-installed package). Matches the symmetry of the
+    # immediately-following eraSoakRestartIfActiveAndStaleTask
+    # which already short-circuits when the service is inactive.
+    systemctl --user cat era-soak.service &>/dev/null || return 0
     command -v nix >/dev/null 2>&1 || return 0
     command -v jq  >/dev/null 2>&1 || return 0
     local installed live
@@ -1492,20 +1500,6 @@ evtctlForwardRestartIfActiveAndStaleTask() {
     done
   }
   cmd evtctlForwardRestartAllStaleActive
-}
-
-chromeDevtoolsMcpRegisterTask() {
-  desc  'register chrome-devtools MCP in claude.json'
-  ok    '[[ -f ~/.claude.json ]] && jq -e ".mcpServers.\"chrome-devtools\"" ~/.claude.json &>/dev/null'
-
-  chromeDevtoolsMcpRegister() {
-    local src_=${1:-'{}'}
-    [[ -f ~/.claude.json ]] && src_=$(cat ~/.claude.json)
-    printf '%s' "$src_" |
-      jq '.mcpServers."chrome-devtools" = {command: "npx", args: ["-y", "chrome-devtools-mcp@latest", "--browser-url", "http://127.0.0.1:9222"]}' > ~/.claude.json.tmp &&
-      mv ~/.claude.json.tmp ~/.claude.json
-  }
-  cmd chromeDevtoolsMcpRegister
 }
 
 # agentTomlTask writes ~/.config/1Password/ssh/agent.toml to restrict which
@@ -1731,6 +1725,34 @@ shellcheckrcTask() {
   desc 'deploy .shellcheckrc to neutral path + work project symlinks'
   check "[[ -f $src ]]"
 
+  # shellcheckrcCurrent — `ok` predicate for shellcheckrcTask.
+  # Returns 0 iff the neutral-path .shellcheckrc matches $src AND every
+  # present work-project root holds a symlink to $neutral. Returns 1 on
+  # any drift (missing dest, content mismatch, symlink absent or
+  # pointing elsewhere). Mirrors the lazy-deploy semantics of
+  # shellcheckrcDeploy: work-project dirs that don't exist on this host
+  # are SKIPPED (not treated as drift), so the predicate stays accurate
+  # on hosts that haven't cloned all four checkouts.
+  shellcheckrcCurrent() {
+    [[ -f $neutral ]] && cmp -s $src $neutral || return 1
+    local dir
+    for dir in \
+      $HOME/projects/urma \
+      $HOME/projects/pepin \
+      $HOME/projects/cloud-services \
+      $HOME/projects/dal
+    do
+      [[ -d $dir ]] || continue
+      [[ $(readlink $dir/.shellcheckrc 2>/dev/null) == $neutral ]] || return 1
+    done
+  }
+  ok shellcheckrcCurrent
+
+  # shellcheckrcDeploy — write $src to the neutral config path and
+  # symlink every present work-project root's `.shellcheckrc` to it.
+  # mkdir -p guarantees the neutral parent dir exists; the per-project
+  # loop skips missing checkouts so the task degrades gracefully on
+  # hosts that haven't cloned all four work repos.
   shellcheckrcDeploy() {
     mkdir -p $(dirname $neutral)
     cp $src $neutral
