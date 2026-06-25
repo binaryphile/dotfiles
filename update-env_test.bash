@@ -1272,3 +1272,22 @@ test_gitUpdate_handlesEmptyAutostash() {
   (( stashCount == 0 )) || { echo "$stashCount unexpected stash entries"; return 1; }
   return 0
 }
+
+# test_isNotReadme tests that isNotReadme rejects README.md basenames
+# and accepts other filenames (regardless of directory depth or case).
+test_isNotReadme() {
+  local -A case1=([name]='accept regular slash-command file' [path]='/home/ted/projects/era/commands/imprint.md' [wantRc]=0)
+  local -A case2=([name]='reject literal README.md at top'   [path]='README.md' [wantRc]=1)
+  local -A case3=([name]='reject README.md in deep dir'      [path]='/home/ted/projects/tandem-protocol/commands/README.md' [wantRc]=1)
+  local -A case4=([name]='accept lowercase readme.md'        [path]='/some/where/readme.md' [wantRc]=0)
+  local -A case5=([name]='accept README-addendum.md'         [path]='/some/where/README-addendum.md' [wantRc]=0)
+
+  subtest() {
+    local casename=$1
+    eval "$(tesht.Inherit "$casename")"
+    isNotReadme "$path"; local got=$?
+    tesht.AssertRC "$got" "$wantRc"
+  }
+
+  tesht.Run ${!case@}
+}

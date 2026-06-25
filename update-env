@@ -542,6 +542,7 @@ stage2() {
 
   lib.Glob ~/projects/tandem-protocol/commands/* |
     keepIf isFile |
+    keepIf isNotReadme |
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
@@ -566,11 +567,13 @@ stage2() {
 
   lib.Glob ~/projects/era/commands/* |
     keepIf isFile |
+    keepIf isNotReadme |
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
   lib.Glob ~/projects/share/commands/* |
     keepIf isFile |
+    keepIf isNotReadme |
     map path '$path ~/.claude/commands/$(basename $path)' |
     each task.Ln
 
@@ -2358,6 +2361,11 @@ unset -v LibDir
 
 
 isFile() { [[ -f $1 ]]; }
+
+# isNotReadme rejects README.md files (used to filter source-repo
+# documentation out of slash-command symlink globs; see the convention
+# documented at ~/projects/tandem-protocol/commands/README.md).
+isNotReadme() { [[ $(basename "$1") != README.md ]]; }
 
 loosely() {
   local oldIfs_=$IFS
