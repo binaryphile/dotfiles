@@ -8,7 +8,7 @@ Usage:
 
   $Prog [OPTIONS] [--] COMMAND [ARGS...]
 
-  setup         clone urma-next repo and install
+  setup         clone urma-obsidian sibling under ~/projects/digi/
 
   Options:
 
@@ -20,24 +20,13 @@ END
 ## commands
 
 cmd.setup() (
-  [[ -e $FontAwesomeKeyFile ]] || mk.Fatal "missing fontawesome token file: $FontAwesomeKeyFile"
-  mk.Each mk.Cue <<'  END'
-    git clone git@stash.digi.com:idigi/urma-next ~/urma-next
-    cd ~/urma-next/urma-next/scripts
-    git checkout -b local origin/tlilley/local
-  END
-  export FONTAWESOME_PACKAGE_TOKEN=$(<~/fa-token.txt)
-  mk.Cue ./urma install
-
-  # obsidian is a non-submodule sub-repo (its own git repo, gitignored by parent)
+  # urma-obsidian is the operator's personal obsidian vault for urma research,
+  # cloned as a sibling of urma under ~/projects/digi/ per tasks.jeeves #20568.
+  # urma-next itself is cloned by update-env's urma section (stashCloneAndLinkTask).
   if [[ ! -d ~/projects/digi/urma-obsidian/.git ]]; then
     mk.Cue git clone git@stash.digi.com:~tlilley/urma-obsidian ~/projects/digi/urma-obsidian
   fi
 )
-
-## globals
-
-FontAwesomeKeyFile=~/secrets/fontawesome.key
 
 ## boilerplate
 
