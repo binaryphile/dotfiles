@@ -633,9 +633,13 @@ stage2() {
   #  |   Atomically renames pre-reorg ~/projects/{urma,pepin,      |
   #  |   cloud-services,dal} into ~/projects/digi/. Same-fs assert |
   #  |   + post-verify + direnv re-allow. No symlinks (fail-fast). |
+  #  |   Followed by obsidian-sibling-promotion: nested            |
+  #  |   urma/obsidian + dal/obsidian (from prior #20538 layout)   |
+  #  |   are promoted to siblings urma-obsidian, dal-obsidian.     |
   #  +-------------------------------------------------------------+
   section digi-migration
   try digiMigrationTask
+  try digiObsidianPromotionTask
 
   #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
@@ -1083,6 +1087,56 @@ digiMigrationTask() {
     done
   }
   cmd digiMigrationDo
+}
+
+# digiObsidianPromotionTask atomically renames the nested obsidian sub-clones
+# (digi/urma/obsidian, digi/dal/obsidian — from the prior #20538 layout) to
+# siblings (digi/urma-obsidian, digi/dal-obsidian) per tasks.jeeves #20568.
+# Local-only operation; idempotent via ok-predicate.
+#
+# Same fail-fast contract as digiMigrationTask: hard-error on collision, hard-
+# error on cross-filesystem, post-verify .git integrity, warn on dirty tree,
+# best-effort direnv re-allow (obsidian sub-clones don't typically have .envrc
+# but the call is safe).
+digiObsidianPromotionTask() {
+  desc 'promote digi/{urma,dal}/obsidian sub-clones to siblings digi/{urma,dal}-obsidian'
+
+  digiObsidianPromotionCurrent() {
+    local parent
+    for parent in urma dal; do
+      [[ -d $HOME/projects/digi/$parent/obsidian/.git && ! -d $HOME/projects/digi/$parent-obsidian ]] && return 1
+    done
+    return 0
+  }
+  ok digiObsidianPromotionCurrent
+
+  digiObsidianPromotionDo() {
+    local parent src dst srcDev dstDev
+    for parent in urma dal; do
+      src=$HOME/projects/digi/$parent/obsidian
+      dst=$HOME/projects/digi/$parent-obsidian
+      [[ -d $src/.git ]] || continue
+      [[ -d $dst ]] && {
+        echo "FAIL: both $src and $dst exist — manual resolution required:" >&2
+        echo "  inspect:                 diff -rq $src $dst" >&2
+        echo "  if dst is stub:          rm -rf $dst && rerun update-env -2" >&2
+        echo "  if src is stale:         mv $src $src.bak-\$(date +%s) && rerun update-env -2" >&2
+        return 1
+      }
+      srcDev=$(stat -c %d $src)
+      dstDev=$(stat -c %d $HOME/projects/digi)
+      [[ $srcDev == $dstDev ]] || { echo "FAIL: $src (dev=$srcDev) and ~/projects/digi (dev=$dstDev) on different filesystems" >&2; return 1; }
+      mv $src $dst
+      git -C $dst rev-parse --git-dir >/dev/null 2>&1 || { echo "FAIL: $dst .git unreadable after rename" >&2; return 1; }
+      [[ -z $(git -C $dst status --porcelain 2>/dev/null | grep -v '^??' || true) ]] || echo "WARN: $dst has uncommitted tracked-file changes (preserved through rename)" >&2
+      # Drop obsolete /obsidian gitignore entry from parent project (now sibling)
+      local parentDir=$HOME/projects/digi/$parent
+      local excludeFile=$parentDir/.git/info/exclude
+      [[ -f $excludeFile ]] && sed -i '/^\/obsidian$/d' $excludeFile 2>/dev/null || true
+      [[ -f $dst/.envrc ]] && command -v direnv >/dev/null && direnv allow $dst >/dev/null 2>&1 || true
+    done
+  }
+  cmd digiObsidianPromotionDo
 }
 
 scaffoldTask() {
