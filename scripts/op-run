@@ -381,7 +381,7 @@ runOp() {
 # Example (the production call shape; .mcp.json invokes this for an MCP
 # server, but it works the same from a shell):
 #
-#     cd ~/projects/urma
+#     cd ~/projects/digi/urma
 #     op-run uvx mcp-atlassian-with-bitbucket
 main() {
   parseOptions "$@"

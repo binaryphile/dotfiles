@@ -1050,8 +1050,8 @@ test_shellcheckrcTask_converges() {
   local dir; tesht.MktempDir dir || return 128
   trap "rm -rf $dir" RETURN
 
-  # arrange: source shellcheckrc and one work project
-  mkdir -p $dir/dotfiles $dir/.config $dir/projects/urma
+  # arrange: source shellcheckrc and one work project (post-digi-reorg path)
+  mkdir -p $dir/dotfiles $dir/.config $dir/projects/digi/urma
   echo 'disable=SC2086' >$dir/dotfiles/.shellcheckrc
 
   # act: inject paths and run
@@ -1066,9 +1066,9 @@ test_shellcheckrcTask_converges() {
   diff -q $dir/dotfiles/.shellcheckrc $dir/.config/shellcheck/shellcheckrc >/dev/null 2>&1 || { echo "neutral content mismatch"; rc=1; }
 
   # assert: work project has symlink to neutral path
-  [[ -L $dir/projects/urma/.shellcheckrc ]] || { echo "symlink not created"; rc=1; }
+  [[ -L $dir/projects/digi/urma/.shellcheckrc ]] || { echo "symlink not created"; rc=1; }
   local target
-  target=$(readlink $dir/projects/urma/.shellcheckrc)
+  target=$(readlink $dir/projects/digi/urma/.shellcheckrc)
   [[ $target == $dir/.config/shellcheck/shellcheckrc ]] || { echo "symlink target wrong: $target"; rc=1; }
 
   # assert: idempotent

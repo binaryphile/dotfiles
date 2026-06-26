@@ -286,7 +286,7 @@ test_urmaProjectEnvSpec_includesJira() {
 # tilde-form expands at source-time and resolves to a real on-disk path.
 #
 # Regression guard for #20003: the entry previously hardcoded /home/ted; the
-# bash-expansion conversion (~/projects/urma) only works if tilde-expansion
+# bash-expansion conversion (~/projects/digi/urma) only works if tilde-expansion
 # fires inside `declare -A`. This test exercises the real registry value
 # end-to-end through realpath -- existing resolveProject tests use stubbed
 # ProjectPath arrays, so nothing else catches a future expansion regression.
@@ -299,7 +299,7 @@ test_projectPath_urma_resolves_via_realpath() {
 
     local resolved
     resolved=$(realpath "$raw" 2>/dev/null) || { echo "realpath failed for: $raw"; return 1; }
-    [[ $resolved == */projects/urma ]] || { echo "resolved path does not end in /projects/urma: $resolved"; return 1; }
+    [[ $resolved == */projects/digi/urma ]] || { echo "resolved path does not end in /projects/digi/urma: $resolved"; return 1; }
   )
 }
 

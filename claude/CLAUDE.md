@@ -24,7 +24,7 @@ Two directories. Read the relevant guide before speculating or searching the web
   nix, Go development, security analysis, threat modeling, use case writing,
   investigation methodology, agent orchestration, Khorikov unit testing,
   technical blogging, FP, and more.
-- `~/projects/urma/obsidian/guides/` -- URMA-project-flavored guides
+- `~/projects/digi/urma/obsidian/guides/` -- URMA-project-flavored guides
   (also broadly applicable): Agans debugging, ast-grep, atlassian-mcp,
   Beck extreme programming, claude-md writing, CQRS / event sourcing,
   framework upgrades, FP unified guide, and more.

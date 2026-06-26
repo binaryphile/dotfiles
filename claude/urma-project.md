@@ -1,17 +1,17 @@
 # URMA
 
-Read `~/projects/urma/obsidian/URMA_PROJECT_UNDERSTANDING.md` before starting
+Read `~/projects/digi/urma/obsidian/URMA_PROJECT_UNDERSTANDING.md` before starting
 work. It covers the governing flows (page load and save), account-switch
 mechanism, first-fetch race, error model, failure archetypes, and a
 verification-oriented change checklist.
 
-Also see `~/projects/urma/obsidian/URMA_SWOT.md` for strategic analysis.
+Also see `~/projects/digi/urma/obsidian/URMA_SWOT.md` for strategic analysis.
 
-Guides: `~/projects/urma/obsidian/guides/` -- project-specific guides and references.
+Guides: `~/projects/digi/urma/obsidian/guides/` -- project-specific guides and references.
 
 ## Repository structure
 
-The `obsidian/` directory inside `~/projects/urma` is a **non-submodule sub-repo**
+The `obsidian/` directory inside `~/projects/digi/urma` is a **non-submodule sub-repo**
 -- its own git repository nested inside urma, gitignored by the parent. It contains
 project documentation, research, guides, and domain knowledge. Changes to obsidian
 are committed in the obsidian repo, not in the urma repo. Set up via `mk-urma`.

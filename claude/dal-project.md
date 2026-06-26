@@ -1,6 +1,6 @@
 # DAL
 
-Read `~/projects/dal/obsidian/DAL_PROJECT_UNDERSTANDING.md` before starting
+Read `~/projects/digi/dal/obsidian/DAL_PROJECT_UNDERSTANDING.md` before starting
 work. It covers the software stack, config/schema system, feature gating, modem
 subsystem, testing, release process, product diversity, and a change impact
 checklist.

@@ -629,15 +629,25 @@ stage2() {
   try githubCloneAndLinkTask icarus
 
   #  +-------------------------------------------------------------+
+  #  | PHASE 5a': digi-cluster migration (idempotent, local-only)  |
+  #  |   Atomically renames pre-reorg ~/projects/{urma,pepin,      |
+  #  |   cloud-services,dal} into ~/projects/digi/. Same-fs assert |
+  #  |   + post-verify + direnv re-allow. No symlinks (fail-fast). |
+  #  +-------------------------------------------------------------+
+  section digi-migration
+  try digiMigrationTask
+
+  #  +-------------------------------------------------------------+
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
-  #  |   +-> urma-next        - main application (+ MCP)            |
-  #  |   +-> pepin            - build/deploy tooling               |
-  #  |   +-> cloud-services                                        |
-  #  |   +-> accelerated-linux   - DAL (cloned to ~/projects/dal)   |
-  #  |   +-> urma-obsidian    - obsidian vault                     |
-  #  |   +-> dal-obsidian     - DAL knowledge vault                |
-  #  |   +-> share            - cross-team utilities               |
-  #  |       All from stash.digi.com, require VPN                  |
+  #  |   ~/projects/digi/                                          |
+  #  |     +-> urma             - main application (+ MCP)         |
+  #  |     +-> pepin            - build/deploy tooling             |
+  #  |     +-> cloud-services                                      |
+  #  |     +-> dal              - accelerated-linux                |
+  #  |     +-> urma/obsidian    - obsidian vault                   |
+  #  |     +-> dal/obsidian     - DAL knowledge vault              |
+  #  |   ~/projects/share        - cross-team utilities (unmoved)  |
+  #  |   All from stash.digi.com, require VPN                      |
   #  +-------------------------------------------------------------+
 
   # vpnUp predicate (tasks.jeeves #47750): LOWER_UP on tun0 OR gpd0.
@@ -654,7 +664,7 @@ stage2() {
   }
 
   if ! vpnUp; then
-    echo "[skip-vpn-gated] VPN not up; skipping 7 stash.digi.com sections (urma, pepin, cloud-services, dal, urma-obsidian, dal-obsidian, share) + scaffold symlink. Re-run after VPN up." >&2
+    echo "[skip-vpn-gated] VPN not up; skipping 7 stash.digi.com sections (digi/urma, digi/pepin, digi/cloud-services, digi/dal, digi/urma/obsidian, digi/dal/obsidian, share) + scaffold symlink. Re-run after VPN up." >&2
   else
     # NOTE: cluster contents below stay at original 2-space indent (i.e.,
     # NOT re-indented inside this `else` branch). Deliberate — keeps the
@@ -663,13 +673,13 @@ stage2() {
     # gated region. Closing `fi` is just before `section flake-locks`.
   section urma
   each try <<'  END'
-    stashCloneAndLinkTask urma-next urma idigi develop
-    scaffoldTask ~/projects/urma
-    obsidianSnippetsTask ~/projects/urma/obsidian/.obsidian/snippets
+    stashCloneAndLinkTask urma-next digi/urma idigi develop
+    scaffoldTask ~/projects/digi/urma
+    obsidianSnippetsTask ~/projects/digi/urma/obsidian/.obsidian/snippets
   END
   # try: these repos are VPN-dependent; check "[[ -d .git ]]" fails when not yet
   # cloned, which would abort the run under set -e without try.
-  each try gitExcludeTask ~/projects/urma <<'  END'
+  each try gitExcludeTask ~/projects/digi/urma <<'  END'
     /obsidian
     .shellcheckrc
     .direnv/
@@ -678,42 +688,42 @@ stage2() {
 
   section pepin
   each try <<'  END'
-    stashCloneAndLinkTask pepin pepin idigi develop
-    scaffoldTask ~/projects/pepin
-    obsidianSnippetsTask ~/projects/pepin/obsidian/.obsidian/snippets
+    stashCloneAndLinkTask pepin digi/pepin idigi develop
+    scaffoldTask ~/projects/digi/pepin
+    obsidianSnippetsTask ~/projects/digi/pepin/obsidian/.obsidian/snippets
   END
-  each try gitExcludeTask ~/projects/pepin <<'  END'
+  each try gitExcludeTask ~/projects/digi/pepin <<'  END'
     /obsidian
     .shellcheckrc
   END
 
   section cloud-services
   each try <<'  END'
-    stashCloneAndLinkTask cloud-services cloud-services idigi develop
-    scaffoldTask ~/projects/cloud-services
-    obsidianSnippetsTask ~/projects/cloud-services/obsidian/.obsidian/snippets
+    stashCloneAndLinkTask cloud-services digi/cloud-services idigi develop
+    scaffoldTask ~/projects/digi/cloud-services
+    obsidianSnippetsTask ~/projects/digi/cloud-services/obsidian/.obsidian/snippets
   END
-  each try gitExcludeTask ~/projects/cloud-services <<'  END'
+  each try gitExcludeTask ~/projects/digi/cloud-services <<'  END'
     /obsidian
     .shellcheckrc
   END
 
   section dal
   each try <<'  END'
-    stashCloneAndLinkTask accelerated-linux dal acl master
-    scaffoldTask ~/projects/dal
-    obsidianSnippetsTask ~/projects/dal/obsidian/.obsidian/snippets
+    stashCloneAndLinkTask accelerated-linux digi/dal acl master
+    scaffoldTask ~/projects/digi/dal
+    obsidianSnippetsTask ~/projects/digi/dal/obsidian/.obsidian/snippets
   END
-  each try gitExcludeTask ~/projects/dal <<'  END'
+  each try gitExcludeTask ~/projects/digi/dal <<'  END'
     /obsidian
     .shellcheckrc
   END
 
   section urma-obsidian
-  try stashCloneAndLinkTask urma-obsidian urma/obsidian ~tlilley
+  try stashCloneAndLinkTask urma-obsidian digi/urma/obsidian ~tlilley
 
   section dal-obsidian
-  try stashCloneAndLinkTask dal-obsidian dal/obsidian ~tlilley
+  try stashCloneAndLinkTask dal-obsidian digi/dal/obsidian ~tlilley
 
   section share
   try stashCloneAndLinkTask share share ~tlilley
@@ -1027,6 +1037,56 @@ bitbucketCloneAndLinkTask() {
 }
 
 
+# digiMigrationTask atomically renames pre-reorg work-project clones into
+# ~/projects/digi/. Local-only operation (no VPN dependency). Idempotent via
+# ok-predicate: returns 0 (skip) when all 4 names already migrated or absent.
+#
+# Fail-fast contract per tasks.jeeves #20538 design:
+#   - Hard-error on collision (both ~/projects/<name> and ~/projects/digi/<name> exist)
+#   - Hard-error on cross-filesystem (mv would become non-atomic copy+delete)
+#   - Hard-error if post-rename .git is unreadable
+#   - Warn (don't fail) on uncommitted tracked-file changes (atomic rename preserves them)
+#
+# Side effects after successful rename: best-effort `direnv allow` at the new
+# path so first cd into ~/projects/digi/<name> doesn't prompt to re-allow.
+digiMigrationTask() {
+  desc 'migrate ~/projects/{urma,pepin,cloud-services,dal} → ~/projects/digi/'
+
+  digiMigrationCurrent() {
+    local name
+    for name in urma pepin cloud-services dal; do
+      [[ -d $HOME/projects/$name && ! -d $HOME/projects/digi/$name ]] && return 1
+    done
+    return 0
+  }
+  ok digiMigrationCurrent
+
+  digiMigrationDo() {
+    mkdir -p $HOME/projects/digi
+    local name src dst srcDev dstDev
+    for name in urma pepin cloud-services dal; do
+      src=$HOME/projects/$name
+      dst=$HOME/projects/digi/$name
+      [[ -d $src ]] || continue
+      [[ -d $dst ]] && {
+        echo "FAIL: both $src and $dst exist — manual resolution required:" >&2
+        echo "  inspect:                 diff -rq $src $dst" >&2
+        echo "  if dst is empty/stub:    rm -rf $dst && rerun update-env -2" >&2
+        echo "  if src is stale copy:    mv $src $src.bak-\$(date +%s) && rerun update-env -2" >&2
+        return 1
+      }
+      srcDev=$(stat -c %d $src)
+      dstDev=$(stat -c %d $HOME/projects/digi)
+      [[ $srcDev == $dstDev ]] || { echo "FAIL: $src (dev=$srcDev) and ~/projects/digi (dev=$dstDev) on different filesystems; atomic-rename unavailable" >&2; return 1; }
+      mv $src $dst
+      git -C $dst rev-parse --git-dir >/dev/null 2>&1 || { echo "FAIL: $dst .git unreadable after rename" >&2; return 1; }
+      [[ -z $(git -C $dst status --porcelain 2>/dev/null | grep -v '^??' || true) ]] || echo "WARN: $dst has uncommitted tracked-file changes (preserved through rename)" >&2
+      [[ -f $dst/.envrc ]] && command -v direnv >/dev/null && direnv allow $dst >/dev/null 2>&1 || true
+    done
+  }
+  cmd digiMigrationDo
+}
+
 scaffoldTask() {
   local dir=$1
   ProjectDir=$dir
@@ -1125,22 +1185,49 @@ gitUpdate() {
 # below.
 evtctlAgentEnvrcAllProjectsTask() {
   local dir_
-  find ~/projects -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r dir_; do
+  allProjectDirs | while IFS= read -r dir_; do
     evtctlAgentEnvrcTask "$dir_"
   done
 }
 
-# claudeAgentRoleAllProjectsTask iterates ~/projects/*/ and ensures each
-# project carries a .claude/agent-role file whose contents is the project's
-# basename. Read by the SessionStart hook (claude-agent-identity) at session
-# start; sets the role half of the identity so Claude Code sessions in
-# ~/projects/era publish as `claude-era-<sid6>@<host>`, sessions in
-# ~/projects/icarus publish as `claude-icarus-<sid6>@<host>`, etc.
+# claudeAgentRoleAllProjectsTask iterates project dirs (structural .git-anchored
+# walk via allProjectDirs) and ensures each project carries a .claude/agent-role
+# file whose contents is the project's basename. Read by the SessionStart hook
+# (claude-agent-identity) at session start; sets the role half of the identity
+# so Claude Code sessions in ~/projects/era publish as `claude-era-<sid6>@<host>`,
+# sessions in ~/projects/icarus publish as `claude-icarus-<sid6>@<host>`, etc.
 # Idempotent: writes the file only when absent or stale (basename changed).
 claudeAgentRoleAllProjectsTask() {
   local dir_
-  find ~/projects -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r dir_; do
+  allProjectDirs | while IFS= read -r dir_; do
     claudeAgentRoleTask "$dir_"
+  done
+}
+
+# allProjectDirs emits one absolute path per project under ~/projects, defining
+# "project" structurally as "shallowest .git-bearing ancestor": a depth-1 dir
+# with .git (e.g., ~/projects/era) OR a depth-2 dir under a cluster (e.g.,
+# ~/projects/digi/urma, where digi has no .git). Sub-clones nested inside
+# projects (~/projects/digi/urma/obsidian, ~/projects/urma/obsidian) are
+# intentionally elided — they're scaffolded by their parent project's
+# discipline (mk-urma's git-clone hook, etc.), not iterator-discovered.
+#
+# Anchor: tasks.jeeves #20538 3a-discovered regression — a naive
+# find -name .git -maxdepth 4 descended into obsidian sub-clones, mis-tagging
+# them as projects with agent-role 'obsidian' (wrong attribution).
+#
+# Uses find depth-1 + per-cluster depth-1 descent rather than a glob loop so
+# this remains correct regardless of caller's IFS/noglob discipline. (C)
+allProjectDirs() {
+  local top sub
+  find ~/projects -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r top; do
+    if [[ -e $top/.git ]]; then
+      printf '%s\n' "$top"
+    else
+      find $top -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r sub; do
+        [[ -e $sub/.git ]] && printf '%s\n' "$sub"
+      done
+    fi
   done
 }
 
@@ -1689,9 +1776,9 @@ claudeMemoryRedirectsTask() {
       sofdevsim-2026
       binaryphile.github.io
       tandem-protocol
-      urma
+      digi/urma
       share
-      dal
+      digi/dal
     END
   }
 
@@ -1726,22 +1813,22 @@ shellcheckrcTask() {
   desc 'deploy .shellcheckrc to neutral path + work project symlinks'
   check "[[ -f $src ]]"
 
-  # shellcheckrcCurrent — `ok` predicate for shellcheckrcTask.
+  # Predicate shellcheckrcCurrent — `ok` predicate for shellcheckrcTask.
   # Returns 0 iff the neutral-path .shellcheckrc matches $src AND every
   # present work-project root holds a symlink to $neutral. Returns 1 on
   # any drift (missing dest, content mismatch, symlink absent or
   # pointing elsewhere). Mirrors the lazy-deploy semantics of
-  # shellcheckrcDeploy: work-project dirs that don't exist on this host
+  # the shellcheckrcDeploy helper below: work-project dirs that don't exist on this host
   # are SKIPPED (not treated as drift), so the predicate stays accurate
   # on hosts that haven't cloned all four checkouts.
   shellcheckrcCurrent() {
     [[ -f $neutral ]] && cmp -s $src $neutral || return 1
     local dir
     for dir in \
-      $HOME/projects/urma \
-      $HOME/projects/pepin \
-      $HOME/projects/cloud-services \
-      $HOME/projects/dal
+      $HOME/projects/digi/urma \
+      $HOME/projects/digi/pepin \
+      $HOME/projects/digi/cloud-services \
+      $HOME/projects/digi/dal
     do
       [[ -d $dir ]] || continue
       [[ $(readlink $dir/.shellcheckrc 2>/dev/null) == $neutral ]] || return 1
@@ -1749,7 +1836,7 @@ shellcheckrcTask() {
   }
   ok shellcheckrcCurrent
 
-  # shellcheckrcDeploy — write $src to the neutral config path and
+  # Helper shellcheckrcDeploy — write $src to the neutral config path and
   # symlink every present work-project root's `.shellcheckrc` to it.
   # mkdir -p guarantees the neutral parent dir exists; the per-project
   # loop skips missing checkouts so the task degrades gracefully on
@@ -1760,10 +1847,10 @@ shellcheckrcTask() {
 
     local dir
     for dir in \
-      $HOME/projects/urma \
-      $HOME/projects/pepin \
-      $HOME/projects/cloud-services \
-      $HOME/projects/dal
+      $HOME/projects/digi/urma \
+      $HOME/projects/digi/pepin \
+      $HOME/projects/digi/cloud-services \
+      $HOME/projects/digi/dal
     do
       [[ -d $dir ]] || continue
       ln -sf $neutral $dir/.shellcheckrc

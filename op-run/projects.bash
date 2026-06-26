@@ -13,7 +13,7 @@
 # all others pass through literally.
 
 declare -Agr ProjectPath=(
-  [urma]=~/projects/urma
+  [urma]=~/projects/digi/urma
   [jeeves]=~/projects/jeeves
 )
 
