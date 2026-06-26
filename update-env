@@ -349,6 +349,7 @@ stage1() {
   try task.Ln ~/dotfiles/claude/claude-bash-lint-guard ~/.local/bin/claude-bash-lint-guard
   try task.Ln ~/dotfiles/claude/claude-guide-load-guard ~/.local/bin/claude-guide-load-guard
   try task.Ln ~/dotfiles/claude/claude-agent-identity ~/.local/bin/claude-agent-identity
+  try task.Ln ~/dotfiles/claude/claude-coord-delegate-check ~/.local/bin/claude-coord-delegate-check
 }
 
 stage1Epilogue() {

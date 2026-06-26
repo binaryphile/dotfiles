@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# coord-delegate-check — PreToolUse hook for coordinator sessions.
+#
+# Fires at execution-time (step-2.5: before any tool call is issued) to
+# surface stale delegates that the coordinator may have forgotten about.
+# Designed against the chicken-and-egg structural limitation surfaced in
+# era memories 32962314249f / 6ddf24899cfc / 37a7413945a5: memory-as-
+# discipline doesn't fire because pattern-match locks the frame BEFORE
+# memory recall. This hook injects "delegate X stale" into the
+# coordinator's stderr context at the moment of every action — when the
+# coordinator is about to do non-coordinator work and the warning becomes
+# part of the tool-result context for the next response.
+#
+# Activation: hook is registered globally in ~/.claude/settings.json
+# PreToolUse but is a no-op unless $COORD_OWNED_DELEGATES is set. Non-
+# coordinator sessions never set it; the hook costs ~1ms in that case.
+#
+# Coordinator-discipline contract for $COORD_OWNED_DELEGATES:
+#
+#   On dispatch: export COORD_OWNED_DELEGATES="${COORD_OWNED_DELEGATES:+$COORD_OWNED_DELEGATES,}$NEW_TASK_ID"
+#   On reap:     export COORD_OWNED_DELEGATES=$(echo "$COORD_OWNED_DELEGATES" | tr , $'\n' | grep -v "^$REAPED_ID$" | paste -sd,)
+#
+# Staleness threshold via $COORD_DELEGATE_STALE_MIN (default 15 min).
+# Per R5 grader: configurable fixed threshold; predictive per-delegate
+# infrastructure deferred until empirical justification.
+#
+# Exit semantics:
+#   0 always — advisory, never blocks. Validation question (R5 P8): does
+#   the stderr warning actually change coordinator behavior? Run the
+#   experiment; promote to exit-2-blocking only if soft warning fails.
+
+set -uo pipefail
+
+[[ -n ${COORD_OWNED_DELEGATES:-} ]] || exit 0
+
+stale_min=${COORD_DELEGATE_STALE_MIN:-15}
+stale_sec=$((stale_min * 60))
+state_root=${ORCHESTRATOR_STATE_DIR:-$HOME/.local/state/agent-orchestrator}
+
+now=$(date +%s)
+stale_delegates=()
+
+IFS=, read -ra delegate_ids <<<"$COORD_OWNED_DELEGATES"
+for task_id in "${delegate_ids[@]}"; do
+  [[ -n $task_id ]] || continue
+  state_dir=$state_root/$task_id
+  [[ -d $state_dir ]] || continue
+
+  # Skip delegates that have an exit code recorded (completed; coordinator
+  # should reap and remove from $COORD_OWNED_DELEGATES, but exit-coded
+  # delegates aren't "stale-in-flight").
+  if [[ -s $state_dir/delegate_exit_code ]]; then
+    continue
+  fi
+
+  # Check state-dir mtime for staleness (no writes in last $stale_min).
+  mtime=$(stat -c %Y "$state_dir" 2>/dev/null) || continue
+  age=$((now - mtime))
+  if (( age > stale_sec )); then
+    stale_delegates+=("$task_id (state-dir last touched ${age}s ago)")
+  fi
+done
+
+if (( ${#stale_delegates[@]} > 0 )); then
+  echo "[COORD-DELEGATE-CHECK] ${#stale_delegates[@]} delegate(s) stale > ${stale_min}min:" >&2
+  for d in "${stale_delegates[@]}"; do
+    echo "  - $d" >&2
+  done
+  echo "  Triage: bin/orchestrator delegate-status <id>; era query inbox.project.<your-project> 'payload ~ \"DISPOSITION\"' --desc --limit 5" >&2
+fi
+
+exit 0
