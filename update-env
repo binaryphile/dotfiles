@@ -641,11 +641,11 @@ stage2() {
   #  | PHASE 5b: Work Projects (VPN-dependent, graceful failure)   |
   #  |   ~/projects/digi/                                          |
   #  |     +-> urma             - main application (+ MCP)         |
+  #  |     +-> urma-obsidian    - urma obsidian vault (sibling)    |
   #  |     +-> pepin            - build/deploy tooling             |
   #  |     +-> cloud-services                                      |
   #  |     +-> dal              - accelerated-linux                |
-  #  |     +-> urma/obsidian    - obsidian vault                   |
-  #  |     +-> dal/obsidian     - DAL knowledge vault              |
+  #  |     +-> dal-obsidian     - DAL knowledge vault (sibling)    |
   #  |   ~/projects/share        - cross-team utilities (unmoved)  |
   #  |   All from stash.digi.com, require VPN                      |
   #  +-------------------------------------------------------------+
@@ -664,7 +664,7 @@ stage2() {
   }
 
   if ! vpnUp; then
-    echo "[skip-vpn-gated] VPN not up; skipping 7 stash.digi.com sections (digi/urma, digi/pepin, digi/cloud-services, digi/dal, digi/urma/obsidian, digi/dal/obsidian, share) + scaffold symlink. Re-run after VPN up." >&2
+    echo "[skip-vpn-gated] VPN not up; skipping 7 stash.digi.com sections (digi/urma, digi/pepin, digi/cloud-services, digi/dal, digi/urma-obsidian, digi/dal-obsidian, share) + scaffold symlink. Re-run after VPN up." >&2
   else
     # NOTE: cluster contents below stay at original 2-space indent (i.e.,
     # NOT re-indented inside this `else` branch). Deliberate — keeps the
@@ -675,12 +675,10 @@ stage2() {
   each try <<'  END'
     stashCloneAndLinkTask urma-next digi/urma idigi develop
     scaffoldTask ~/projects/digi/urma
-    obsidianSnippetsTask ~/projects/digi/urma/obsidian/.obsidian/snippets
   END
   # try: these repos are VPN-dependent; check "[[ -d .git ]]" fails when not yet
   # cloned, which would abort the run under set -e without try.
   each try gitExcludeTask ~/projects/digi/urma <<'  END'
-    /obsidian
     .shellcheckrc
     .direnv/
     tm1-debug/
@@ -690,21 +688,17 @@ stage2() {
   each try <<'  END'
     stashCloneAndLinkTask pepin digi/pepin idigi develop
     scaffoldTask ~/projects/digi/pepin
-    obsidianSnippetsTask ~/projects/digi/pepin/obsidian/.obsidian/snippets
   END
   each try gitExcludeTask ~/projects/digi/pepin <<'  END'
-    /obsidian
     .shellcheckrc
   END
 
   section cloud-services
   each try <<'  END'
-    stashCloneAndLinkTask cloud-services digi/cloud-services idigi develop
+    stashCloneAndLinkTask cloud-services cloud-services idigi develop
     scaffoldTask ~/projects/digi/cloud-services
-    obsidianSnippetsTask ~/projects/digi/cloud-services/obsidian/.obsidian/snippets
   END
   each try gitExcludeTask ~/projects/digi/cloud-services <<'  END'
-    /obsidian
     .shellcheckrc
   END
 
@@ -712,18 +706,22 @@ stage2() {
   each try <<'  END'
     stashCloneAndLinkTask accelerated-linux digi/dal acl master
     scaffoldTask ~/projects/digi/dal
-    obsidianSnippetsTask ~/projects/digi/dal/obsidian/.obsidian/snippets
   END
   each try gitExcludeTask ~/projects/digi/dal <<'  END'
-    /obsidian
     .shellcheckrc
   END
 
   section urma-obsidian
-  try stashCloneAndLinkTask urma-obsidian digi/urma/obsidian ~tlilley
+  each try <<'  END'
+    stashCloneAndLinkTask urma-obsidian digi/urma-obsidian ~tlilley
+    obsidianSnippetsTask ~/projects/digi/urma-obsidian/.obsidian/snippets
+  END
 
   section dal-obsidian
-  try stashCloneAndLinkTask dal-obsidian digi/dal/obsidian ~tlilley
+  each try <<'  END'
+    stashCloneAndLinkTask dal-obsidian digi/dal-obsidian ~tlilley
+    obsidianSnippetsTask ~/projects/digi/dal-obsidian/.obsidian/snippets
+  END
 
   section share
   try stashCloneAndLinkTask share share ~tlilley
@@ -1225,10 +1223,15 @@ allProjectDirs() {
       printf '%s\n' "$top"
     else
       find $top -mindepth 1 -maxdepth 1 -type d 2>/dev/null | while IFS= read -r sub; do
-        [[ -e $sub/.git ]] && printf '%s\n' "$sub"
+        # Trailing-&&-bug defense (bash-style-guide): [[ -e ]] returns 1 when
+        # absent, propagating through pipefail to caller. Skip-via-continue
+        # keeps the body's last-command rc at 0.
+        [[ -e $sub/.git ]] || continue
+        printf '%s\n' "$sub"
       done
     fi
   done
+  return 0  # defense-in-depth: function-tail rc=0 regardless of inner loop drift
 }
 
 claudeAgentRoleTask() {

@@ -39,7 +39,7 @@ set -o noglob
 set -ufo pipefail
 
 # Dependency-injectable globals (test override via env).
-GuidesDirsRaw=${CLAUDE_GUIDE_DIRS:-$HOME/projects/jeeves/guides:$HOME/projects/digi/urma/obsidian/guides}
+GuidesDirsRaw=${CLAUDE_GUIDE_DIRS:-$HOME/projects/jeeves/guides:$HOME/projects/digi/urma-obsidian/guides}
 ScopePrefix=${CLAUDE_GUIDE_SCOPE:-$HOME/projects/:$HOME/dotfiles/:$HOME/.config/systemd/user/}
 AuditApp=${CLAUDE_GUIDE_AUDIT_APP:-jeeves}
 

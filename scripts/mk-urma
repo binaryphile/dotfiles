@@ -30,8 +30,8 @@ cmd.setup() (
   mk.Cue ./urma install
 
   # obsidian is a non-submodule sub-repo (its own git repo, gitignored by parent)
-  if [[ ! -d ~/projects/digi/urma/obsidian/.git ]]; then
-    mk.Cue git clone git@stash.digi.com:~tlilley/urma-obsidian ~/projects/digi/urma/obsidian
+  if [[ ! -d ~/projects/digi/urma-obsidian/.git ]]; then
+    mk.Cue git clone git@stash.digi.com:~tlilley/urma-obsidian ~/projects/digi/urma-obsidian
   fi
 )
 
