@@ -1291,3 +1291,323 @@ test_isNotReadme() {
 
   tesht.Run ${!case@}
 }
+
+## claudeMode tests -- --claude-mode flag, sentinel format, mode selection, append guards
+
+# test_claudeMode_flagValidation verifies the ClaudeMode validation case statement:
+# full and thin are accepted; invalid values and empty string are rejected.
+test_claudeMode_flagValidation() {
+  local rc=0
+
+  # full is accepted
+  ( ClaudeMode=full
+    case $ClaudeMode in full|thin ) ;; * ) exit 1;; esac
+  ) || { echo "full should be accepted by validation"; rc=1; }
+
+  # thin is accepted
+  ( ClaudeMode=thin
+    case $ClaudeMode in full|thin ) ;; * ) exit 1;; esac
+  ) || { echo "thin should be accepted by validation"; rc=1; }
+
+  # invalid value is rejected
+  ( ClaudeMode=bogus
+    case $ClaudeMode in full|thin ) ;; * ) exit 1;; esac
+  ) && { echo "bogus should be rejected by validation"; rc=1; } || true
+
+  # empty string is rejected (not full or thin)
+  ( ClaudeMode=''
+    case $ClaudeMode in full|thin ) ;; * ) exit 1;; esac
+  ) && { echo "empty ClaudeMode should be rejected by validation"; rc=1; } || true
+
+  # unset ClaudeMode defaults to full via ${ClaudeMode:-full}
+  ( unset ClaudeMode
+    [[ ${ClaudeMode:-full} == full ]]
+  ) || { echo "unset ClaudeMode should default to full via :-full"; rc=1; }
+
+  return $rc
+}
+
+# test_claudeBaseCopyTask_sentinelNewFormat verifies that after a fresh deploy
+# the sentinel file is in the 2-field tab-separated format: <src-path>\t<hash>.
+test_claudeBaseCopyTask_sentinelNewFormat() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# full base content' >$dir/src/CLAUDE.md
+
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local rc=0
+  [[ -f $claudeBase_hash ]] || { echo "sentinel not created"; return 1; }
+
+  local storedPath storedHash
+  IFS=$'\t' read -r storedPath storedHash < $claudeBase_hash
+  [[ -n $storedPath ]] || { echo "storedPath is empty (sentinel not in path\\thash format)"; rc=1; }
+  [[ -n $storedHash ]] || { echo "storedHash is empty (sentinel not in path\\thash format)"; rc=1; }
+  [[ "$storedPath" == "$claudeBase_src" ]] || { echo "storedPath='$storedPath' != src='$claudeBase_src'"; rc=1; }
+
+  local expectedHash
+  expectedHash=$($sha256sum $claudeBase_src | cut -d' ' -f1)
+  [[ "$storedHash" == "$expectedHash" ]] || { echo "storedHash mismatch"; rc=1; }
+
+  return $rc
+}
+
+# test_claudeBaseCopyTask_sentinelMigration verifies that a legacy bare-hash sentinel
+# (single-line sha256, no path field, no tab) triggers re-deploy even when source
+# content is unchanged. Distinguishing assertion: mtime advances due to malformed
+# sentinel, NOT due to content change.
+test_claudeBaseCopyTask_sentinelMigration() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# legacy content -- same before and after' >$dir/src/CLAUDE.md
+
+  # Simulate legacy install: dst exists with correct content; sentinel is bare hash (no path).
+  cp $dir/src/CLAUDE.md $dir/dst/CLAUDE.md
+  $sha256sum $dir/src/CLAUDE.md | cut -d' ' -f1 > $dir/dst/CLAUDE.md.base-src-hash
+
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+
+  local mtimeBefore
+  mtimeBefore=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+  sleep 1  # ensure mtime difference is detectable at 1s resolution
+
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local mtimeAfter
+  mtimeAfter=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+
+  local rc=0
+  # Re-deploy MUST have happened: mtime advanced due to malformed sentinel, NOT content change.
+  [[ $mtimeBefore != $mtimeAfter ]] || { echo "re-deploy did NOT happen with bare-hash sentinel (same content -- malformed-sentinel path not taken)"; rc=1; }
+
+  # Sentinel must now be in 2-field format (migration complete)
+  local storedPath storedHash
+  IFS=$'\t' read -r storedPath storedHash < $claudeBase_hash
+  [[ -n $storedPath && -n $storedHash ]] || { echo "sentinel not updated to 2-field format after migration re-deploy"; rc=1; }
+
+  return $rc
+}
+
+# test_claudeBaseCopyTask_modeSourceSelection verifies that ClaudeMode=full deploys
+# CLAUDE.md content and ClaudeMode=thin deploys CLAUDE-thin.md content.
+test_claudeBaseCopyTask_modeSourceSelection() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+
+  echo '# full mode content' >$dir/src/CLAUDE.md
+  echo '# thin mode content' >$dir/src/CLAUDE-thin.md
+
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBaseThin_src=$dir/src/CLAUDE-thin.md
+
+  # Deploy full mode
+  local ClaudeMode=full
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local rc=0
+  grep -q 'full mode content' $dir/dst/CLAUDE.md || { echo "full mode did not deploy CLAUDE.md content"; rc=1; }
+
+  # Deploy thin mode -- delete dst+hash to force fresh deploy
+  rm -f $dir/dst/CLAUDE.md $claudeBase_hash
+  ClaudeMode=thin
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  grep -q 'thin mode content' $dir/dst/CLAUDE.md || { echo "thin mode did not deploy CLAUDE-thin.md content"; rc=1; }
+  ! grep -q 'full mode content' $dir/dst/CLAUDE.md || { echo "thin deploy left full-mode content"; rc=1; }
+
+  return $rc
+}
+
+# test_claudeBaseCopyTask_modeChangeTriggersDeploy verifies that switching from full
+# to thin triggers re-deploy even when source content is unchanged.
+test_claudeBaseCopyTask_modeChangeTriggersDeploy() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# shared content' >$dir/src/CLAUDE.md
+  echo '# shared content' >$dir/src/CLAUDE-thin.md
+
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+  local claudeBase_src=$dir/src/CLAUDE.md
+  local claudeBaseThin_src=$dir/src/CLAUDE-thin.md
+
+  # Deploy full mode first
+  local ClaudeMode=full
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local storedPath storedHash
+  IFS=$'\t' read -r storedPath storedHash < $claudeBase_hash
+  [[ "$storedPath" == "$dir/src/CLAUDE.md" ]] \
+    || { echo "initial deploy: sentinel has wrong path '$storedPath'"; return 1; }
+
+  local mtimeBefore
+  mtimeBefore=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+  sleep 1
+
+  # Switch to thin -- sentinel path will differ, so re-deploy triggers
+  ClaudeMode=thin
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local mtimeAfter
+  mtimeAfter=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+
+  local rc=0
+  [[ $mtimeBefore != $mtimeAfter ]] || { echo "mode-change did NOT trigger re-deploy"; rc=1; }
+
+  IFS=$'\t' read -r storedPath storedHash < $claudeBase_hash
+  [[ "$storedPath" == "$dir/src/CLAUDE-thin.md" ]] \
+    || { echo "after thin deploy: sentinel has wrong path '$storedPath'"; rc=1; }
+
+  return $rc
+}
+
+# test_claudeBaseCopyTask_upToDateShortCircuit verifies that deploying thin mode
+# twice with the same source skips the file-copy (sentinel path + hash match).
+test_claudeBaseCopyTask_upToDateShortCircuit() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/src $dir/dst
+  echo '# stable thin content' >$dir/src/CLAUDE-thin.md
+
+  local claudeBaseThin_src=$dir/src/CLAUDE-thin.md
+  local claudeBase_dst=$dir/dst/CLAUDE.md
+  local claudeBase_hash=$dir/dst/CLAUDE.md.base-src-hash
+  local ClaudeMode=thin
+
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local mtimeBefore
+  mtimeBefore=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+  sleep 1
+
+  claudeBaseCopyTask >/dev/null 2>&1
+
+  local mtimeAfter
+  mtimeAfter=$(stat -c '%Y' $dir/dst/CLAUDE.md)
+
+  [[ $mtimeBefore == $mtimeAfter ]] || { echo "dst rewritten despite sentinel match (thin mode up-to-date short-circuit failed)"; return 1; }
+}
+
+# test_claudeAppendTaskGuards verifies that in thin mode all three append tasks skip
+# (base file unmodified); in full mode they fire as normal.
+test_claudeAppendTaskGuards() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  local rc=0
+
+  ## thin mode: guards must prevent all three append tasks from modifying base
+
+  local ClaudeMode=thin
+
+  # era guard
+  echo '# base' >$dir/base-era.md
+  echo 'Do not use the Claude Code auto-memory system' >$dir/era.md
+  local claudeEra_base=$dir/base-era.md
+  local claudeEra_src=$dir/era.md
+  claudeEraConfigTask >/dev/null 2>&1
+  [[ $(cat $dir/base-era.md) == '# base' ]] || { echo "era guard failed: base modified in thin mode"; rc=1; }
+
+  # tesht guard
+  echo '# base' >$dir/base-tesht.md
+  echo '@~/projects/tesht/docs/tesht.md' >$dir/tesht.md
+  local claudeTesht_base=$dir/base-tesht.md
+  local claudeTesht_src=$dir/tesht.md
+  claudeTeshtConfigTask >/dev/null 2>&1
+  [[ $(cat $dir/base-tesht.md) == '# base' ]] || { echo "tesht guard failed: base modified in thin mode"; rc=1; }
+
+  # tandem guard
+  echo '# base' >$dir/base-tandem.md
+  echo '# tandem ref' >$dir/tandem.md
+  local claudeTandem_base=$dir/base-tandem.md
+  local claudeTandem_src=$dir/tandem.md
+  claudeTandemConfigTask >/dev/null 2>&1
+  [[ $(cat $dir/base-tandem.md) == '# base' ]] || { echo "tandem guard failed: base modified in thin mode"; rc=1; }
+
+  ## full mode: guards must NOT block append tasks
+
+  unset ClaudeMode  # default full via ${ClaudeMode:-full}
+
+  # era append (full mode)
+  echo '# base' >$dir/base-era-full.md
+  echo 'Do not use the Claude Code auto-memory system' >$dir/era-full.md
+  claudeEra_base=$dir/base-era-full.md
+  claudeEra_src=$dir/era-full.md
+  claudeEraConfigTask >/dev/null 2>&1
+  grep -qF 'Do not use the Claude Code auto-memory system' $dir/base-era-full.md \
+    || { echo "era append did NOT fire in full mode"; rc=1; }
+
+  # tesht append (full mode)
+  echo '# base' >$dir/base-tesht-full.md
+  echo '@~/projects/tesht/docs/tesht.md' >$dir/tesht-full.md
+  claudeTesht_base=$dir/base-tesht-full.md
+  claudeTesht_src=$dir/tesht-full.md
+  claudeTeshtConfigTask >/dev/null 2>&1
+  grep -qF '@~/projects/tesht/docs/tesht.md' $dir/base-tesht-full.md \
+    || { echo "tesht append did NOT fire in full mode"; rc=1; }
+
+  # tandem append (full mode)
+  echo '# base' >$dir/base-tandem-full.md
+  echo '# tandem ref' >$dir/tandem-full.md
+  claudeTandem_base=$dir/base-tandem-full.md
+  claudeTandem_src=$dir/tandem-full.md
+  claudeTandemConfigTask >/dev/null 2>&1
+  grep -qF '@~/projects/tandem-protocol/README.md' $dir/base-tandem-full.md \
+    || { echo "tandem append did NOT fire in full mode"; rc=1; }
+
+  return $rc
+}
+
+# test_claudeModeBinHelper verifies the claude-mode helper script output for
+# full/thin/unknown/missing sentinel cases.
+test_claudeModeBinHelper() {
+  local dir; tesht.MktempDir dir || return 128
+  trap "rm -rf $dir" RETURN
+
+  mkdir -p $dir/home/.claude
+
+  local rc=0
+
+  # sentinel missing -> "unknown (sentinel missing)"
+  local got
+  got=$(HOME=$dir/home bash ./bin/claude-mode 2>&1)
+  [[ $got == 'unknown (sentinel missing)' ]] || { echo "missing sentinel: got '$got'"; rc=1; }
+
+  # thin deployed -> thin
+  printf '%s\t%s\n' "/home/ted/dotfiles/claude/CLAUDE-thin.md" "abc123" \
+    > $dir/home/.claude/CLAUDE.md.base-src-hash
+  got=$(HOME=$dir/home bash ./bin/claude-mode 2>&1)
+  [[ $got == thin ]] || { echo "thin sentinel: got '$got'"; rc=1; }
+
+  # full deployed -> full
+  printf '%s\t%s\n' "/home/ted/dotfiles/claude/CLAUDE.md" "def456" \
+    > $dir/home/.claude/CLAUDE.md.base-src-hash
+  got=$(HOME=$dir/home bash ./bin/claude-mode 2>&1)
+  [[ $got == full ]] || { echo "full sentinel: got '$got'"; rc=1; }
+
+  # unexpected source path -> "unknown (<path>)"
+  local unknownPath=/some/other/CLAUDE-custom.md
+  printf '%s\t%s\n' "$unknownPath" "xyz789" \
+    > $dir/home/.claude/CLAUDE.md.base-src-hash
+  got=$(HOME=$dir/home bash ./bin/claude-mode 2>&1)
+  [[ $got == "unknown ($unknownPath)" ]] || { echo "unknown path: got '$got'"; rc=1; }
+
+  return $rc
+}

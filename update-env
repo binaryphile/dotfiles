@@ -52,7 +52,7 @@ CrostiniDir=/mnt/chromeos/MyFiles/Downloads/crostini
 
 usageText() {
   cat <<'EOF'
-Usage: update-env [-1 [hostname] | -2 | -c] [-s] [-x] [--strict]
+Usage: update-env [-1 [hostname] | -2 | -c] [-s] [-x] [--strict] [--claude-mode {full,thin}]
 
   -1, --stage1 [hostname]  Stage 1: system, packages, credentials
   -2, --stage2             Stage 2: projects, dev tools, config
@@ -60,6 +60,12 @@ Usage: update-env [-1 [hostname] | -2 | -c] [-s] [-x] [--strict]
   -s, --short              Short run (skip unchanged tasks)
   -x, --trace              Enable bash trace output
       --strict             Hard-fail preflight on missing downstream commands
+      --claude-mode MODE   Deploy full or thin CLAUDE.md (default: full).
+                           'full' deploys claude/CLAUDE.md + era/tesht/tandem appends.
+                           'thin' deploys claude/CLAUDE-thin.md; appends are skipped
+                           (CLAUDE-thin.md is pre-composed for orchestrator sessions).
+                           Must be passed on every invocation that wants thin mode --
+                           the default is full as an intentional safety property.
   -h, --help               Show this help
 
   Bare 'update-env' runs both stages sequentially.
@@ -327,6 +333,7 @@ stage1() {
   fi
 
   try task.Ln ~/dotfiles/update-env ~/.local/bin/update-env
+  try task.Ln ~/dotfiles/bin/claude-mode ~/.local/bin/claude-mode
 
   # One-time cleanup: sync-shellcheckrc script was retired in commit 727b09c
   # (2026-06-01); update-env's prior stage-1 task.Ln created the symlink on
@@ -1687,19 +1694,29 @@ item = "$(opSigningKeyItem $hostname)"
 EOF
 }
 
-# claudeBaseCopyTask copies the base CLAUDE.md (Conventions, Secrets) to
-# ~/.claude/. Runs in stage 1 after HM switch. Stage 2's claudeEraConfigTask
-# appends era content. Not managed by HM because stage 2 mutates it.
+# claudeBaseCopyTask copies the base CLAUDE.md to ~/.claude/.
+# Source depends on ClaudeMode: 'full' -> claude/CLAUDE.md (default);
+# 'thin' -> claude/CLAUDE-thin.md (pre-composed orchestrator-mode).
+# Runs in stage 1 after HM switch. Stage 2's claudeEraConfigTask appends era
+# content in full mode; in thin mode append tasks skip via claudeModeSkipIfThin.
+# Not managed by HM because stage 2 mutates it (full mode).
+#
+# Sentinel format: <source_path>\t<sha256> (2-field, tab-separated). The path
+# field disambiguates mode on re-run. Legacy sentinels (bare hash, no tab) decode
+# with empty storedHash -> one-time re-deploy on next update-env invocation.
 claudeBaseCopyTask() {
-  local src=${claudeBase_src:-$HOME/dotfiles/claude/CLAUDE.md}
+  local src
+  if [[ ${ClaudeMode:-full} == thin ]]; then
+    src=${claudeBaseThin_src:-$HOME/dotfiles/claude/CLAUDE-thin.md}
+  else
+    src=${claudeBase_src:-$HOME/dotfiles/claude/CLAUDE.md}
+  fi
   local dst=${claudeBase_dst:-$HOME/.claude/CLAUDE.md}
   local hashFile=${claudeBase_hash:-$HOME/.claude/CLAUDE.md.base-src-hash}
   desc 'install base CLAUDE.md'
 
-  # Content-aware: redeploy when source changes. Per-task hash sentinel matches
-  # the precedent of claudeMemoryRedirectsTask using diff-q. Era and tandem
-  # appends are non-destructive on redeploy because their own ok-tests grep for
-  # marker strings that won't exist after a fresh base copy.
+  # Content-aware: redeploy when source or mode changes. Sentinel is 2-field
+  # tab-separated (path + hash); path mismatch catches mode-change drift.
   #
   # Uses the $sha256sum DI var (defined near script bottom) which resolves to
   # GNU sha256sum on Linux/Nix and falls back to BSD `shasum -a 256` on bare
@@ -1707,15 +1724,22 @@ claudeBaseCopyTask() {
   claudeBaseUpToDate() {
     [[ -f $dst ]] && ! [[ -L $dst ]] || return 1
     [[ -f $hashFile ]] || return 1
-    [[ "$($sha256sum $src | cut -d' ' -f1)" == "$(< $hashFile)" ]]
+    local storedPath storedHash currentHash
+    IFS=$'\t' read -r storedPath storedHash < "$hashFile" 2>/dev/null
+    [[ -n $storedPath && -n $storedHash ]] || return 1   # malformed/legacy -> re-deploy
+    [[ "$storedPath" == "$src" ]] || return 1            # mode-change drift -> re-deploy
+    currentHash=$($sha256sum $src | cut -d' ' -f1)
+    [[ "$currentHash" == "$storedHash" ]]
   }
   ok claudeBaseUpToDate
 
+  # File written first, sentinel second -- load-bearing ordering invariant.
+  # Inverse order would falsely claim success if the cp/mv fails.
   claudeBaseCopy() {
     mkdir -p $(dirname $dst)
     local tmp
     tmp=$(mktemp) && cp $src "$tmp" && mv -f "$tmp" $dst
-    $sha256sum $src | cut -d' ' -f1 >$hashFile
+    printf '%s\t%s\n' "$src" "$($sha256sum $src | cut -d' ' -f1)" > $hashFile
   }
   cmd claudeBaseCopy
 }
@@ -1748,10 +1772,31 @@ claudeSettingsCopyTask() {
   cmd claudeSettingsCopy
 }
 
+# claudeModeSkipIfThin -- early-exit guard for append tasks when in thin mode.
+# Records ok-result so the skip is visible in update-env's audit output rather
+# than silent. Future append tasks targeting ~/.claude/CLAUDE.md MUST call
+# this guard first to inherit mode-awareness.
+#
+# Return-value semantics ARE INVERTED from typical bash success/failure:
+#   rc=0 (success) means "caller should EARLY-EXIT" (we're in thin mode)
+#   rc=1 (non-zero) means "caller should CONTINUE" (we're in full mode)
+# Idiomatic use: `claudeModeSkipIfThin && return 0` at the top of an
+# append task. DO NOT normalize this helper to return 0 in both branches
+# -- the early-exit semantic depends on this inversion. The naming
+# encodes the inversion: "SkipIfThin" reads as "if thin, then skip" =
+# "rc=0 means skip".
+claudeModeSkipIfThin() {
+  [[ ${ClaudeMode:-full} == thin ]] || return 1
+  ok true
+  return 0
+}
+
 # claudeEraConfigTask appends CLAUDE-era.md to the base CLAUDE.md installed by
 # claudeBaseCopyTask. The base has stage-1-safe content (Conventions, Secrets).
 # Era content (memory, code search, guides) requires stage 2.
+# Skipped in thin mode (CLAUDE-thin.md is pre-composed; appends would re-bulk it).
 claudeEraConfigTask() {
+  claudeModeSkipIfThin && return 0
   local base=${claudeEra_base:-$HOME/.claude/CLAUDE.md}
   local era=${claudeEra_src:-$HOME/dotfiles/claude/CLAUDE-era.md}
   desc 'append era config to ~/.claude/CLAUDE.md'
@@ -1773,7 +1818,9 @@ claudeEraConfigTask() {
 # when the tesht project is cloned. Mirrors claudeTandemConfigTask -- the
 # canonical doc lives in the tesht project (~/projects/tesht/docs/tesht.md),
 # so updates ship with tesht itself rather than requiring a dotfiles round-trip.
+# Skipped in thin mode (CLAUDE-thin.md is pre-composed; appends would re-bulk it).
 claudeTeshtConfigTask() {
+  claudeModeSkipIfThin && return 0
   local base=${claudeTesht_base:-$HOME/.claude/CLAUDE.md}
   local src=${claudeTesht_src:-$HOME/projects/tesht/docs/tesht.md}
   desc 'append tesht doc import to ~/.claude/CLAUDE.md'
@@ -1792,7 +1839,9 @@ claudeTeshtConfigTask() {
 
 # claudeTandemConfigTask appends the Tandem Protocol reference to CLAUDE.md
 # when tandem-protocol is cloned. Conditional on ~/projects/tandem-protocol/README.md.
+# Skipped in thin mode (CLAUDE-thin.md is pre-composed; appends would re-bulk it).
 claudeTandemConfigTask() {
+  claudeModeSkipIfThin && return 0
   local base=${claudeTandem_base:-$HOME/.claude/CLAUDE.md}
   local src=${claudeTandem_src:-$HOME/projects/tandem-protocol/README.md}
   desc 'append tandem-protocol to ~/.claude/CLAUDE.md'
@@ -2691,6 +2740,7 @@ return 2>/dev/null  # stop here if sourced, for interactive debugging
 
 IsShortRun=0
 IsStrictPreflight=0
+ClaudeMode=full
 Stage=all
 OriginalArgs_=("$@")    # captured before parsing for self-update re-exec
 
@@ -2707,6 +2757,8 @@ while [[ ${1:-} == -?* ]]; do
 
     --strict ) IsStrictPreflight=1;;
 
+    --claude-mode ) ClaudeMode=${2:?'--claude-mode requires a value: full or thin'}; shift;;
+
     -1|--stage1     ) Stage=1;;
     -2|--stage2     ) Stage=2;;
     -c|--credential ) Stage=credential;;
@@ -2715,6 +2767,11 @@ while [[ ${1:-} == -?* ]]; do
   esac
   shift
 done
+
+case $ClaudeMode in
+  full|thin ) ;;
+  * ) echo "fatal: --claude-mode value must be 'full' or 'thin' (got: $ClaudeMode)" >&2; exit 1;;
+esac
 
 Hostname=
 if [[ $Stage == 1 && -n ${1:-} ]]; then

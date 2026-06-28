@@ -25,7 +25,7 @@ Seven categories. Each pushes findings into a single flat list.
 | `binSymlinksTargets` | Bin symlinks pointing somewhere update-env doesn't declare (wrong-target-but-valid drift) |
 | `retiredBinaries` | Known-dead paths still present (e.g., `~/.local/bin/mk` after 2026-06-01, `~/.claude/commands/g.md`) |
 | `gitHooksPath` | Managed repos (`dotfiles`, `jeeves`, `finances`) without `core.hooksPath=.githooks` |
-| `claudeMdMarkers` | Missing era / tesht / tandem-protocol grep markers in `~/.claude/CLAUDE.md` |
+| `claudeMdMarkers` | Missing era / tesht / tandem-protocol grep markers in `~/.claude/CLAUDE.md` (applicable in full mode only; thin mode legitimately omits these markers) |
 | `flakeLockCanonical` | nixpkgs rev drift across all `flake.lock` files in `~/projects/*` + `~/dotfiles` vs era's canonical |
 
 ## Status taxonomy

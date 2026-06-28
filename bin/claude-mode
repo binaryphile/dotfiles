@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# claude-mode -- print current CLAUDE.md deployment mode (full|thin|unknown).
+# Reads ~/.claude/CLAUDE.md.base-src-hash sentinel written by claudeBaseCopyTask.
+hashFile=$HOME/.claude/CLAUDE.md.base-src-hash
+if [[ -f $hashFile ]]; then
+  src=$(cut -f1 < "$hashFile")
+  case $src in
+    */CLAUDE-thin.md) echo thin ;;
+    */CLAUDE.md)      echo full ;;
+    *)                echo "unknown ($src)" ;;
+  esac
+else
+  echo "unknown (sentinel missing)"
+fi
