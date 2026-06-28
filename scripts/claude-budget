@@ -30,7 +30,7 @@ main() {
   case $event in
     Stop)         handleStop "$hook_json" ;;
     SessionEnd)   handleSessionEnd ;;
-    SessionStart | UserPromptSubmit) handleWarning "$event" "$hook_json" ;;
+    SessionStart) handleWarning ;;
     *)            exit 0 ;;
   esac
 }
@@ -121,8 +121,6 @@ handleSessionEnd() {
 }
 
 handleWarning() {
-  local event=$1
-
   [[ -r $ConfigFile ]] || exit 0
 
   local limit
@@ -149,18 +147,11 @@ handleWarning() {
   if (( pct_remaining < 0 )); then pct_remaining=0; fi
   if (( pct_remaining > 100 )); then pct_remaining=100; fi
 
-  if [[ $event == UserPromptSubmit ]]; then
-    local enforce
-    enforce=$(jq -r '.enforce_at_pct // 0' "$ConfigFile")
-    if [[ ${enforce:-0} -gt 0 && $pct_remaining -le $enforce ]]; then
-      local used_k limit_k
-      used_k=$(( total / 1000 ))
-      limit_k=$(( limit / 1000 ))
-      printf '{"decision":"block","reason":"[Claude Budget] Budget floor reached: %d%% remaining (%dk/%dk tokens). Adjust daily_tokens or close sessions."}\n' \
-        "$pct_remaining" "$used_k" "$limit_k"
-      exit 0
-    fi
-  fi
+  local enforce
+  enforce=$(jq -r '.enforce_at_pct // 0' "$ConfigFile")
+  [[ ${enforce:-0} -gt 0 ]] && \
+    printf 'claude-budget: enforce_at_pct=%s has no effect — blocking is permanently disabled\n' \
+      "$enforce" >&2
 
   local session_count=0
   if [[ -d $sessions_dir ]]; then

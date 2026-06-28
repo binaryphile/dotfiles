@@ -554,7 +554,7 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 - **Goal:** Ted receives timely warnings when daily token usage approaches his self-imposed budget, enabling him to reduce parallel sessions before exhausting the Enterprise quota
 - **Scope:** Dotfiles environment (Claude Code hook system)
 - **Level:** User goal
-- **Trigger:** Automatic -- fires at each Claude Code session start and at the completion of each response
+- **Trigger:** Automatic -- fires at each Claude Code session start and after each response (Stop hook)
 - **Preconditions:** UC-4 completed; `~/.config/claude-budget/config.json` exists with a `daily_tokens` value
 - **Stakeholders:**
   - Ted -- warned early enough to reduce parallel sessions and preserve remaining quota
@@ -568,9 +568,8 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
   6. Each threshold fires at most once per budget day (2am reset); subsequent sessions in the same day see no duplicate warnings for already-fired thresholds
 - **Extensions:**
   - 1a. *Config absent:* System exits silently; no warnings emitted
-  - 3a. *Budget fully exhausted and `enforce_at_pct` configured:* System issues a hard block to Claude Code instead of a warning; further prompts are rejected until Ted adjusts the budget or closes sessions
-  - 4a. *Two sessions cross the same threshold simultaneously:* `flock` ensures exactly one warning is emitted; the other session sees the threshold already recorded and stays silent
-  - 6a. *Token files from old sessions accumulate:* `SessionEnd` hook prunes files older than 7 days automatically
+  - 3a. *Two sessions cross the same threshold simultaneously:* `flock` ensures exactly one warning is emitted; the other session sees the threshold already recorded and stays silent
+  - 4a. *Token files from old sessions accumulate:* `SessionEnd` hook prunes files older than 7 days automatically
 - **Minimal Guarantee:** System exits cleanly; no warning emitted if any precondition is unmet
 - **Success Guarantee:** Ted is warned at each of the four thresholds (exactly once each per budget day), with token count and active session count visible, giving enough time to act before exhaustion
 
@@ -687,7 +686,7 @@ Architecture documented in `~/projects/jeeves/security/` (`security.md`, `threat
 | UC-10 Tmux Status Bar Widgets | Working | shared panel.tmux.conf; session-created hook for per-session loading on NixOS |
 | UC-11 Use a Credentialed Tool | v1 + v2 implemented (mcp-atlassian: Bitbucket + Confluence + Jira) | Bash launcher op-run wrapping `op run`; project registry in dotfiles (path-keyed); machine allowlist per host. Launcher hash check at shell init + pre-commit drift gate (`op-run/checksums` + `OpRunIntegrityCheck`). Audit-log fallback size-cap rotation (`AuditLogMaxBytes`, default 1 MiB). Architecture in canonical doc set at `~/projects/jeeves/security/`. |
 | UC-12 Update Development Package Revision | Working | bump-nixpkgs + update-env -2 |
-| UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; optional hard-block at configurable floor |
+| UC-13 Stay Within Daily Token Budget | Implemented | claude-budget hook script; warns at 25/10/5/1% remaining; blocking permanently disabled |
 | UC-14 Guard Against Accidental Binary Commits | Working | Global pre-commit hook + binary-extension gitignore active (deployed via home-manager); no per-repo settings; bypass via `--no-verify` or local `core.hooksPath` |
 | UC-15 Audit update-env Stage-1 Convergence | v1 implemented (7 check categories) | `~/dotfiles/scripts/update-env-audit` — text + `--json` output; `OK/MISSING/BROKEN/RESIDUAL/DRIFT` taxonomy; tesht coverage via real-filesystem fixtures; v2 deferred (per-project shellcheckrc, MCP, slash commands, memory redirects, agent.toml, nix-wrapper, systemd services, op-run/checksums, project-clones-present) |
 | UC-16 Auto-Attribute Claude Sessions for Mux-Identity | Implemented | `claude-agent-identity` SessionStart hook writes `EVTCTL_AGENT` to `$CLAUDE_ENV_FILE`; backgrounds `/session-start` interaction event publish; Crostini-aware hostname + optional role marker (`~/.claude/agent-role`); mechanizes the mux-identity export discipline (era `docs/evtctl.md` §"Mux identity contract") |

@@ -43,13 +43,13 @@ Two env vars tune the day-attribution heuristics; both are operator policy, not 
 - `CLAUDE_BUDGET_DAY_START_HOUR` (default 3) — the hour at which the budget day rolls over. Late-night-burners may want 4 or 5; morning-people may want 0 or 1.
 - `CLAUDE_BUDGET_SLEEP_GAP_MIN` (default 120) — the minimum idle minutes that count as a sleep boundary within today's window. Long-lunch operators may want higher (180+) to avoid false-positive splits; nap-takers may want lower.
 
-`enforce_at_pct: 0` means warn-only. Set it to a non-zero value (say `1`) and any `UserPromptSubmit` at or below that percentage remaining gets blocked with `{"decision":"block","reason":"..."}` -- Claude Code refuses to send the prompt. That's the guardrail against autonomous agents quietly draining the last 50k tokens overnight.
+`enforce_at_pct` is intentionally inert — blocking is permanently disabled. The field is parsed so existing config files are accepted without error, but a non-zero value produces a one-time stderr advisory (`claude-budget: enforce_at_pct=N has no effect — blocking is permanently disabled`) and has no other effect. Keep it at `0`.
 
 If the config file is absent or `daily_tokens` is 0, the tool is a silent no-op.
 
 ## What you'll see
 
-At each new threshold crossing -- 25%, 10%, 5%, 1% remaining -- a one-line message appears at the next `SessionStart` or `UserPromptSubmit`:
+At each new threshold crossing -- 25%, 10%, 5%, 1% remaining -- a one-line message appears at the next `SessionStart`:
 
 ```
 [Claude Budget] 9% remaining (910k/1000k tokens, 3 sessions today). Close all but one session.
@@ -68,7 +68,7 @@ The session count in the warning is the number of session token files written to
 
 The tool can only see tokens already written to JSONL, which happens after each response completes. Tokens currently being generated -- the response in flight right now -- aren't counted until it finishes. Your true usage is always slightly higher than what claude-budget reports, especially with multiple parallel sessions.
 
-Warnings appear in Claude's context, not yours directly. They arrive in the next prompt Claude sees and Claude relays them to you. If Claude is mid-tool-use when the threshold crosses, you see the warning when control returns.
+Warnings appear at the start of the next Claude Code session you open. If a threshold crosses during an active session (i.e., the Stop hook writes a token file that crosses a threshold), you won't see the warning until you start a new session.
 
 ## State directory
 
@@ -99,12 +99,13 @@ The full tesht suite lives at `scripts/claude-budget_test.bash`; run with `tesht
 
 ## Hook wiring
 
-The four hooks live in `~/dotfiles/claude/settings.json`:
+Three hooks live in `~/dotfiles/claude/settings.json` (and mirrored to `~/.claude/settings.json`):
 
 - `Stop` (async): parse the current session's JSONL, write the token count.
 - `SessionEnd` (async): prune token files older than 7 days.
 - `SessionStart` (sync): check thresholds, inject warning if crossed.
-- `UserPromptSubmit` (sync): same check plus the enforcement block.
+
+`UserPromptSubmit` is intentionally not registered — that was the blocking hook path, which is permanently disabled.
 
 Sync hooks pause Claude Code briefly so its stdout can be injected into the session context. Async hooks fire and forget.
 

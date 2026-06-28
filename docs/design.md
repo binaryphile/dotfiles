@@ -781,20 +781,21 @@ Calendar config (`accounts.calendar`, `programs.khal`, `programs.vdirsyncer`, `s
 
 `scripts/claude-budget` is a Claude Code hook script that tracks daily token usage and injects warnings into Claude's session context when configurable thresholds are crossed.
 
-**Metric**: `input_tokens + output_tokens` from session JSONL transcripts (`~/.claude/projects/*/*.jsonl`). Matches Claude Code's `/usage` display. Cache tokens excluded. Dedup by `message.id` (same response appears 2-8x across branching and subagent JSONL entries; empirically verified: all duplicate IDs have identical token values).
+**Metric**: Weighted input-equivalent tokens from session JSONL transcripts (`~/.claude/projects/*/*.jsonl`). Formula: `input*1 + output*5 + cache_creation*1.25 + cache_read*0.1` (approximates Anthropic billing shape; see `docs/claude-budget.md` §"How it works" for multiplier rationale). Dedup by `message.id` (same response appears 2-8x across branching and subagent JSONL entries; empirically verified: all duplicate IDs have identical token values).
 
-**Budget day**: resets at 2am -- `date -d "2 hours ago" +%Y-%m-%d`.
+**Budget day**: resets at the hour set by `CLAUDE_BUDGET_DAY_START_HOUR` (default 3, i.e. 03:00 local) -- `date -d "$day_start_hour hours ago" +%Y-%m-%d`.
 
-**Architecture**: four hook events, one script:
+**Architecture**: three hook events, one script:
 
 | Hook | Mode | Responsibility |
 |------|------|----------------|
 | `Stop` | async | Parse session JSONL, write `sessions/{day}-{session_id}.tokens`. Skips zero-token sessions (no completed responses yet). |
 | `SessionEnd` | async | Prune `sessions/` files older than 7 days. |
 | `SessionStart` | sync | Sum today's token files, check thresholds, inject warning via stdout. |
-| `UserPromptSubmit` | sync | Same check + optional hard-block if `enforce_at_pct` crossed. |
 
-**Sync hook stdout**: Claude Code injects plain text stdout from sync hooks as session context. Warnings appear in Claude's next response. Block decision format: `{"decision":"block","reason":"..."}`.
+**Sync hook stdout**: Claude Code injects plain text stdout from sync hooks as session context. Warnings appear in Claude's next response.
+
+**Blocking permanently disabled**: `enforce_at_pct` in the config is parsed and honoured only as an advisory. A non-zero value causes a one-time stderr warning (`claude-budget: enforce_at_pct=N has no effect — blocking is permanently disabled`). The `UserPromptSubmit` hook is not registered; blocking via `{"decision":"block","reason":"..."}` is intentionally not supported.
 
 **JSONL resilience**: `head -n -1 transcript | jq -sc ...` -- strips the potentially truncated last line before parsing; `|| exit 0` guard skips the token-file write on jq failure. Zero tokens -> no file written (session hasn't completed a response yet; counted on next Stop).
 
@@ -809,7 +810,7 @@ Actions by threshold: 25% -> "Consider closing idle parallel sessions." 10% -> "
 {"daily_tokens": 1000000, "enforce_at_pct": 0}
 ```
 - `daily_tokens`: self-imposed daily limit. Observed peak: 3,120,151 (the quota-exhaustion day); typical heavy days 1.0-1.3M. `1000000` recommended -- triggers 25% warning at 750k, well into a heavy session.
-- `enforce_at_pct`: optional hard-stop percentage. `0` -> warn-only. `1` -> block at 1% remaining.
+- `enforce_at_pct`: inert. Parsed but has no effect; blocking is permanently disabled. Non-zero values produce a stderr advisory at SessionStart.
 
 **State dir**: `~/.local/state/claude-budget/`
 - `sessions/{day}-{session_id}.tokens` -- per-session token count (parallel-safe, one file per session)

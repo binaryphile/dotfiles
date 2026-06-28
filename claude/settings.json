@@ -11,8 +11,7 @@
       {"hooks": [{"type": "command", "command": "claude-budget", "async": true}]}
     ],
     "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "era-hook", "async": true}]},
-      {"hooks": [{"type": "command", "command": "claude-budget"}]}
+      {"hooks": [{"type": "command", "command": "era-hook", "async": true}]}
     ],
     "PermissionRequest": [{"hooks": [{"type": "command", "command": "era-hook"}]}],
     "SubagentStart": [{"hooks": [{"type": "command", "command": "era-hook", "async": true}]}],

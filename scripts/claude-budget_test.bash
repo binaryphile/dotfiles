@@ -35,13 +35,8 @@ runStop() {
 }
 
 runSessionStart() {
-  printf '{"hook_event_name":"SessionStart","session_id":"s","transcript_path":"/dev/null","cwd":"/tmp"}' \
-    | CLAUDE_BUDGET_STATE="$StateDir" CLAUDE_BUDGET_CONFIG="$ConfigFile" "$Script"
-}
-
-runUserPromptSubmit() {
   local sid=${1:-s}
-  printf '{"hook_event_name":"UserPromptSubmit","session_id":"%s","transcript_path":"/dev/null","cwd":"/tmp"}' \
+  printf '{"hook_event_name":"SessionStart","session_id":"%s","transcript_path":"/dev/null","cwd":"/tmp"}' \
     "$sid" \
     | CLAUDE_BUDGET_STATE="$StateDir" CLAUDE_BUDGET_CONFIG="$ConfigFile" "$Script"
 }
@@ -532,48 +527,6 @@ test_SessionStartNoWarnUnderThreshold() {
   tesht.AssertGot "$got" ""
 }
 
-test_UserPromptSubmitWarnsOnNewThreshold() {
-  tesht.MktempDir StateDir
-  local dir; tesht.MktempDir dir
-  ConfigFile="$dir/config.json"
-
-  local day
-  day=$(date -d '3 hours ago' +%Y-%m-%d)
-
-  # 910k of 1000k -> 9% remaining -> 25% already warned -> 10%-action fires
-  writeConfig 1000000
-  writeTokenFile "$day" "sess1" 910000
-
-  # Pre-mark 25% as already warned so 10% fires next
-  mkdir -p "$StateDir/warned"
-  printf '25\n' > "$StateDir/warned/${day}"
-
-  local got1
-  got1=$(runUserPromptSubmit)
-  [[ $got1 == *"Close all but one session."* ]] || { echo "expected 10% action in first call: $got1"; return 1; }
-
-  local got2
-  got2=$(runUserPromptSubmit)
-  tesht.AssertGot "$got2" ""
-}
-
-test_UserPromptSubmitBlocksAtEnforceThreshold() {
-  tesht.MktempDir StateDir
-  local dir; tesht.MktempDir dir
-  ConfigFile="$dir/config.json"
-
-  local day
-  day=$(date -d '3 hours ago' +%Y-%m-%d)
-
-  # 960k of 1000k -> 4% remaining -> enforce_at_pct=5 -> block
-  writeConfig 1000000 5
-  writeTokenFile "$day" "sess1" 960000
-
-  local got
-  got=$(runUserPromptSubmit)
-  [[ $got == *'"decision":"block"'* ]] || { echo "expected block decision in: $got"; return 1; }
-}
-
 test_WarningFlockedNoDuplicate() {
   tesht.MktempDir StateDir
   local dir; tesht.MktempDir dir
@@ -582,19 +535,36 @@ test_WarningFlockedNoDuplicate() {
   local day
   day=$(date -d '3 hours ago' +%Y-%m-%d)
 
-  # 760k of 1000k -> 24% remaining -> both concurrent calls race to emit 25% warning
+  # 760k of 1000k -> 24% remaining -> both concurrent SessionStart calls race to emit 25% warning
   writeConfig 1000000
   writeTokenFile "$day" "sess1" 760000
 
-  # Race two UserPromptSubmit instances; flock ensures exactly one threshold written
-  runUserPromptSubmit "s1" > /dev/null &
-  runUserPromptSubmit "s2" > /dev/null &
+  # Race two SessionStart instances; flock ensures exactly one threshold written
+  runSessionStart "s1" > /dev/null &
+  runSessionStart "s2" > /dev/null &
   wait
 
   local warned_lines
   warned_lines=$(wc -l < "$StateDir/warned/${day}" 2>/dev/null || echo 0)
   # Exactly one threshold (25) should be recorded
   tesht.AssertGot "$warned_lines" "1"
+}
+
+test_EnforceAtPctNonzeroWarnsStderr() {
+  tesht.MktempDir StateDir
+  local dir; tesht.MktempDir dir
+  ConfigFile="$dir/config.json"
+
+  # enforce_at_pct=5 — blocking intentionally inert; SessionStart should warn to stderr
+  writeConfig 1000000 5
+
+  local got_stderr
+  got_stderr=$(printf '{"hook_event_name":"SessionStart","session_id":"s","transcript_path":"/dev/null","cwd":"/tmp"}' \
+    | CLAUDE_BUDGET_STATE="$StateDir" CLAUDE_BUDGET_CONFIG="$ConfigFile" "$Script" 2>&1 >/dev/null)
+  [[ $got_stderr == *'enforce_at_pct=5'* ]] \
+    || { echo "expected enforce_at_pct=5 in stderr, got: $got_stderr"; return 1; }
+  [[ $got_stderr == *'permanently disabled'* ]] \
+    || { echo "expected 'permanently disabled' in stderr, got: $got_stderr"; return 1; }
 }
 
 test_SessionEndPrunesOldFiles() {
