@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-commit -- five gates:
+# pre-commit -- six gates:
 #   (a) Reject env vars in claude/settings.json mcpServers
 #       (MCP servers requiring credentials must use op-run)
 #   (b) Reject staged binary file additions/modifications (UC-14)
@@ -10,6 +10,9 @@
 #   (e) When committing in the icarus repo with project-plan.md staged,
 #       refuse if task-audit inventory-status-check reports drift
 #       (tandem-protocol "Cycle-inventory sync" rule; #29322)
+#   (f) Reject staged content containing secret-shaped tokens
+#       (BYOD policy A9 accidental-disclosure control; M8 of
+#       ~/projects/jeeves/security/byod-mvp-deployment-guide.md)
 #
 # All gates can be bypassed with: git commit --no-verify.
 #
@@ -178,12 +181,48 @@ checkIcarusInventoryDrift() {
     esac
 }
 
+checkStagedSecrets() {
+    # Refuse commits that introduce secret-shaped tokens. Gitleaks is the
+    # preferred scanner; absent gitleaks the gate skips with a stderr
+    # warning rather than failing closed -- the BYOD policy treats public-
+    # Git monitoring (Digi-side) as the organizational backstop for A9
+    # accidental disclosure, so this hook is defense-in-depth rather
+    # than sole gate.
+    command -v gitleaks >/dev/null 2>&1 || {
+        echo "pre-commit: gitleaks not on PATH; staged-secret scan skipped" >&2
+        return 0
+    }
+
+    local out rc=0
+    out=$(gitleaks protect --staged --redact --no-banner --no-color 2>&1) || rc=$?
+    [[ $rc -eq 0 ]] && return 0
+
+    {
+        echo
+        echo "pre-commit: BLOCKED -- staged content contains secret-shaped tokens"
+        echo
+        printf '%s\n' "$out"
+        echo
+        echo "  Fix:    git restore --staged <path>; rewrite to use a secret-manager"
+        echo "          reference (sops with an age recipient; environment injection"
+        echo "          via op-run) rather than literal secret content."
+        echo "  Bypass: git commit --no-verify (rare; log explicitly when used)."
+        echo "          For per-repo allowlists of known false positives, add a"
+        echo "          .gitleaks.toml in the repo root naming the rule and path."
+        echo
+        echo "  See ~/projects/jeeves/security/byod-policy.md \"Detection scope\""
+        echo "  for the policy framing."
+    } >&2
+    exit 1
+}
+
 main() {
     checkSettingsJson
     checkBinary
     checkOpRunDrift
     checkFlakeLockPin
     checkIcarusInventoryDrift
+    checkStagedSecrets
 }
 
 # IFS / noglob / -u / pipefail apply at source time so functions tested via

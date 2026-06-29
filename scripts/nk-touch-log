@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# nk-touch-log -- structured-log emitter for hardware-token touch
+# operations. Emits one JSON line to the systemd journal under tag
+# nk-touch-log before invoking the wrapped command, so every hardware-
+# touch operation produces an audit-log entry whose timestamp + process
+# context can be cross-referenced against access-layer logs at incident
+# investigation time.
+#
+# Usage:
+#     nk-touch-log <op-label> <command> [args...]
+#
+# Examples:
+#     nk-touch-log git-sign git commit -m "..."
+#     nk-touch-log sops-decrypt sops --decrypt secrets/prod.yaml
+#     nk-touch-log ssh-connect ssh prod-host
+#
+# Aliases / wrappers may compose these:
+#     alias gcommit='nk-touch-log git-sign git commit'
+#
+# Integration intent (per ~/projects/jeeves/security/byod-policy.md
+# "Detection scope" and M-LOG mandatory control): SIEM ingestion
+# consumes journal entries tagged nk-touch-log; anomalous touch
+# frequency, off-hours touches, and touches without corresponding user
+# activity become the load-bearing detective signal for A2 (stolen
+# powered-on device) and A4 (insider misuse). The sealed-journal
+# property (Seal=yes in services.journald per byod-policy.md) makes
+# touch-log tampering visible at ingestion.
+#
+# Sink precedence:
+#     1. systemd-cat -- preferred; lands in the journal directly
+#     2. logger     -- fallback when systemd-cat is unavailable
+#     3. JSONL file under $XDG_STATE_HOME/nk-touch-log/log.jsonl
+#        -- last resort; logs not lost when neither systemd-cat nor
+#        logger is present
+#
+# Best-effort logging: the script never blocks the wrapped operation
+# on log-emit failure. If the JSONL fallback path is unwritable, the
+# log line is dropped and the wrapped command proceeds.
+#
+# Naming Policy:
+#
+# This is a standalone script -- no namespace prefix on functions, no
+# suffix on globals. Function names use camelCase. Local variable
+# names begin with lowercase, e.g. localVariable. Global variable
+# names begin with uppercase, e.g. GlobalVariable.
+
+usage() {
+    echo "usage: nk-touch-log <op-label> <command> [args...]" >&2
+    exit 64
+}
+
+emitLog() {
+    local opLabel=$1
+    local payload now pid ppid requestor
+
+    now=$(date -u +%FT%TZ)
+    pid=$$
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    requestor=$(ps -o comm= -p "$ppid" 2>/dev/null || echo unknown)
+
+    printf -v payload '{"event":"nitrokey-touch","op":"%s","ts":"%s","pid":"%s","ppid":"%s","requestor":"%s"}' \
+        "$opLabel" "$now" "$pid" "$ppid" "$requestor"
+
+    if command -v systemd-cat >/dev/null 2>&1; then
+        printf '%s\n' "$payload" | systemd-cat -t nk-touch-log -p info
+    elif command -v logger >/dev/null 2>&1; then
+        logger -t nk-touch-log -p user.info -- "$payload"
+    else
+        local fallbackDir=${XDG_STATE_HOME:-$HOME/.local/state}/nk-touch-log
+        mkdir -p "$fallbackDir" 2>/dev/null \
+            && printf '%s\n' "$payload" >> "$fallbackDir/log.jsonl" 2>/dev/null \
+            || :
+    fi
+}
+
+main() {
+    (( $# >= 2 )) || usage
+
+    local opLabel=$1
+    shift
+
+    emitLog "$opLabel"
+
+    # Exec the wrapped command so it inherits the TTY (touch-required
+    # prompts work) and the parent's exit code reflects the wrapped
+    # command's rc.
+    exec "$@"
+}
+
+# IFS / noglob / -u / pipefail apply at source time so functions tested
+# via `source scripts/nk-touch-log` behave the same as direct invocation.
+IFS=$'\n'
+set -o noglob
+set -uo pipefail
+
+# Sourced execution returns before set -e + main, mirroring the
+# pre-commit hook's pattern; lets tests source and call functions.
+return 2>/dev/null
+
+set -e
+main "$@"
